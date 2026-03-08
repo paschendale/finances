@@ -387,3 +387,25 @@
 - `app/src/lib/api.ts`
 - `IMPLEMENTATION_LOG.md`
 
+---
+
+## 2026-03-08 - Optimized Excel Import Implementation
+
+### Tasks
+- [x] Create optimized Excel import script (`scripts/import_excel.py`)
+- [x] Implement bulk database operations using `execute_values` for high performance
+- [x] Implement surgical transaction pairing logic for transfers and credit card payments
+- [x] Add visual progress bar for long-running imports
+- [x] Implement automated balance validation against target values
+- [x] Create database reset utility (`scripts/reset_db.py`)
+
+### Decisions
+- Used a three-tier pairing strategy: 1) Perfect description match, 2) Explicit 'Transferência' category, 3) Heuristic-based asset-to-liability matching for bill payments.
+- Opted for `Decimal` throughout to ensure financial precision and avoid floating-point errors.
+- Implemented chunked inserts for transactions to retrieve generated IDs efficiently without overloading the database.
+- Added Unicode normalization (NFKD) to the slugification process to handle international characters in account/category names correctly.
+
+### Files Created/Modified
+- `scripts/import_excel.py`
+- `scripts/reset_db.py`
+- `IMPLEMENTATION_LOG.md`
