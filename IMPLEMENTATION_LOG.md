@@ -409,3 +409,35 @@
 - `scripts/import_excel.py`
 - `scripts/reset_db.py`
 - `IMPLEMENTATION_LOG.md`
+
+---
+
+## 2026-03-08 - Dashboard Enhancements & Historical Balances
+
+### Tasks
+- [x] Create RPC function `get_balances_at` for historical balance tracking
+- [x] Create RPC function `get_net_worth_history` for daily cumulative wealth tracking
+- [x] Implement "Assets Timeline" AreaChart with Apple-style gradients
+- [x] Update dashboard terminology: "Liabilities" -> "Credit & Debt"
+- [x] Refactor dashboard layout to 95% viewport width with 50/50 distribution for pies
+- [x] Implement multi-level (L1 -> L2) Income Sources nested pie chart
+- [x] Fix Recharts rendering errors by using stable, fixed-height containers
+- [x] Optimize legends with improved grid layout and scrollable containers
+- [x] Replace "FinanceLedger" logo with subtle "Paschendale's Finances" branding
+
+### Decisions
+- Added `get_balances_at` to ensure dashboard balance cards accurately reflect the selected date filter's end date.
+- Implemented cumulative daily changes in `get_net_worth_history` to power the new timeline chart.
+- Chose a side-by-side 50/50 layout for Expenses and Income pies to maximize density on large screens while maintaining readability.
+- Standardized on fixed-height containers for charts to prevent Recharts dimension calculation errors (`width/height -1`).
+- Replaced large header branding with a minimalist, Apple-inspired header to focus on data.
+
+### Files Created/Modified
+- `migrations/0018_get_balances_at.sql`
+- `migrations/0019_net_worth_history.sql`
+- `db/functions/get_balances_at.sql`
+- `app/src/lib/api.ts`
+- `app/src/components/Dashboard.tsx`
+- `app/src/App.tsx`
+- `app/index.html`
+- `.gitignore`

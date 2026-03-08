@@ -1,15 +1,17 @@
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { fetchAccounts, fetchDashboardData } from '@/lib/api';
+import { fetchDashboardData, fetchBalancesAt, fetchNetWorthHistory } from '@/lib/api';
 import { 
-  PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, 
-  LineChart, Line, XAxis, YAxis, CartesianGrid 
+  PieChart, Pie, Cell, ResponsiveContainer, Tooltip, 
+  XAxis, YAxis, CartesianGrid, AreaChart, Area
 } from 'recharts';
-import { format, startOfMonth, endOfMonth, subMonths, startOfYear, endOfYear, subYears, parseISO } from 'date-fns';
+import { 
+    format, startOfMonth, endOfMonth, subMonths, startOfYear, 
+    endOfYear, subYears, parseISO
+} from 'date-fns';
 import { Calendar } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-// Rich, darker muted colors for dark mode comfort
 const COLORS = [
   '#3B82F6', // Blue
   '#10B981', // Emerald
@@ -21,8 +23,7 @@ const COLORS = [
   '#F97316', // Orange
 ];
 
-const INCOME_COLOR = '#10B981';
-const EXPENSE_COLOR = '#EF4444';
+const NET_WORTH_COLOR = '#3B82F6';
 
 interface DateRange {
   start: Date;
@@ -62,9 +63,9 @@ export function Dashboard() {
   const startDateStr = format(dateRange.start, 'yyyy-MM-dd');
   const endDateStr = format(dateRange.end, 'yyyy-MM-dd');
 
-  const { data: accounts = [] } = useQuery({
-    queryKey: ['accounts'],
-    queryFn: fetchAccounts,
+  const { data: accountsAtDate = [] } = useQuery({
+    queryKey: ['balancesAt', endDateStr],
+    queryFn: () => fetchBalancesAt(endDateStr),
   });
 
   const { data: entries = [] } = useQuery({
@@ -72,7 +73,11 @@ export function Dashboard() {
     queryFn: () => fetchDashboardData(startDateStr, endDateStr),
   });
 
-  // Filter and Aggregate Data
+  const { data: netWorthHistory = [] } = useQuery({
+    queryKey: ['netWorthHistory', startDateStr, endDateStr],
+    queryFn: () => fetchNetWorthHistory(startDateStr, endDateStr),
+  });
+
   const filteredEntries = useMemo(() => {
     if (!categoryFilter) return entries;
     return entries.filter(e => e.account_name.startsWith(categoryFilter));
@@ -82,39 +87,29 @@ export function Dashboard() {
     const l1Map: Record<string, number> = {};
     const l2Map: Record<string, number> = {};
     const l3Map: Record<string, number> = {};
-    const incomeMap: Record<string, number> = {};
-    const monthlyData: Record<string, { month: string, income: number, expense: number }> = {};
+    const incomeL1Map: Record<string, number> = {};
+    const incomeL2Map: Record<string, number> = {};
 
     filteredEntries.forEach(entry => {
       const amount = Math.abs(entry.amount_base);
-      const date = parseISO(entry.date);
-      const monthKey = format(date, 'MMM yyyy');
-
-      if (!monthlyData[monthKey]) {
-        monthlyData[monthKey] = { month: monthKey, income: 0, expense: 0 };
-      }
+      const parts = entry.account_name.split(':');
 
       if (entry.account_type === 'expense') {
-        const parts = entry.account_name.split(':');
-        
-        // Level 1: expenses:Category
         const l1 = parts.slice(0, 2).join(':');
         if (parts.length >= 2) l1Map[l1] = (l1Map[l1] || 0) + amount;
         
-        // Level 2: expenses:Category:Sub
         const l2 = parts.slice(0, 3).join(':');
         if (parts.length >= 3) l2Map[l2] = (l2Map[l2] || 0) + amount;
         
-        // Level 3: expenses:Category:Sub:Detail
         const l3 = parts.slice(0, 4).join(':');
         if (parts.length >= 4) l3Map[l3] = (l3Map[l3] || 0) + amount;
 
-        monthlyData[monthKey].expense += amount;
       } else if (entry.account_type === 'income') {
-        const parts = entry.account_name.split(':');
-        const levelName = parts.slice(0, 2).join(':');
-        incomeMap[levelName] = (incomeMap[levelName] || 0) + amount;
-        monthlyData[monthKey].income += amount;
+        const l1 = parts.slice(0, 2).join(':');
+        if (parts.length >= 2) incomeL1Map[l1] = (incomeL1Map[l1] || 0) + amount;
+
+        const l2 = parts.slice(0, 3).join(':');
+        if (parts.length >= 3) incomeL2Map[l2] = (incomeL2Map[l2] || 0) + amount;
       }
     });
 
@@ -127,287 +122,248 @@ export function Dashboard() {
         }))
         .sort((a, b) => b.value - a.value);
 
-    const expensesL1 = formatPie(l1Map);
-    const expensesL2 = formatPie(l2Map);
-    const expensesL3 = formatPie(l3Map);
-    const incomePie = formatPie(incomeMap);
-
-    const lineData = Object.values(monthlyData).sort((a, b) => {
-        const da = parseISO(entries.find(e => format(parseISO(e.date), 'MMM yyyy') === a.month)?.date || '');
-        const db = parseISO(entries.find(e => format(parseISO(e.date), 'MMM yyyy') === b.month)?.date || '');
-        return da.getTime() - db.getTime();
-    });
-
-    return { expensesL1, expensesL2, expensesL3, incomePie, lineData };
+    return { 
+        expensesL1: formatPie(l1Map), 
+        expensesL2: formatPie(l2Map), 
+        expensesL3: formatPie(l3Map), 
+        incomeL1: formatPie(incomeL1Map), 
+        incomeL2: formatPie(incomeL2Map) 
+    };
   }, [filteredEntries]);
 
-  const totalAssets = accounts
+  const totalAssets = accountsAtDate
     .filter(a => a.account_type === 'asset')
-    .reduce((sum, a) => sum + a.balance, 0);
+    .reduce((sum, a) => sum + Number(a.balance), 0);
 
-  const totalLiabilities = accounts
+  const totalLiabilities = accountsAtDate
     .filter(a => a.account_type === 'liability')
-    .reduce((sum, a) => sum + a.balance, 0);
+    .reduce((sum, a) => sum + Number(a.balance), 0);
 
   const netWorth = totalAssets + totalLiabilities;
 
+  const lineData = useMemo(() => {
+    return netWorthHistory.map(d => ({
+        ...d,
+        label: format(parseISO(d.date), 'MMM d'),
+        net_worth: Number(d.net_worth),
+        assets: Number(d.assets),
+        liabilities: Math.abs(Number(d.liabilities))
+    }));
+  }, [netWorthHistory]);
+
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-20">
       {/* Date Filters */}
-      <div className="flex flex-col gap-4 bg-white/[0.02] backdrop-blur-3xl p-4 rounded-3xl border border-white/10 sticky top-0 z-50 shadow-2xl">
+      <div className="flex flex-col gap-4 bg-black/40 backdrop-blur-2xl p-4 rounded-[2rem] border border-white/5 sticky top-4 z-50 shadow-2xl">
         <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex gap-2">
+            <div className="flex gap-1 p-1 bg-white/5 rounded-full border border-white/5">
             {DATE_PRESETS.map(preset => (
                 <button
                 key={preset.label}
                 onClick={() => handlePresetClick(preset)}
                 className={cn(
-                    "px-4 py-1.5 rounded-full text-sm font-medium transition-all",
+                    "px-4 py-1.5 rounded-full text-[11px] font-bold tracking-tight transition-all",
                     dateRange.label === preset.label && (preset.label !== 'Custom' || isCustom)
                     ? "bg-white text-black shadow-lg" 
-                    : "bg-white/5 hover:bg-white/10 text-muted-foreground"
+                    : "hover:bg-white/10 text-white/30 hover:text-white"
                 )}
                 >
                 {preset.label}
                 </button>
             ))}
             </div>
-            <div className="flex items-center gap-2 text-sm font-medium px-4 py-1.5 rounded-full bg-white/5 border border-white/10">
-            <Calendar className="w-4 h-4 text-white/60" />
-            <span>{format(dateRange.start, 'MMM d')} - {format(dateRange.end, 'MMM d, yyyy')}</span>
+            <div className="flex items-center gap-3 text-xs font-semibold px-5 py-2 rounded-full bg-white/5 border border-white/10">
+            <Calendar className="w-3.5 h-3.5 text-white/20" />
+            <span className="text-white/60 tabular-nums">
+                {format(dateRange.start, 'MMM d')} — {format(dateRange.end, 'MMM d, yyyy')}
+            </span>
             </div>
         </div>
 
         {isCustom && (
-            <div className="flex gap-4 items-center animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="flex gap-4 items-center animate-in fade-in slide-in-from-top-2 duration-300 px-2">
                 <div className="flex flex-col gap-1">
-                    <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold px-1">From</label>
+                    <label className="text-[9px] uppercase tracking-widest text-white/20 font-bold px-1">From</label>
                     <input 
                         type="date" 
                         value={format(dateRange.start, 'yyyy-MM-dd')}
                         onChange={(e) => handleCustomDateChange('start', e.target.value)}
-                        className="bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-white/20 text-white"
+                        className="bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-white/20 text-white w-40"
                     />
                 </div>
                 <div className="flex flex-col gap-1">
-                    <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold px-1">To</label>
+                    <label className="text-[9px] uppercase tracking-widest text-white/20 font-bold px-1">To</label>
                     <input 
                         type="date" 
                         value={format(dateRange.end, 'yyyy-MM-dd')}
                         onChange={(e) => handleCustomDateChange('end', e.target.value)}
-                        className="bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-white/20 text-white"
+                        className="bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-white/20 text-white w-40"
                     />
                 </div>
             </div>
         )}
       </div>
 
-      {/* Balances Panel */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <BalanceCard title="Total Assets" amount={totalAssets} color="text-[#10B981]" />
-        <BalanceCard title="Liabilities" amount={totalLiabilities} color="text-[#EF4444]" />
-        <BalanceCard title="Net Worth" amount={netWorth} color="text-white" />
+      {/* Hero Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <BalanceCard title="Total Assets" amount={totalAssets} color="text-white" />
+        <BalanceCard title="Credit & Debt" amount={totalLiabilities} color="text-red-400/60" />
+        <BalanceCard title="Net Worth" amount={netWorth} color="text-emerald-400" />
       </div>
 
-      {/* Main Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Expenses Nested Pie - Bigger */}
-        <ChartCard title="Expense Breakdown (L1 → L3)" className="lg:col-span-2 min-h-[500px]">
-          <div className="flex flex-col lg:flex-row h-full gap-8">
-             <div className="flex-1 min-h-[400px]">
+      {/* Distribution Pies (50/50 each) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Expenses Distribution */}
+        <ChartCard title="Expense Distribution">
+          <div className="flex flex-col gap-8 h-full">
+             <div className="h-[350px] w-full relative">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    {/* Level 1 - Inner */}
-                    <Pie
-                      data={stats.expensesL1}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={0}
-                      outerRadius={60}
-                      dataKey="value"
-                      stroke="rgba(0,0,0,0.5)"
-                      strokeWidth={2}
-                    >
+                    <Pie data={stats.expensesL1} cx="50%" cy="50%" innerRadius={0} outerRadius="40%" dataKey="value" stroke="rgba(0,0,0,0.5)" strokeWidth={2}>
                       {stats.expensesL1.map((entry, index) => (
-                        <Cell 
-                          key={`l1-${index}`} 
-                          fill={COLORS[index % COLORS.length]} 
-                          className="hover:opacity-80 transition-opacity cursor-pointer" 
-                          onClick={() => setCategoryFilter(categoryFilter === entry.fullName ? null : entry.fullName)} 
-                        />
+                        <Cell key={`l1-${index}`} fill={COLORS[index % COLORS.length]} className="hover:opacity-80 transition-opacity cursor-pointer outline-none" onClick={() => setCategoryFilter(categoryFilter === entry.fullName ? null : entry.fullName)} />
                       ))}
                     </Pie>
-                    {/* Level 2 - Middle */}
-                    <Pie
-                      data={stats.expensesL2}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={70}
-                      outerRadius={110}
-                      dataKey="value"
-                      stroke="rgba(0,0,0,0.5)"
-                      strokeWidth={2}
-                    >
+                    <Pie data={stats.expensesL2} cx="50%" cy="50%" innerRadius="45%" outerRadius="70%" dataKey="value" stroke="rgba(0,0,0,0.5)" strokeWidth={2}>
                       {stats.expensesL2.map((entry, index) => {
                         const l1Name = entry.fullName.split(':').slice(0, 2).join(':');
                         const l1Index = stats.expensesL1.findIndex(x => x.fullName === l1Name);
-                        return <Cell 
-                          key={`l2-${index}`} 
-                          fill={COLORS[l1Index % COLORS.length]} 
-                          opacity={0.7}
-                          className="hover:opacity-100 transition-opacity cursor-pointer" 
-                          onClick={() => setCategoryFilter(categoryFilter === entry.fullName ? null : entry.fullName)}
-                        />
+                        return <Cell key={`l2-${index}`} fill={COLORS[l1Index % COLORS.length]} opacity={0.7} className="hover:opacity-100 transition-opacity cursor-pointer outline-none" onClick={() => setCategoryFilter(categoryFilter === entry.fullName ? null : entry.fullName)} />
                       })}
                     </Pie>
-                    {/* Level 3 - Outer */}
-                    <Pie
-                      data={stats.expensesL3}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={120}
-                      outerRadius={150}
-                      dataKey="value"
-                      stroke="rgba(0,0,0,0.5)"
-                      strokeWidth={2}
-                    >
+                    <Pie data={stats.expensesL3} cx="50%" cy="50%" innerRadius="75%" outerRadius="95%" dataKey="value" stroke="rgba(0,0,0,0.5)" strokeWidth={2}>
                       {stats.expensesL3.map((entry, index) => {
                         const l1Name = entry.fullName.split(':').slice(0, 2).join(':');
                         const l1Index = stats.expensesL1.findIndex(x => x.fullName === l1Name);
-                        return <Cell 
-                          key={`l3-${index}`} 
-                          fill={COLORS[l1Index % COLORS.length]} 
-                          opacity={0.4}
-                          className="hover:opacity-100 transition-opacity cursor-pointer"
-                        />
+                        return <Cell key={`l3-${index}`} fill={COLORS[l1Index % COLORS.length]} opacity={0.4} className="hover:opacity-100 transition-opacity cursor-pointer outline-none" />
                       })}
                     </Pie>
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: 'rgba(0,0,0,0.9)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(20px)' }}
-                      formatter={(value: any) => `R$ ${Number(value).toLocaleString()}`}
-                    />
+                    <Tooltip contentStyle={{ backgroundColor: 'rgba(0,0,0,0.95)', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(20px)', padding: '12px 16px' }} itemStyle={{ fontSize: '12px', fontWeight: 'bold' }} formatter={(value: any) => `R$ ${Number(value).toLocaleString()}`} />
                   </PieChart>
                 </ResponsiveContainer>
              </div>
-             {/* Custom Scrollable Legend ordered by DESC value */}
-             <div className="w-full lg:w-64 overflow-y-auto max-h-[400px] pr-4 space-y-2 custom-scrollbar">
-                <h4 className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold mb-4">Top Categories</h4>
+             
+             <div className="grid grid-cols-2 gap-x-6 gap-y-2 max-h-[160px] overflow-y-auto custom-scrollbar px-2 mt-auto">
                 {stats.expensesL1.map((entry, index) => (
-                  <div 
-                    key={entry.fullName} 
-                    className={cn(
-                        "flex items-center justify-between group cursor-pointer p-2 rounded-xl transition-all",
-                        categoryFilter === entry.fullName ? "bg-white/10" : "hover:bg-white/5"
-                    )}
-                    onClick={() => setCategoryFilter(categoryFilter === entry.fullName ? null : entry.fullName)}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
-                      <span className="text-xs font-medium truncate w-24 text-white/80">{entry.name}</span>
+                  <div key={entry.fullName} className={cn("flex items-center justify-between group cursor-pointer p-2 rounded-xl transition-all", categoryFilter === entry.fullName ? "bg-white/10" : "hover:bg-white/5")} onClick={() => setCategoryFilter(categoryFilter === entry.fullName ? null : entry.fullName)}>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
+                      <span className="text-[11px] font-semibold truncate text-white/50 group-hover:text-white transition-colors">{entry.name}</span>
                     </div>
-                    <span className="text-[10px] font-mono text-muted-foreground group-hover:text-white transition-colors">
-                      R$ {entry.value.toLocaleString()}
-                    </span>
+                    <span className="text-[10px] font-mono font-bold text-white/20 group-hover:text-white/40 tabular-nums flex-shrink-0">R$ {entry.value.toLocaleString()}</span>
                   </div>
                 ))}
              </div>
           </div>
         </ChartCard>
 
-        {/* Income Pie */}
+        {/* Income Sources */}
         <ChartCard title="Income Sources">
-          <div className="flex flex-col h-full gap-4">
-            <div className="flex-1 min-h-[250px]">
+          <div className="flex flex-col gap-8 h-full">
+            <div className="h-[350px] w-full relative">
+                {stats.incomeL1.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                    <Pie
-                    data={stats.incomePie}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={90}
-                    paddingAngle={5}
-                    dataKey="value"
-                    stroke="none"
-                    >
-                    {stats.incomePie.map((_, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
+                  <PieChart>
+                    <Pie data={stats.incomeL1} cx="50%" cy="50%" innerRadius={0} outerRadius="50%" dataKey="value" stroke="rgba(0,0,0,0.5)" strokeWidth={2}>
+                        {stats.incomeL1.map((entry, index) => (
+                            <Cell key={`l1-${index}`} fill={COLORS[index % COLORS.length]} className="hover:opacity-80 transition-opacity cursor-pointer outline-none" onClick={() => setCategoryFilter(categoryFilter === entry.fullName ? null : entry.fullName)} />
+                        ))}
                     </Pie>
-                    <Tooltip 
-                    contentStyle={{ backgroundColor: 'rgba(0,0,0,0.9)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(20px)' }}
-                    formatter={(value: any) => `R$ ${Number(value).toLocaleString()}`}
-                    />
-                </PieChart>
+                    <Pie data={stats.incomeL2} cx="50%" cy="50%" innerRadius="55%" outerRadius="85%" dataKey="value" stroke="rgba(0,0,0,0.5)" strokeWidth={2}>
+                        {stats.incomeL2.map((entry, index) => {
+                            const l1Name = entry.fullName.split(':').slice(0, 2).join(':');
+                            const l1Index = stats.incomeL1.findIndex(x => x.fullName === l1Name);
+                            return <Cell key={`l2-${index}`} fill={COLORS[l1Index % COLORS.length]} opacity={0.6} className="hover:opacity-100 transition-opacity cursor-pointer outline-none" onClick={() => setCategoryFilter(categoryFilter === entry.fullName ? null : entry.fullName)} />
+                        })}
+                    </Pie>
+                    <Tooltip contentStyle={{ backgroundColor: 'rgba(0,0,0,0.95)', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(20px)', padding: '12px 16px' }} itemStyle={{ fontSize: '12px', fontWeight: 'bold' }} formatter={(value: any) => `R$ ${Number(value).toLocaleString()}`} />
+                  </PieChart>
                 </ResponsiveContainer>
+                ) : (
+                    <div className="flex items-center justify-center h-full text-white/20 text-xs italic">No income data for this period</div>
+                )}
             </div>
-            <div className="space-y-1">
-                {stats.incomePie.slice(0, 5).map((entry, index) => (
-                    <div key={entry.fullName} className="flex items-center justify-between text-[10px]">
-                        <div className="flex items-center gap-2">
-                            <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
-                            <span className="text-muted-foreground">{entry.name}</span>
+            
+            <div className="grid grid-cols-2 gap-x-6 gap-y-2 max-h-[160px] overflow-y-auto custom-scrollbar px-2 mt-auto">
+                {stats.incomeL1.map((entry, index) => (
+                    <div key={entry.fullName} className={cn("flex items-center justify-between group cursor-pointer p-2 rounded-xl transition-all", categoryFilter === entry.fullName ? "bg-white/10" : "hover:bg-white/5")} onClick={() => setCategoryFilter(categoryFilter === entry.fullName ? null : entry.fullName)}>
+                        <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
+                            <span className="text-[11px] font-semibold truncate text-white/50 group-hover:text-white transition-colors">{entry.name}</span>
                         </div>
-                        <span className="font-mono">R$ {entry.value.toLocaleString()}</span>
+                        <span className="text-[10px] font-mono font-bold text-white/20 group-hover:text-white/40 tabular-nums flex-shrink-0">R$ {entry.value.toLocaleString()}</span>
                     </div>
                 ))}
             </div>
           </div>
         </ChartCard>
-
-        {/* Monthly Line Chart */}
-        <ChartCard title="Cash Flow Trends" className="lg:col-span-3">
-          <div className="h-[350px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={stats.lineData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.03)" />
-                <XAxis 
-                  dataKey="month" 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 11 }} 
-                />
-                <YAxis 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 11 }}
-                  tickFormatter={(val) => `R$ ${val / 1000}k`}
-                />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: 'rgba(0,0,0,0.9)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(20px)' }}
-                  formatter={(value: any) => `R$ ${Number(value).toLocaleString()}`}
-                />
-                <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} />
-                <Line 
-                  type="monotone" 
-                  dataKey="income" 
-                  stroke={INCOME_COLOR} 
-                  strokeWidth={4} 
-                  dot={{ r: 0 }} 
-                  activeDot={{ r: 6, strokeWidth: 0 }}
-                />
-                <Line 
-                  type="monotone" 
-                  dataKey="expense" 
-                  stroke={EXPENSE_COLOR} 
-                  strokeWidth={4} 
-                  dot={{ r: 0 }}
-                  activeDot={{ r: 6, strokeWidth: 0 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </ChartCard>
       </div>
+
+      {/* Assets Timeline */}
+      <ChartCard title="Assets Timeline" className="w-full">
+        <div className="h-[350px] w-full mt-4">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={lineData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+              <defs>
+                <linearGradient id="colorNetWorth" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={NET_WORTH_COLOR} stopOpacity={0.2}/>
+                  <stop offset="95%" stopColor={NET_WORTH_COLOR} stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.02)" />
+              <XAxis 
+                dataKey="label" 
+                axisLine={false} 
+                tickLine={false} 
+                tick={{ fill: 'rgba(255,255,255,0.2)', fontSize: 10, fontWeight: 600 }} 
+                minTickGap={40}
+              />
+              <YAxis 
+                axisLine={false} 
+                tickLine={false} 
+                tick={{ fill: 'rgba(255,255,255,0.2)', fontSize: 10, fontWeight: 600 }}
+                tickFormatter={(val) => `R$ ${(val / 1000).toFixed(0)}k`}
+                domain={['auto', 'auto']}
+              />
+              <Tooltip 
+                contentStyle={{ backgroundColor: 'rgba(0,0,0,0.95)', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(20px)', padding: '12px 16px' }}
+                itemStyle={{ fontSize: '12px', fontWeight: 'bold' }}
+                labelStyle={{ marginBottom: '8px', color: 'rgba(255,255,255,0.4)', fontSize: '10px' }}
+                formatter={(value: any) => `R$ ${Number(value).toLocaleString()}`}
+              />
+              <Area 
+                type="monotone" 
+                dataKey="net_worth" 
+                name="Net Worth"
+                stroke={NET_WORTH_COLOR} 
+                strokeWidth={3} 
+                fillOpacity={1} 
+                fill="url(#colorNetWorth)"
+                animationDuration={1000}
+              />
+              <Area 
+                type="monotone" 
+                dataKey="assets" 
+                name="Total Assets"
+                stroke="#10B981" 
+                strokeWidth={1} 
+                strokeDasharray="4 4"
+                fill="none"
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </ChartCard>
 
       {categoryFilter && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-bottom-8 duration-500">
             <button 
                 onClick={() => setCategoryFilter(null)}
-                className="px-6 py-3 bg-white text-black rounded-full text-sm font-bold shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center gap-2 border border-white/20"
+                className="px-6 py-3 bg-white text-black rounded-full text-xs font-bold shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center gap-3 border border-white/20"
             >
+                <div className="w-2 h-2 rounded-full bg-black/20 animate-pulse" />
                 Viewing: {categoryFilter.split(':').pop()}
-                <span className="opacity-40 font-normal">| Clear</span>
+                <span className="opacity-30 font-bold ml-2">✕</span>
             </button>
         </div>
       )}
@@ -417,10 +373,10 @@ export function Dashboard() {
 
 function BalanceCard({ title, amount, color }: { title: string, amount: number, color: string }) {
   return (
-    <div className="bg-white/[0.03] backdrop-blur-3xl p-8 rounded-[2.5rem] border border-white/5 hover:border-white/10 transition-all group shadow-sm">
-      <h3 className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-bold mb-4">{title}</h3>
-      <p className={cn("text-4xl font-bold tracking-tighter", color)}>
-        {amount < 0 ? '-' : ''} R$ {Math.abs(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+    <div className="bg-white/[0.02] backdrop-blur-3xl p-8 rounded-[2rem] border border-white/5 hover:border-white/10 transition-all group shadow-sm">
+      <h3 className="text-[9px] uppercase tracking-[0.3em] text-white/20 font-bold mb-4">{title}</h3>
+      <p className={cn("text-4xl font-bold tracking-tighter tabular-nums", color)}>
+        {amount < 0 ? '−' : ''} R$ {Math.abs(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
       </p>
     </div>
   );
@@ -428,9 +384,11 @@ function BalanceCard({ title, amount, color }: { title: string, amount: number, 
 
 function ChartCard({ title, children, className }: { title: string, children: React.ReactNode, className?: string }) {
   return (
-    <div className={cn("bg-white/[0.03] backdrop-blur-3xl p-10 rounded-[3rem] border border-white/5 flex flex-col shadow-sm", className)}>
-      <h3 className="text-xs uppercase tracking-[0.2em] text-muted-foreground font-bold mb-8">{title}</h3>
-      {children}
+    <div className={cn("bg-white/[0.02] backdrop-blur-3xl p-10 rounded-[3rem] border border-white/5 flex flex-col shadow-sm", className)}>
+      <h3 className="text-[10px] uppercase tracking-[0.3em] text-white/20 font-bold mb-8">{title}</h3>
+      <div className="flex-1">
+        {children}
+      </div>
     </div>
   );
 }

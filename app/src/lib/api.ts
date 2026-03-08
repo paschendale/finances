@@ -34,6 +34,41 @@ export async function fetchAccounts(): Promise<Account[]> {
   return response.json();
 }
 
+export async function fetchBalancesAt(date: string): Promise<Account[]> {
+  const response = await fetch(`${API_URL}/rpc/get_balances_at`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ p_date: date }),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to fetch balances at date');
+  }
+  return response.json();
+}
+
+export interface NetWorthHistory {
+  date: string;
+  net_worth: number;
+  assets: number;
+  liabilities: number;
+}
+
+export async function fetchNetWorthHistory(startDate: string, endDate: string): Promise<NetWorthHistory[]> {
+  const response = await fetch(`${API_URL}/rpc/get_net_worth_history`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ p_start_date: startDate, p_end_date: endDate }),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to fetch net worth history');
+  }
+  return response.json();
+}
+
 export async function fetchTransactions(limit = 100, offset = 0): Promise<Transaction[]> {
   const response = await fetch(`${API_URL}/transactions_with_entries?order=date.desc,created_at.desc&limit=${limit}&offset=${offset}`);
   if (!response.ok) {
