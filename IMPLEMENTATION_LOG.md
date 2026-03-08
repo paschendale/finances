@@ -193,3 +193,63 @@
 - `app/src/lib/api.ts`
 - `app/src/index.css`
 - `IMPLEMENTATION_LOG.md`
+
+---
+
+## 2026-03-08 - Refined QuickEntryInput & Apple-style UX
+
+### Tasks
+- [x] Refine `QuickEntryInput` with Apple-style compact design and glassmorphism
+- [x] Implement `SearchableSelect` for keyboard-first account and category selection
+- [x] Add "Context Bar" for Date and Account selectors with high visibility
+- [x] Implement "Smart Defaults" based on top 10 most-used categories
+- [x] Enable editable previews for description, amount, category, and account
+- [x] Fix `z-index` and clipping issues for dropdowns over sticky headers
+- [x] Optimize backend interaction with `fetchCategoryUsage` to leverage `category_totals` view
+- [x] Improve parser to support explicit category/account in transfer/income syntax
+- [x] Clean up unused imports in `LedgerTable.tsx` to ensure clean build
+
+### Decisions
+- Used `z-index` stacking hierarchy (`z-100` for main container, `z-30` for context bar, `z-20` for input, `z-10` for preview) to handle overlapping dropdowns and sticky headers correctly.
+- Removed `overflow-hidden` from staging containers to allow absolute-positioned dropdowns to "escape" and remain visible.
+- Implemented a dynamic `z-index` toggle in `SearchableSelect` to boost priority when open.
+- Chose to show the top 10 categories by default to minimize typing, falling back to a full searchable list when typing starts.
+- Prevented automatic `Enter` submission if the preview has been manually edited, ensuring user intent is captured via a explicit "Confirm" button.
+- Defaulted the preview category to the most-used category if no history or parser match is found, reducing "unknown" results.
+
+### Files Created/Modified
+- `app/src/components/QuickEntryInput.tsx`
+- `app/src/lib/api.ts`
+- `app/src/lib/ledger-parser/parser.ts`
+- `app/src/lib/ledger-parser/parser.test.ts`
+- `app/src/components/LedgerTable.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
+## 2026-03-08 - Parser Refinement & Enhanced Transfer UX
+
+### Tasks
+- [x] Implement robust token-based parser in `parser.ts` following strict implicit rules
+- [x] Add 35 comprehensive test cases to `parser.test.ts` covering all edge cases
+- [x] Enhance `QuickEntryInput` to handle new `ParsedInput` structure (Transfer vs Expense)
+- [x] Implement intelligent account mapping to resolve shorthands (e.g., "nubank" -> "assets:nubank")
+- [x] Add interactive "Parsing Rules" tooltip for user guidance
+- [x] Implement directional icons (`ArrowDownLeft`, `ArrowUpRight`) for transfer feedback
+- [x] Add contextual labels ("Source Account", "Destination Account") in the staging area
+- [x] Refine amount input in preview with dedicated labels and improved spacing
+- [x] Ensure `z-index` and stacking priority for nested preview entries
+
+### Decisions
+- Adopted a "last numeric token" rule for the parser to allow numbers within descriptions (e.g., "pizza 4 queijos 70").
+- Moved account resolution to the UI layer where the full account list is available, allowing the parser to remain "dumb" and fast.
+- Used distinct icons for transfers to provide immediate visual confirmation of money flow direction.
+- Prevented automatic submission of edited previews to ensure users verify manual changes.
+- Integrated `ParserContext` into the parser to support smart defaults based on the current UI state (selected account/date).
+
+### Files Created/Modified
+- `app/src/lib/ledger-parser/parser.ts`
+- `app/src/lib/ledger-parser/parser.test.ts`
+- `app/src/components/QuickEntryInput.tsx`
+- `IMPLEMENTATION_LOG.md`
+

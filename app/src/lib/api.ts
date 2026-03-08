@@ -42,6 +42,20 @@ export async function fetchTransactions(limit = 100, offset = 0): Promise<Transa
   return response.json();
 }
 
+export interface CategoryUsage {
+  category_name: string;
+  category_type: string;
+  total: number;
+}
+
+export async function fetchCategoryUsage(): Promise<CategoryUsage[]> {
+  const response = await fetch(`${API_URL}/category_totals?order=total.desc&limit=10`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch category usage');
+  }
+  return response.json();
+}
+
 export async function createTransaction(transaction: Omit<Transaction, 'id' | 'entries'> & { entries: Omit<Entry, 'id' | 'account_name' | 'account_type'>[] }) {
   const response = await fetch(`${API_URL}/rpc/create_transaction`, {
     method: 'POST',

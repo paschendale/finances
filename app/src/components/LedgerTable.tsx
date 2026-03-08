@@ -2,7 +2,6 @@ import { useInfiniteQuery } from '@tanstack/react-query';
 import { fetchTransactions, type Entry } from '@/lib/api';
 import { useMemo, useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
-import { ChevronDown, ChevronUp } from 'lucide-react';
 
 interface TransactionItem {
   type: 'transaction';

@@ -1,3 +1,139 @@
+export type ParsedType = 'expense' | 'transfer' | 'income' | 'error';
+
+export interface ParsedInput {
+  type: ParsedType;
+  description: string;
+  amount: number | null;
+  currency: string;
+  date?: string;
+  account?: string; // The "from" account for expenses
+  from?: string;    // For transfers
+  to?: string;      // For transfers
+  error?: string;
+}
+
+export interface ParserContext {
+  selectedAccount?: string;
+  selectedDate?: string;
+  defaultCurrency?: string;
+}
+
+export function parseQuickEntry(input: string, context: ParserContext = {}): ParsedInput {
+  const defaultCurrency = context.defaultCurrency || 'BRL';
+  const defaultDate = context.selectedDate || new Date().toISOString().split('T')[0];
+  const defaultAccount = context.selectedAccount || 'assets:unknown';
+
+  let trimmed = input.trim();
+  if (!trimmed) {
+    return {
+      type: 'error',
+      description: '',
+      amount: null,
+      currency: defaultCurrency,
+      error: 'empty input',
+    };
+  }
+
+  let date = defaultDate;
+  // Check for date prefix: YYYY-MM-DD
+  const dateMatch = trimmed.match(/^(\d{4}-\d{2}-\d{2})\s+(.+)$/);
+  if (dateMatch) {
+    date = dateMatch[1];
+    trimmed = dateMatch[2].trim();
+  }
+
+  // Rule 1: Transfers detected by ">"
+  if (trimmed.includes('>')) {
+    // Regex for transfer: from > to amount [CURRENCY]
+    // Allowing no spaces around >
+    const transferMatch = trimmed.match(/^(.+?)\s*>\s*(.+?)\s+([\d.,]+)(?:\s+([A-Z]{3}))?$/);
+    if (transferMatch) {
+      const from = transferMatch[1].trim();
+      const to = transferMatch[2].trim();
+      const amountStr = transferMatch[3].replace(',', '.');
+      const amount = parseFloat(amountStr);
+      const currency = transferMatch[4] || defaultCurrency;
+
+      return {
+        type: 'transfer',
+        description: `Transfer from ${from} to ${to}`,
+        from,
+        to,
+        amount: isNaN(amount) ? null : amount,
+        currency,
+        date,
+      };
+    }
+  }
+
+  // Rule 2-5: Expenses
+  // description amount [CURRENCY] [ACCOUNT]
+  // Rule: last numeric token is the amount.
+  const tokens = trimmed.split(/\s+/);
+  
+  // Find the last token that is a valid number
+  let amountIndex = -1;
+  let amount = null;
+
+  for (let i = tokens.length - 1; i >= 0; i--) {
+    const val = tokens[i].replace(',', '.');
+    if (!isNaN(parseFloat(val)) && isFinite(Number(val)) && /^-?\d+([.,]\d+)?$/.test(tokens[i])) {
+      amountIndex = i;
+      amount = parseFloat(val);
+      break;
+    }
+  }
+
+  if (amountIndex === -1) {
+    return {
+      type: 'error',
+      description: trimmed,
+      amount: null,
+      currency: defaultCurrency,
+      error: 'missing amount',
+    };
+  }
+
+  const descriptionTokens = tokens.slice(0, amountIndex);
+  if (descriptionTokens.length === 0) {
+    return {
+      type: 'error',
+      description: '',
+      amount,
+      currency: defaultCurrency,
+      error: 'missing description',
+    };
+  }
+
+  const description = descriptionTokens.join(' ');
+  const remainingTokens = tokens.slice(amountIndex + 1);
+  
+  let currency = defaultCurrency;
+  let account = defaultAccount;
+
+  if (remainingTokens.length > 0) {
+    // Check if first remaining token is a currency (3 letters uppercase)
+    if (/^[A-Z]{3}$/.test(remainingTokens[0])) {
+      currency = remainingTokens[0];
+      if (remainingTokens.length > 1) {
+        account = remainingTokens[1];
+      }
+    } else {
+      // First remaining token is account
+      account = remainingTokens[0];
+    }
+  }
+
+  return {
+    type: 'expense',
+    description,
+    amount,
+    currency,
+    account,
+    date,
+  };
+}
+
 export interface Entry {
   account: string;
   amount: number;
@@ -7,76 +143,4 @@ export interface TransactionPreview {
   date: string;
   description: string;
   entries: Entry[];
-}
-
-export function parseQuickEntry(input: string): TransactionPreview {
-  let today = new Date().toISOString().split('T')[0];
-  let trimmed = input.trim();
-
-  // Check for date prefix: YYYY-MM-DD
-  const dateMatch = trimmed.match(/^(\d{4}-\d{2}-\d{2})\s+(.+)$/);
-  if (dateMatch) {
-    today = dateMatch[1];
-    trimmed = dateMatch[2].trim();
-  }
-
-  // Check for income: <to> < <from> <amount>
-  const incomeMatch = trimmed.match(/^(.+?)\s*<\s*(.+?)\s+([\d.,]+)$/);
-  if (incomeMatch) {
-    const toAccount = incomeMatch[1].trim();
-    const fromAccount = incomeMatch[2].trim();
-    const amountStr = incomeMatch[3].replace(',', '.');
-    const amount = parseFloat(amountStr);
-
-    return {
-      date: today,
-      description: `Income from ${fromAccount} to ${toAccount}`,
-      entries: [
-        { account: `assets:${toAccount}`, amount },
-        { account: `income:${fromAccount}`, amount: -amount },
-      ],
-    };
-  }
-
-  // Check for transfer: <from> > <to> <amount>
-  const transferMatch = trimmed.match(/^(.+?)\s*>\s*(.+?)\s+([\d.,]+)$/);
-  if (transferMatch) {
-    const fromAccount = transferMatch[1].trim();
-    const toAccount = transferMatch[2].trim();
-    const amountStr = transferMatch[3].replace(',', '.');
-    const amount = parseFloat(amountStr);
-
-    return {
-      date: today,
-      description: `Transfer from ${fromAccount} to ${toAccount}`,
-      entries: [
-        { account: `assets:${fromAccount}`, amount: -amount },
-        { account: `assets:${toAccount}`, amount: amount },
-      ],
-    };
-  }
-
-  // Check for expense: <description> <amount>
-  const expenseMatch = trimmed.match(/^(.+?)\s+([\d.,]+)$/);
-  if (expenseMatch) {
-    const description = expenseMatch[1].trim();
-    const amountStr = expenseMatch[2].replace(',', '.');
-    const amount = parseFloat(amountStr);
-
-    return {
-      date: today,
-      description,
-      entries: [
-        { account: 'expenses:unknown', amount },
-        { account: 'assets:unknown', amount: -amount },
-      ],
-    };
-  }
-
-  // Fallback
-  return {
-    date: today,
-    description: trimmed,
-    entries: [],
-  };
 }

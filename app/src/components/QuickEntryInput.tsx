@@ -1,13 +1,142 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { parseQuickEntry, type TransactionPreview } from '@/lib/ledger-parser/parser';
-import { fetchAccounts, createTransaction } from '@/lib/api';
+import { fetchAccounts, fetchTransactions, createTransaction, fetchCategoryUsage } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { Check, Loader2, AlertCircle } from 'lucide-react';
+import { Check, Loader2, AlertCircle, Calendar, Wallet, Tag, ChevronDown, Search, Info, ArrowRight, ArrowLeft, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
 
+// --- SearchableSelect Component ---
+interface Option {
+  label: string;
+  value: string;
+}
+
+function SearchableSelect({ 
+  options, 
+  topOptions = [],
+  value, 
+  onChange, 
+  placeholder, 
+  icon: Icon,
+  className 
+}: { 
+  options: Option[]; 
+  topOptions?: Option[];
+  value: string; 
+  onChange: (value: string) => void; 
+  placeholder: string;
+  icon?: any;
+  className?: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const displayOptions = useMemo(() => {
+    if (search.length > 0) {
+      const s = search.toLowerCase();
+      return options.filter(o => o.label.toLowerCase().includes(s));
+    }
+    return topOptions.length > 0 ? topOptions : options.slice(0, 20);
+  }, [options, topOptions, search]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') setIsOpen(false);
+    if (e.key === 'Enter' && displayOptions.length > 0 && isOpen) {
+      e.preventDefault();
+      onChange(displayOptions[0].value);
+      setIsOpen(false);
+      setSearch('');
+    }
+    if (e.key === 'ArrowDown' && !isOpen) setIsOpen(true);
+  };
+
+  return (
+    <div ref={containerRef} className={cn("relative", isOpen ? "z-50" : "z-auto", className)}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        onKeyDown={handleKeyDown}
+        className={cn(
+          "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-background/50 border border-border/50 text-[13px] font-medium transition-all backdrop-blur-sm",
+          "hover:bg-accent/50 focus:outline-none focus:ring-1 focus:ring-primary/30",
+          isOpen && "ring-1 ring-primary/30 bg-accent/30"
+        )}
+      >
+        {Icon && <Icon className="w-3.5 h-3.5 text-muted-foreground/70" />}
+        <span className="flex-1 text-left truncate">
+          {options.find(o => o.value === value)?.label || placeholder}
+        </span>
+        <ChevronDown className={cn("w-3 h-3 text-muted-foreground/50 transition-transform duration-200", isOpen && "rotate-180")} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-[100] top-full mt-1.5 w-full min-w-[220px] bg-popover/95 border border-border/50 rounded-xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.3)] backdrop-blur-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+          <div className="p-2 border-b border-border/40 bg-muted/20 flex items-center gap-2">
+            <Search className="w-3.5 h-3.5 text-muted-foreground/50" />
+            <input
+              ref={inputRef}
+              autoFocus
+              className="bg-transparent border-none p-0 focus:ring-0 text-[13px] w-full placeholder:text-muted-foreground/40"
+              placeholder="Search..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={handleKeyDown}
+            />
+          </div>
+          <div className="max-h-[280px] overflow-y-auto p-1 custom-scrollbar">
+            {search.length === 0 && topOptions.length > 0 && (
+              <div className="px-2 py-1.5 text-[10px] font-bold text-muted-foreground/40 uppercase tracking-widest">Suggested</div>
+            )}
+            {displayOptions.length > 0 ? (
+              displayOptions.map((opt) => (
+                <button
+                  key={opt.value}
+                  className={cn(
+                    "w-full text-left px-2.5 py-1.5 rounded-md text-[13px] transition-all",
+                    opt.value === value 
+                      ? "bg-primary text-primary-foreground shadow-sm" 
+                      : "hover:bg-accent hover:text-accent-foreground"
+                  )}
+                  onClick={() => {
+                    onChange(opt.value);
+                    setIsOpen(false);
+                    setSearch('');
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))
+            ) : (
+              <div className="px-3 py-6 text-center text-[12px] text-muted-foreground/50">No results found</div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- Main QuickEntryInput Component ---
 export function QuickEntryInput() {
   const [input, setInput] = useState('');
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedAccount, setSelectedAccount] = useState<string>('');
   const [preview, setPreview] = useState<TransactionPreview | null>(null);
+  const [isEdited, setIsEdited] = useState(false);
+  const [suggestion, setSuggestion] = useState<string | null>(null);
+  
   const inputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
@@ -16,57 +145,140 @@ export function QuickEntryInput() {
     queryFn: fetchAccounts,
   });
 
+  const { data: transactions } = useQuery({
+    queryKey: ['transactions', { limit: 100 }],
+    queryFn: () => fetchTransactions(100),
+  });
+
+  const { data: topCategories } = useQuery({
+    queryKey: ['categoryUsage'],
+    queryFn: fetchCategoryUsage,
+  });
+
+  const accountOptions = useMemo(() => 
+    (accounts || []).filter(a => a.account_type === 'asset' || a.account_type === 'liability' || a.account_type === 'equity').map(a => ({ label: a.account_name, value: a.account_name })),
+  [accounts]);
+
+  const categoryOptions = useMemo(() => 
+    (accounts || [])
+      .filter(a => ['expense', 'income', 'asset', 'liability'].includes(a.account_type))
+      .map(a => ({ label: a.account_name, value: a.account_name })),
+  [accounts]);
+
+  const topCategoryOptions = useMemo(() => 
+    (topCategories || []).map(c => ({ label: c.category_name, value: c.category_name })),
+  [topCategories]);
+
   const mutation = useMutation({
     mutationFn: createTransaction,
     onSuccess: () => {
       setInput('');
       setPreview(null);
+      setIsEdited(false);
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      if (inputRef.current) inputRef.current.focus();
     },
   });
 
+  // Smart defaults logic
+  const history = useMemo(() => {
+    if (!transactions) return { descriptions: [], mappings: new Map<string, string>(), lastAccount: '' };
+    
+    const descriptions = Array.from(new Set(transactions.map(t => t.description)));
+    const mappings = new Map<string, string>();
+    
+    transactions.forEach(t => {
+      const expenseEntry = t.entries.find(e => e.account_name.startsWith('expenses:'));
+      if (expenseEntry) mappings.set(t.description.toLowerCase(), expenseEntry.account_name);
+    });
+
+    const lastAccount = transactions[0]?.entries.find(e => e.account_name.startsWith('assets:'))?.account_name || '';
+
+    return { descriptions, mappings, lastAccount };
+  }, [transactions]);
+
+  // Sync default account from history if not set
   useEffect(() => {
-    if (input.trim()) {
-      setPreview(parseQuickEntry(input));
-    } else {
-      setPreview(null);
+    if (history.lastAccount && !selectedAccount) {
+      setSelectedAccount(history.lastAccount);
     }
-  }, [input]);
+  }, [history.lastAccount, selectedAccount]);
+
+  useEffect(() => {
+    if (!input.trim()) {
+      setPreview(null);
+      setSuggestion(null);
+      setIsEdited(false);
+      return;
+    }
+
+    const parsed = parseQuickEntry(input, {
+      selectedAccount,
+      selectedDate,
+      defaultCurrency: 'BRL',
+    });
+    
+    // Description Autocomplete
+    const lowerInput = parsed.description.toLowerCase();
+    if (lowerInput.length > 1) {
+      const match = history.descriptions.find(d => d.toLowerCase().startsWith(lowerInput));
+      setSuggestion(match && match.toLowerCase() !== lowerInput ? match : null);
+    } else {
+      setSuggestion(null);
+    }
+
+    if (!isEdited) {
+      if (parsed.type === 'error') {
+        setPreview(null);
+        return;
+      }
+
+      if (parsed.type === 'transfer') {
+        const fromAccount = accountOptions.find(o => o.value.toLowerCase().includes(parsed.from!.toLowerCase()))?.value || `assets:${parsed.from}`;
+        const toAccount = accountOptions.find(o => o.value.toLowerCase().includes(parsed.to!.toLowerCase()))?.value || `assets:${parsed.to}`;
+        
+        setPreview({
+          date: parsed.date!,
+          description: parsed.description,
+          entries: [
+            { account: toAccount, amount: parsed.amount || 0 },
+            { account: fromAccount, amount: -(parsed.amount || 0) },
+          ],
+        });
+      } else {
+        const historyCategory = history.mappings.get(parsed.description.toLowerCase());
+        const categoryFallback = topCategoryOptions[0]?.value || categoryOptions.find(o => o.value.startsWith('expenses:'))?.value || 'expenses:unknown';
+        const category = parsed.account === selectedAccount ? (historyCategory || categoryFallback) : parsed.account!;
+        const account = parsed.account === selectedAccount ? selectedAccount : (parsed.account || selectedAccount);
+        
+        // Use logic from test cases: if account is override, parsed.account contains it
+        const finalAccountName = parsed.account || selectedAccount;
+        const finalAccount = accountOptions.find(o => o.value.toLowerCase().includes(finalAccountName.toLowerCase()))?.value || `assets:${finalAccountName}`;
+        const finalCategory = historyCategory || categoryFallback;
+
+        setPreview({
+          date: parsed.date!,
+          description: parsed.description,
+          entries: [
+            { account: finalCategory, amount: parsed.amount || 0 },
+            { account: finalAccount, amount: -(parsed.amount || 0) },
+          ],
+        });
+      }
+    }
+  }, [input, history, isEdited, selectedAccount, selectedDate, topCategoryOptions, categoryOptions]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Tab') {
-      handleAutocomplete(e);
-    } else if (e.key === 'Enter' && preview && preview.entries.length >= 2) {
+    if (e.key === 'Tab' && suggestion) {
+      e.preventDefault();
+      const parsed = parseQuickEntry(input);
+      const newInput = input.replace(parsed.description, suggestion);
+      setInput(newInput);
+      setSuggestion(null);
+    } else if (e.key === 'Enter' && preview && !isEdited && (preview.entries[0].amount !== 0)) {
       e.preventDefault();
       confirmTransaction();
-    }
-  };
-
-  const handleAutocomplete = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!accounts) return;
-
-    const cursorPosition = inputRef.current?.selectionStart || 0;
-    const textBeforeCursor = input.slice(0, cursorPosition);
-    const textAfterCursor = input.slice(cursorPosition);
-
-    // Identify if we are in an account name position
-    // Simple logic: last word before cursor if it contains ':' or follows '>' or '<'
-    const words = textBeforeCursor.split(/\s+/);
-    const lastWord = words[words.length - 1];
-
-    if (!lastWord) return;
-
-    const matchingAccount = accounts.find(a => 
-      a.account_name.toLowerCase().includes(lastWord.toLowerCase())
-    );
-
-    if (matchingAccount) {
-      e.preventDefault();
-      const newWords = [...words];
-      newWords[newWords.length - 1] = matchingAccount.account_name;
-      const newInput = newWords.join(' ') + textAfterCursor;
-      setInput(newInput);
     }
   };
 
@@ -79,95 +291,192 @@ export function QuickEntryInput() {
         description: preview.description,
         entries: preview.entries.map(e => {
           const account = accounts.find(a => a.account_name === e.account);
-          if (!account) {
-            // If account doesn't exist, we might need to handle it.
-            // For now, let's assume it must exist or we fail.
-            throw new Error(`Account not found: ${e.account}`);
-          }
+          if (!account) throw new Error(`Account not found: ${e.account}`);
           return {
             account_id: account.account_id,
             amount: e.amount,
-            currency: 'BRL', // Default currency
+            currency: 'BRL',
             exchange_rate: 1.0,
             amount_base: e.amount,
           };
         }),
       };
-
       mutation.mutate(transaction);
     } catch (err: any) {
-      console.error(err);
       alert(err.message);
     }
   };
 
+  const updateEntryField = (index: number, field: string, value: any) => {
+    if (!preview) return;
+    setIsEdited(true);
+    const newEntries = [...preview.entries];
+    newEntries[index] = { ...newEntries[index], [field]: value };
+    if (field === 'amount' && newEntries.length === 2) {
+      newEntries[index === 0 ? 1 : 0].amount = -value;
+    }
+    setPreview({ ...preview, entries: newEntries });
+  };
+
   return (
-    <div className="w-full max-w-2xl mx-auto space-y-4">
-      <div className="relative">
+    <div className="w-full max-w-2xl mx-auto space-y-4 relative z-[100]">
+      {/* Compact Context Bar - High Z-Index relative to sibling sections */}
+      <div className="flex flex-wrap gap-2 items-center bg-muted/10 px-2 py-1 rounded-lg border border-border/30 backdrop-blur-xl relative z-30">
+        <div className="flex items-center gap-1.5 group cursor-pointer px-1">
+          <Calendar className="w-3 h-3 text-muted-foreground/50 group-hover:text-primary transition-colors" />
+          <input 
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="bg-transparent border-none p-0 focus:ring-0 text-[12px] font-semibold text-foreground/70"
+          />
+        </div>
+        <div className="h-3 w-px bg-border/30 mx-0.5" />
+        <div className="flex-1 min-w-[150px]">
+          <SearchableSelect
+            options={accountOptions}
+            value={selectedAccount}
+            onChange={setSelectedAccount}
+            placeholder="Account"
+            icon={Wallet}
+            className="border-none bg-transparent"
+          />
+        </div>
+        <div className="px-2 group relative">
+          <Info className="w-3 h-3 text-muted-foreground/30 hover:text-primary transition-colors cursor-help" />
+          <div className="absolute right-0 top-full mt-2 w-64 p-3 bg-popover border border-border rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[110] text-[10px] space-y-2 leading-relaxed">
+            <p className="font-bold border-b border-border pb-1 mb-1">Parsing Rules</p>
+            <ul className="list-disc pl-3 space-y-1">
+              <li><strong>Transfer:</strong> <code className="text-primary">from &gt; to amount [CURRENCY]</code></li>
+              <li><strong>Expense:</strong> <code className="text-primary">description amount [CURRENCY] [ACCOUNT]</code></li>
+              <li>Last number is always the <strong>amount</strong>.</li>
+              <li>Optional <strong>CURRENCY</strong> (3 letters) and <strong>ACCOUNT</strong> follow amount.</li>
+              <li>Rest of string is the <strong>description</strong>.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Input - Medium Z-Index relative to sibling sections */}
+      <div className="relative group z-20">
         <input
           ref={inputRef}
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Lunch 25.50 or assets:bank > expenses:food 50"
+          placeholder="New transaction..."
           className={cn(
-            "w-full bg-input text-foreground px-4 py-3 rounded-lg border-2 border-transparent",
-            "focus:outline-none focus:border-primary transition-all text-lg font-medium",
-            "placeholder:text-muted-foreground"
+            "w-full bg-input/40 text-foreground px-5 py-4 rounded-xl border border-border/40 backdrop-blur-md",
+            "focus:outline-none focus:border-primary/40 focus:bg-input/60 transition-all text-xl font-semibold shadow-[0_4px_20px_rgba(0,0,0,0.08)]",
+            "placeholder:text-muted-foreground/20"
           )}
           autoFocus
         />
-        <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
-          {mutation.isPending && <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />}
-          {mutation.isSuccess && <Check className="w-5 h-5 text-green-500" />}
-          {mutation.isError && <AlertCircle className="w-5 h-5 text-destructive" />}
+        
+        {suggestion && (
+          <div className="absolute left-5 top-1/2 -translate-y-1/2 pointer-events-none opacity-15 text-xl font-semibold">
+            <span className="invisible">{parseQuickEntry(input).description}</span>
+            <span>{suggestion.slice(parseQuickEntry(input).description.length)}</span>
+          </div>
+        )}
+
+        <div className="absolute right-5 top-1/2 -translate-y-1/2 flex items-center gap-2">
+          {mutation.isPending && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground/40" />}
+          {mutation.isSuccess && <Check className="w-4 h-4 text-green-500/60" />}
         </div>
       </div>
 
+      {/* Apple-style Staging Area - Lower Z-Index relative to sibling sections but above table */}
       {preview && (
-        <div className="bg-card border border-border rounded-lg p-4 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="flex justify-between items-start mb-4 border-b border-border pb-2">
-            <div>
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Preview</h3>
-              <p className="text-lg font-bold">{preview.description}</p>
+        <div className="bg-card/30 border border-border/40 rounded-xl shadow-[0_15px_40px_rgba(0,0,0,0.08)] backdrop-blur-2xl animate-in slide-in-from-bottom-2 duration-400 relative z-10">
+          <div className="p-4 space-y-4">
+            <div className="flex justify-between items-center border-b border-border/20 pb-2.5">
+              <input 
+                value={preview.description}
+                onChange={(e) => { setIsEdited(true); setPreview({...preview, description: e.target.value})}}
+                className="bg-transparent border-none p-0 focus:ring-0 text-[15px] font-bold text-foreground/80 w-full"
+                placeholder="Description"
+              />
+              <span className="text-[11px] font-bold text-muted-foreground/40 tracking-tight uppercase">{preview.date}</span>
             </div>
-            <div className="text-right">
-              <p className="text-sm text-muted-foreground">{preview.date}</p>
+
+            <div className="space-y-2">
+              {preview.entries.map((entry, i) => {
+                const isTransfer = parseQuickEntry(input).type === 'transfer';
+                const isPositive = entry.amount >= 0;
+                
+                let label = isPositive ? 'Category' : 'Source Account';
+                let Icon = isPositive ? Tag : Wallet;
+
+                if (isTransfer) {
+                  label = isPositive ? 'Destination Account' : 'Source Account';
+                  Icon = isPositive ? ArrowDownLeft : ArrowUpRight;
+                }
+
+                return (
+                  <div key={i} className="flex gap-2 items-center bg-background/20 p-0.5 rounded-lg border border-border/10 relative" style={{ zIndex: 10 - i }}>
+                    <div className="flex-1 min-w-0">
+                      <div className="px-2.5 pb-0.5 text-[9px] font-bold text-muted-foreground/40 uppercase tracking-wider">{label}</div>
+                      <SearchableSelect
+                        options={categoryOptions}
+                        topOptions={!isTransfer && isPositive ? topCategoryOptions : []}
+                        value={entry.account}
+                        onChange={(val) => updateEntryField(i, 'account', val)}
+                        placeholder="Select..."
+                        icon={Icon}
+                        className="border-none bg-transparent shadow-none"
+                      />
+                    </div>
+                    <div className="w-28 flex flex-col items-end bg-background/40 rounded-md border border-border/20 px-2 py-1">
+                      <div className="text-[9px] font-bold text-muted-foreground/40 uppercase tracking-wider mb-0.5">Amount</div>
+                      <div className="flex items-center w-full">
+                        <span className="text-muted-foreground/40 mr-1 text-[12px] font-bold">$</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={Math.abs(entry.amount) || ''}
+                          onChange={(e) => updateEntryField(i, 'amount', (isPositive ? 1 : -1) * parseFloat(e.target.value))}
+                          className={cn(
+                            "w-full bg-transparent border-none p-0 focus:ring-0 text-right font-mono text-[13px] font-bold",
+                            isPositive ? "text-green-500/80" : "text-destructive/70"
+                          )}
+                          placeholder="0.00"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
-          <div className="space-y-2">
-            {preview.entries.map((entry, i) => (
-              <div key={i} className="flex justify-between items-center text-sm">
-                <span className={cn(
-                  "font-mono",
-                  entry.account === 'expenses:unknown' || entry.account === 'assets:unknown' 
-                    ? "text-yellow-500" 
-                    : "text-primary"
-                )}>
-                  {entry.account}
-                </span>
-                <span className={cn(
-                  "font-bold",
-                  entry.amount < 0 ? "text-destructive" : "text-green-500"
-                )}>
-                  {entry.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-4 flex justify-end">
-            <p className="text-xs text-muted-foreground">
-              Press <kbd className="px-1.5 py-0.5 rounded border border-border bg-muted">Enter</kbd> to confirm • <kbd className="px-1.5 py-0.5 rounded border border-border bg-muted">Tab</kbd> to autocomplete
-            </p>
+          <div className="px-4 py-2.5 bg-muted/5 border-t border-border/20 flex justify-between items-center">
+            <div className="text-[10px] font-bold text-muted-foreground/30 flex gap-4 uppercase tracking-tighter">
+              <span><kbd className="opacity-40 font-sans">TAB</kbd> Jump</span>
+              {!isEdited && <span><kbd className="opacity-40 font-sans">ENTER</kbd> Quick Submit</span>}
+            </div>
+            
+            <button
+              onClick={confirmTransaction}
+              disabled={mutation.isPending || (preview.entries[0].amount === 0)}
+              className={cn(
+                "px-4 py-1.5 rounded-lg text-[12px] font-bold transition-all flex items-center gap-1.5",
+                (isEdited || !input) && !mutation.isPending
+                  ? "bg-primary text-primary-foreground shadow-md hover:brightness-105 active:scale-95"
+                  : "bg-muted/50 text-muted-foreground/50"
+              )}
+            >
+              {mutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+              {isEdited ? 'Done' : 'Confirm'}
+            </button>
           </div>
         </div>
       )}
 
       {mutation.isError && (
-        <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive rounded-md text-sm">
+        <div className="p-4 bg-destructive/5 border border-destructive/10 text-destructive/90 rounded-2xl text-[13px] font-medium flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+          <AlertCircle className="w-4 h-4" />
           {mutation.error.message}
         </div>
       )}

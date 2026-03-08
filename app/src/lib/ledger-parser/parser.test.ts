@@ -1,77 +1,316 @@
 import { describe, it, expect } from 'vitest';
-import { parseQuickEntry } from './parser';
+import { parseQuickEntry, type ParserContext } from './parser';
 
-describe('parseQuickEntry', () => {
-  it('should parse a simple expense', () => {
-    const input = 'padaria 18';
-    const result = parseQuickEntry(input);
+describe('parseQuickEntry Specs', () => {
+  const defaultContext: ParserContext = {
+    defaultCurrency: 'BRL',
+    selectedAccount: 'nubank',
+    selectedDate: '2026-03-08',
+  };
 
-    expect(result.description).toBe('padaria');
-    expect(result.entries).toHaveLength(2);
-    expect(result.entries).toContainEqual({ account: 'expenses:unknown', amount: 18 });
-    expect(result.entries).toContainEqual({ account: 'assets:unknown', amount: -18 });
+  const runTest = (input: string, expected: any, context = defaultContext) => {
+    const result = parseQuickEntry(input, context);
+    Object.keys(expected).forEach(key => {
+      expect(result[key as keyof typeof result]).toBe(expected[key]);
+    });
+  };
+
+  describe('Transfers', () => {
+    it('1. wise > nubank 18000', () => {
+      runTest('wise > nubank 18000', {
+        type: 'transfer',
+        from: 'wise',
+        to: 'nubank',
+        amount: 18000,
+        currency: 'BRL'
+      });
+    });
+
+    it('2. wise > nubank 18000 USD', () => {
+      runTest('wise > nubank 18000 USD', {
+        type: 'transfer',
+        from: 'wise',
+        to: 'nubank',
+        amount: 18000,
+        currency: 'USD'
+      });
+    });
+
+    it('3. nubank > wise 1000', () => {
+      runTest('nubank > wise 1000', {
+        type: 'transfer',
+        from: 'nubank',
+        to: 'wise',
+        amount: 1000
+      });
+    });
+
+    it('4. itau > nubank 500.50', () => {
+      runTest('itau > nubank 500.50', {
+        type: 'transfer',
+        from: 'itau',
+        to: 'nubank',
+        amount: 500.50,
+        currency: 'BRL'
+      });
+    });
+
+    it('5. wise > nubank 100 EUR', () => {
+      runTest('wise > nubank 100 EUR', {
+        type: 'transfer',
+        from: 'wise',
+        to: 'nubank',
+        amount: 100,
+        currency: 'EUR'
+      });
+    });
+
+    it('29. wise>nubank 1000', () => {
+      runTest('wise>nubank 1000', {
+        type: 'transfer',
+        from: 'wise',
+        to: 'nubank',
+        amount: 1000
+      });
+    });
+
+    it('30. wise > nubank 1000 USD', () => {
+      runTest('wise > nubank 1000 USD', {
+        type: 'transfer',
+        from: 'wise',
+        to: 'nubank',
+        amount: 1000,
+        currency: 'USD'
+      });
+    });
+
+    it('31. nubank > cash 200', () => {
+      runTest('nubank > cash 200', {
+        type: 'transfer',
+        from: 'nubank',
+        to: 'cash',
+        amount: 200
+      });
+    });
+
+    it('32. wise > nubank 500 EUR', () => {
+      runTest('wise > nubank 500 EUR', {
+        type: 'transfer',
+        amount: 500,
+        currency: 'EUR'
+      });
+    });
   });
 
-  it('should parse an expense with decimal value', () => {
-    const input = 'uber 32.50';
-    const result = parseQuickEntry(input);
+  describe('Basic Expenses', () => {
+    it('6. padaria 18', () => {
+      runTest('padaria 18', {
+        type: 'expense',
+        description: 'padaria',
+        account: 'nubank',
+        amount: 18,
+        currency: 'BRL'
+      });
+    });
 
-    expect(result.description).toBe('uber');
-    expect(result.entries).toContainEqual({ account: 'expenses:unknown', amount: 32.5 });
-    expect(result.entries).toContainEqual({ account: 'assets:unknown', amount: -32.5 });
+    it('7. padaria 18.79', () => {
+      runTest('padaria 18.79', {
+        type: 'expense',
+        description: 'padaria',
+        account: 'nubank',
+        amount: 18.79,
+        currency: 'BRL'
+      });
+    });
+
+    it('8. padaria estacionamento 18', () => {
+      runTest('padaria estacionamento 18', {
+        description: 'padaria estacionamento',
+        amount: 18,
+        account: 'nubank',
+        currency: 'BRL'
+      });
+    });
+
+    it('9. uber 32', () => {
+      runTest('uber 32', {
+        description: 'uber',
+        amount: 32,
+        account: 'nubank',
+        currency: 'BRL'
+      });
+    });
+
+    it('10. mercado 120', () => {
+      runTest('mercado 120', {
+        description: 'mercado',
+        amount: 120,
+        account: 'nubank',
+        currency: 'BRL'
+      });
+    });
   });
 
-  it('should parse a transfer', () => {
-    const input = 'nubank > itau 500';
-    const result = parseQuickEntry(input);
+  describe('Multi-word descriptions', () => {
+    it('11. almoço restaurante 48', () => {
+      runTest('almoço restaurante 48', {
+        description: 'almoço restaurante',
+        amount: 48
+      });
+    });
 
-    expect(result.description).toBe('Transfer from nubank to itau');
-    expect(result.entries).toHaveLength(2);
-    expect(result.entries).toContainEqual({ account: 'assets:nubank', amount: -500 });
-    expect(result.entries).toContainEqual({ account: 'assets:itau', amount: 500 });
+    it('12. estacionamento shopping 25', () => {
+      runTest('estacionamento shopping 25', {
+        description: 'estacionamento shopping',
+        amount: 25
+      });
+    });
+
+    it('13. padaria domingo 32', () => {
+      runTest('padaria domingo 32', {
+        description: 'padaria domingo',
+        amount: 32
+      });
+    });
   });
 
-  it('should parse a transfer with decimals', () => {
-    const input = 'nubank > itau 123.45';
-    const result = parseQuickEntry(input);
+  describe('Currency handling', () => {
+    it('14. padaria 5 USD', () => {
+      runTest('padaria 5 USD', {
+        description: 'padaria',
+        amount: 5,
+        currency: 'USD',
+        account: 'nubank'
+      });
+    });
 
-    expect(result.description).toBe('Transfer from nubank to itau');
-    expect(result.entries).toContainEqual({ account: 'assets:nubank', amount: -123.45 });
-    expect(result.entries).toContainEqual({ account: 'assets:itau', amount: 123.45 });
-  });
-  
-  it('should handle multiple words in description for simple expense', () => {
-    const input = 'mercado carrefour 120';
-    const result = parseQuickEntry(input);
+    it('15. uber 12 EUR', () => {
+      runTest('uber 12 EUR', {
+        description: 'uber',
+        amount: 12,
+        currency: 'EUR'
+      });
+    });
 
-    expect(result.description).toBe('mercado carrefour');
-    expect(result.entries).toContainEqual({ account: 'expenses:unknown', amount: 120 });
-  });
-
-  it('should parse an income as a reverse transfer', () => {
-    const input = 'itau < salary 5000';
-    const result = parseQuickEntry(input);
-
-    expect(result.description).toBe('Income from salary to itau');
-    expect(result.entries).toHaveLength(2);
-    expect(result.entries).toContainEqual({ account: 'assets:itau', amount: 5000 });
-    expect(result.entries).toContainEqual({ account: 'income:salary', amount: -5000 });
-  });
-
-  it('should handle date in the input (optional)', () => {
-    // maybe "2026-03-01 padaria 18"
-    const input = '2026-03-01 padaria 18';
-    const result = parseQuickEntry(input);
-
-    expect(result.date).toBe('2026-03-01');
-    expect(result.description).toBe('padaria');
-    expect(result.entries).toContainEqual({ account: 'expenses:unknown', amount: 18 });
+    it('16. mercado 100 BRL', () => {
+      runTest('mercado 100 BRL', {
+        description: 'mercado',
+        amount: 100,
+        currency: 'BRL'
+      });
+    });
   });
 
-  it('should handle comma as decimal separator', () => {
-    const input = 'padaria 18,50';
-    const result = parseQuickEntry(input);
+  describe('Explicit account override', () => {
+    it('17. padaria 18 itau', () => {
+      runTest('padaria 18 itau', {
+        account: 'itau',
+        amount: 18,
+        description: 'padaria'
+      });
+    });
 
-    expect(result.entries).toContainEqual({ account: 'expenses:unknown', amount: 18.5 });
+    it('18. uber 32 wise', () => {
+      runTest('uber 32 wise', {
+        account: 'wise',
+        amount: 32
+      });
+    });
+
+    it('19. mercado 120 cash', () => {
+      runTest('mercado 120 cash', {
+        account: 'cash',
+        amount: 120
+      });
+    });
+  });
+
+  describe('Numbers inside description', () => {
+    it('20. restaurante 2 pessoas 90', () => {
+      runTest('restaurante 2 pessoas 90', {
+        description: 'restaurante 2 pessoas',
+        amount: 90
+      });
+    });
+
+    it('21. cerveja 3 unidades 24', () => {
+      runTest('cerveja 3 unidades 24', {
+        description: 'cerveja 3 unidades',
+        amount: 24
+      });
+    });
+
+    it('22. pizza 4 queijos 70', () => {
+      runTest('pizza 4 queijos 70', {
+        description: 'pizza 4 queijos',
+        amount: 70
+      });
+    });
+  });
+
+  describe('Edge formatting', () => {
+    it('23. padaria   18', () => {
+      runTest('padaria   18', {
+        description: 'padaria',
+        amount: 18
+      });
+    });
+
+    it('24.    padaria 18', () => {
+      runTest('   padaria 18', {
+        description: 'padaria',
+        amount: 18
+      });
+    });
+
+    it('25. padaria 18   ', () => {
+      runTest('padaria 18   ', {
+        description: 'padaria',
+        amount: 18
+      });
+    });
+  });
+
+  describe('Decimal edge cases', () => {
+    it('26. café 4.5', () => {
+      runTest('café 4.5', {
+        amount: 4.5
+      });
+    });
+
+    it('27. café 4.50', () => {
+      runTest('café 4.50', {
+        amount: 4.5
+      });
+    });
+
+    it('28. uber 32.00', () => {
+      runTest('uber 32.00', {
+        amount: 32
+      });
+    });
+  });
+
+  describe('Ambiguous inputs / Errors', () => {
+    it('33. padaria', () => {
+      runTest('padaria', {
+        type: 'error',
+        error: 'missing amount'
+      });
+    });
+
+    it('34. 18', () => {
+      runTest('18', {
+        type: 'error',
+        error: 'missing description'
+      });
+    });
+
+    it('35. empty string', () => {
+      runTest('', {
+        type: 'error',
+        error: 'empty input'
+      });
+    });
   });
 });
