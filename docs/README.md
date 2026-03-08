@@ -9,6 +9,7 @@ The documentation is structured to clearly separate:
 - accounting rules
 - system architecture
 - database migration strategy
+- design guidelines
 
 AI agents implementing the system should read the documents **in the order below**.
 
@@ -19,10 +20,11 @@ AI agents implementing the system should read the documents **in the order below
 The recommended reading order is:
 
 1. PRODUCT.md
-2. DOMAINS.md
-3. LEDGER_RULES.md
-4. ARCHITECTURE.md
-5. MIGRATION_STRATEGY.md
+2. DESIGN_GUIDELINES.md
+3. DOMAINS.md
+4. LEDGER_RULES.md
+5. ARCHITECTURE.md
+6. MIGRATION_STRATEGY.md
 
 This order moves from **user behavior → domain model → implementation architecture**.
 
@@ -48,6 +50,22 @@ This document describes:
 - multi-currency support
 
 This document defines **what the system must do**.
+
+---
+
+## DESIGN_GUIDELINES.md
+
+Defines the **visual and interaction principles** for the user interface.
+
+This includes:
+
+- Apple-style aesthetic
+- dark mode requirements
+- typography (Geist)
+- spacing and density rules
+- motion and interaction feedback
+
+This document defines **how the system must look and feel**.
 
 ---
 
@@ -171,6 +189,7 @@ Each part of the system has a clear source of truth.
 | Concern              | Source                  |
 | -------------------- | ----------------------- |
 | Product behavior     | PRODUCT.md              |
+| Design principles    | DESIGN_GUIDELINES.md    |
 | Financial model      | DOMAINS.md              |
 | Accounting rules     | LEDGER_RULES.md         |
 | System architecture  | ARCHITECTURE.md         |

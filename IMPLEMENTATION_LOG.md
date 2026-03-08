@@ -165,3 +165,31 @@
 - `.env`
 - `.env.example`
 - `IMPLEMENTATION_LOG.md`
+
+---
+
+## 2026-03-08 - LedgerTable & Apple-style UI Implementation
+
+### Tasks
+- [x] Implement `LedgerTable` with compact, high-density layout
+- [x] Integrate `useInfiniteQuery` for infinite scroll support
+- [x] Add "Apple-style" interactive expansion for transaction details
+- [x] Implement sticky date headers with backdrop-blur
+- [x] Color-code transaction values (Red for expenses, Green for income)
+- [x] Display full hierarchical categories and account names
+- [x] Add `scroll-smooth` and refined tactile hover/active states
+- [x] Enhance `api.ts` with pagination support and improved TypeScript interfaces
+
+### Decisions
+- Switched from a table-based model to a flattened list of headers and transaction rows for better flexibility and design control.
+- Used a responsive grid (`grid-cols-[1.5fr_1fr_1fr_120px]`) to ensure alignment across different screen sizes while maintaining a compact feel.
+- Chose `max-h-96` and `opacity` transitions for the expansion effect to ensure it feels smooth and "native".
+- Enforced a `BRL` default but supported multi-currency formatting via `Intl.NumberFormat`.
+- Categorized transactions into `expense`, `income`, and `transfer` types to drive the visual logic (colors and prefixes).
+
+### Files Created/Modified
+- `app/src/components/LedgerTable.tsx`
+- `app/src/App.tsx`
+- `app/src/lib/api.ts`
+- `app/src/index.css`
+- `IMPLEMENTATION_LOG.md`

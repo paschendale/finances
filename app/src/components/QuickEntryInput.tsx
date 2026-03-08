@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { parseQuickEntry, type TransactionPreview } from '@/lib/ledger-parser/parser';
-import { fetchAccounts, createTransaction, type Account, type Transaction, type Entry } from '@/lib/api';
+import { fetchAccounts, createTransaction } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Check, Loader2, AlertCircle } from 'lucide-react';
 
@@ -74,7 +74,7 @@ export function QuickEntryInput() {
     if (!preview || !accounts) return;
 
     try {
-      const transaction: Transaction = {
+      const transaction = {
         date: preview.date,
         description: preview.description,
         entries: preview.entries.map(e => {

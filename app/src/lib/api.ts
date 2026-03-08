@@ -8,7 +8,10 @@ export interface Account {
 }
 
 export interface Entry {
+  id: string;
   account_id: string;
+  account_name: string;
+  account_type: string;
   amount: number;
   currency: string;
   exchange_rate: number;
@@ -16,8 +19,10 @@ export interface Entry {
 }
 
 export interface Transaction {
+  id: string;
   date: string;
   description: string;
+  metadata?: Record<string, any>;
   entries: Entry[];
 }
 
@@ -29,7 +34,15 @@ export async function fetchAccounts(): Promise<Account[]> {
   return response.json();
 }
 
-export async function createTransaction(transaction: Transaction) {
+export async function fetchTransactions(limit = 100, offset = 0): Promise<Transaction[]> {
+  const response = await fetch(`${API_URL}/transactions_with_entries?order=date.desc,id.desc&limit=${limit}&offset=${offset}`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch transactions');
+  }
+  return response.json();
+}
+
+export async function createTransaction(transaction: Omit<Transaction, 'id' | 'entries'> & { entries: Omit<Entry, 'id' | 'account_name' | 'account_type'>[] }) {
   const response = await fetch(`${API_URL}/rpc/create_transaction`, {
     method: 'POST',
     headers: {

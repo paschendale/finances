@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { QuickEntryInput } from '@/components/QuickEntryInput';
+import { LedgerTable } from '@/components/LedgerTable';
 
 const queryClient = new QueryClient();
 
@@ -18,6 +19,7 @@ function App() {
 
         <main className="w-full max-w-4xl">
           <QuickEntryInput />
+          <LedgerTable />
         </main>
       </div>
     </QueryClientProvider>
