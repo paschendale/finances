@@ -35,7 +35,7 @@ export async function fetchAccounts(): Promise<Account[]> {
 }
 
 export async function fetchTransactions(limit = 100, offset = 0): Promise<Transaction[]> {
-  const response = await fetch(`${API_URL}/transactions_with_entries?order=date.desc,id.desc&limit=${limit}&offset=${offset}`);
+  const response = await fetch(`${API_URL}/transactions_with_entries?order=date.desc,created_at.desc&limit=${limit}&offset=${offset}`);
   if (!response.ok) {
     throw new Error('Failed to fetch transactions');
   }
@@ -67,7 +67,7 @@ export interface DescriptionMemory {
 }
 
 export async function fetchDescriptionMemories(): Promise<DescriptionMemory[]> {
-  const response = await fetch(`${API_URL}/description_memories_with_names`);
+  const response = await fetch(`${API_URL}/description_memories_with_names?order=updated_at.desc`);
   if (!response.ok) {
     throw new Error('Failed to fetch description memories');
   }

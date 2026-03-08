@@ -295,25 +295,23 @@
 
 ---
 
-## 2026-03-08 - Hierarchical Accounts & Split Category Support
+## 2026-03-08 - Strict Ordering & Smart Defaults Refinement
 
 ### Tasks
-- [x] Update database views (`account_balances`, `transactions_with_entries`, `category_totals`) to support full hierarchical paths using recursive CTE
-- [x] Implement hierarchical display in `SearchableSelect` (breadcrumbs for path + bold leaf name)
-- [x] Enhance `QuickEntryInput` to support split categories in the staging area
-- [x] Add "Add Category Split" and "Remove Split" functionality in the preview
-- [x] Implement intelligent balance logic for splits (source account auto-balances against multiple categories)
-- [x] Improve `SearchableSelect` searching to include full hierarchical paths
-- [x] Fix `z-index` stacking for multiple split entries in the preview
+- [x] Update `transactions_with_entries` view to drop and recreate with strict `created_at DESC` ordering
+- [x] Ensure entries within a transaction are also ordered by `created_at DESC`
+- [x] Update `description_memories_with_names` to use hierarchical paths and order by `updated_at DESC`
+- [x] Update `fetchTransactions` API to order by `date.desc, created_at.desc`
+- [x] Update `fetchDescriptionMemories` API to explicitly request `updated_at.desc` ordering
+- [x] Verify `QuickEntryInput` and `LedgerTable` correctly consume the new ordered data
 
 ### Decisions
-- Chose a recursive CTE in Postgres to build the `full_name` (e.g., `expenses:food:grocery`) dynamically, ensuring the frontend always has the full context without extra complexity.
-- In `SearchableSelect`, the button label shows only the "leaf" name to keep the UI clean, while the dropdown shows the full path as breadcrumbs.
-- For splits, the source account (negative entry) is automatically calculated as the negative sum of all other entries, simplifying the user experience.
-- Prevented splits in "Transfer" mode to maintain clarity, as transfers are typically 1-to-1.
+- Standardized on `created_at DESC` across all levels (transactions and entries) to ensure the most recent items are always at the top, even when they share the same date.
+- Dropped the `transactions_with_entries` view before recreating it to avoid Postgres "cannot change name of view column" errors when adding or reordering columns.
+- Explicitly requested ordering in API calls even when views have a default `ORDER BY`, ensuring robustness against view changes.
 
 ### Files Created/Modified
-- `migrations/0013_hierarchical_account_names.sql`
-- `app/src/components/QuickEntryInput.tsx`
+- `migrations/0014_fix_ordering_and_smart_defaults.sql`
+- `app/src/lib/api.ts`
 - `IMPLEMENTATION_LOG.md`
 
