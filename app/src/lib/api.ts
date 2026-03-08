@@ -48,6 +48,28 @@ export interface CategoryUsage {
   total: number;
 }
 
+export interface DashboardEntry {
+  date: string;
+  amount_base: number;
+  account_name: string;
+  account_type: string;
+  account_id: string;
+}
+
+export async function fetchDashboardData(startDate?: string, endDate?: string): Promise<DashboardEntry[]> {
+  let url = `${API_URL}/dashboard_data`;
+  const params = new URLSearchParams();
+  if (startDate) params.append('date', `gte.${startDate}`);
+  if (endDate) params.append('date', `lte.${endDate}`);
+  if (params.toString()) url += `?${params.toString()}`;
+  
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error('Failed to fetch dashboard data');
+  }
+  return response.json();
+}
+
 export async function fetchCategoryUsage(): Promise<CategoryUsage[]> {
   const response = await fetch(`${API_URL}/category_totals?order=total.desc&limit=10`);
   if (!response.ok) {

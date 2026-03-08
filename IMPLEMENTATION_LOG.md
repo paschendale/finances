@@ -321,14 +321,39 @@
 - Added `updated_at` to `transactions`, `accounts`, and `entries` to fix a runtime error in the `update_transaction` RPC and support better auditing.
 - Excluded `created_at` from the entries array sent to the API to minimize payload and ensure the database handles temporal data correctly.
 
-### Files Created/Modified
-- `migrations/0016_add_updated_at.sql`
-- `app/src/lib/api.ts`
-- `IMPLEMENTATION_LOG.md`
-
 ---
 
-## 2026-03-08 - API Compatibility Fix
+## 2026-03-08 - Dashboard Implementation
+
+### Tasks
+- [x] Create migration `0017_dashboard_view.sql` with `dashboard_data` view
+- [x] Install `recharts` and `date-fns` frontend dependencies
+- [x] Implement `Dashboard` component with Apple-style aesthetics
+- [x] Add Account Balances panel (Assets, Liabilities, Net Worth)
+- [x] Implement hierarchical Expense Pie Chart (Level 1, 2, 3 support)
+- [x] Implement Income Sources Pie Chart
+- [x] Implement Monthly Trends Line Chart (Income vs Expenses)
+- [x] Add Date Range filters with presets (This Month, Prev Month, This Year, Prev Year)
+- [x] Add Custom Date Range support
+- [x] Implement Category filtering via Pie Chart interaction
+- [x] Integrate View Switcher in `App.tsx` (Dashboard/Ledger)
+
+### Decisions
+- Created a specialized `dashboard_data` view to provide a flat stream of entries with hierarchical account names for flexible frontend aggregation.
+- Chose `recharts` for its declarative API and ease of integration with React.
+- Used `date-fns` for robust date manipulation and formatting in filters.
+- Implemented an "Apple-like" design using `backdrop-blur-xl`, soft gradients, and rounded corners (`rounded-[2rem]`).
+- Defaulted the app view to the Dashboard for immediate financial overview.
+- Handled multi-level category grouping in the frontend to allow real-time switching between summary and detail levels without extra API calls.
+
+### Files Created/Modified
+- `migrations/0017_dashboard_view.sql`
+- `app/src/lib/api.ts`
+- `app/src/components/Dashboard.tsx`
+- `app/src/App.tsx`
+- `app/package.json`
+- `IMPLEMENTATION_LOG.md`
+
 
 ### Tasks
 - [x] Create migration `0010_fix_api_compatibility.sql` to restore original parameter names
