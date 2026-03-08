@@ -10,7 +10,7 @@
 - [x] Set up TailwindCSS v4 and shadcn/ui
 - [x] Install frontend dependencies (`TanStack Table`, `TanStack Query`, `Zustand`)
 - [x] Configure environment variables (`.env`, `.env.example`)
-- [x] Track API deployment (`API_URL` in `.env`)
+- [x] Track API deployment (`VITE_APP_API_URL` in `.env`)
 
 ### Decisions
 - Using Python `psycopg2` for the migration script as it's a standard for Postgres interaction in Python.
@@ -19,7 +19,7 @@
 - `id` uses `UUID` with `gen_random_uuid()`.
 - Using TailwindCSS v4 with `@tailwindcss/vite` plugin.
 - Path aliases configured as `@/` for `src/`.
-- Deployment exposes `API_URL` for frontend consumption.
+- Deployment exposes `VITE_APP_API_URL` for frontend consumption.
 
 ### Files Created/Modified
 - `scripts/migrate.py`
@@ -134,9 +134,34 @@
 - Included support for optional date prefix to allow historical entries via quick entry.
 - Added TDD requirement to `RULES.md` for logic-heavy parts of the system.
 
+---
+
+## 2026-03-08 - QuickEntryInput Implementation & Environment Fix
+
+### Tasks
+- [x] Create API client (`app/src/lib/api.ts`) for accounts and transactions
+- [x] Implement `QuickEntryInput` component with TDD-based parser integration
+- [x] Implement Tab autocomplete for account names
+- [x] Implement transaction preview with real-time feedback
+- [x] Configure dark mode as the default theme
+- [x] Set up TanStack Query in `App.tsx`
+- [x] Fix environment variable loading by renaming `API_URL` to `VITE_APP_API_URL`
+- [x] Configure Vite to load `.env` from project root (`envDir: ".."`)
+- [x] Fix TypeScript interface imports using `import type` to prevent runtime errors
+
+### Decisions
+- Using `fetch` for API calls to keep dependencies minimal.
+- Autocomplete uses a simple `includes` match on the account names fetched from the database.
+- The UI is designed for a keyboard-first experience, with `Enter` to confirm and `Tab` to autocomplete.
+- Dark mode is enforced via the `.dark` class in `App.tsx`.
+- Defaulted currency to `BRL` for quick entry, as most entries will be in the local currency.
+- Moved `.env` loading to the root level to centralize configuration for both scripts and frontend.
+
 ### Files Created/Modified
-- `app/package.json`
-- `app/src/lib/ledger-parser/parser.ts`
-- `app/src/lib/ledger-parser/parser.test.ts`
-- `RULES.md`
+- `app/src/lib/api.ts`
+- `app/src/components/QuickEntryInput.tsx`
+- `app/src/App.tsx`
+- `app/vite.config.ts`
+- `.env`
+- `.env.example`
 - `IMPLEMENTATION_LOG.md`
