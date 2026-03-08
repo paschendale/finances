@@ -111,3 +111,32 @@
 - `db/views/category_totals.sql`
 - `docs/API_CONTRACT.md`
 - `IMPLEMENTATION_LOG.md`
+
+---
+
+## 2026-03-08 - Quick Entry Parser Implementation
+
+### Tasks
+- [x] Install `vitest` for frontend testing
+- [x] Implement `parseQuickEntry` in `app/src/lib/ledger-parser/`
+- [x] Add comprehensive test suite using TDD
+- [x] Support for simple expenses (`description amount`)
+- [x] Support for transfers (`from > to amount`)
+- [x] Support for income (`to < from amount`)
+- [x] Support for date prefix (`YYYY-MM-DD ...`)
+- [x] Support for Brazilian decimal format (comma)
+- [x] Update `RULES.md` to include TDD guidelines
+
+### Decisions
+- Chose `app/src/lib/ledger-parser` as the location for the parser logic and tests.
+- Implemented a regex-based parser for simplicity and speed.
+- Defaulted unknown accounts to `expenses:unknown` or `assets:unknown` to be refined in the UI preview.
+- Included support for optional date prefix to allow historical entries via quick entry.
+- Added TDD requirement to `RULES.md` for logic-heavy parts of the system.
+
+### Files Created/Modified
+- `app/package.json`
+- `app/src/lib/ledger-parser/parser.ts`
+- `app/src/lib/ledger-parser/parser.test.ts`
+- `RULES.md`
+- `IMPLEMENTATION_LOG.md`

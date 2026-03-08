@@ -196,6 +196,16 @@ Agents should resolve items from `LEDGER.md` whenever possible.
 
 ---
 
+# Testing
+
+For logic-heavy components (parsers, calculators, complex state transitions), use **Test-Driven Development (TDD)**.
+
+- Install and use `vitest` for frontend unit tests.
+- Ensure all business rules are covered by tests.
+- Tests should be kept close to the implementation (e.g., `filename.test.ts`).
+
+---
+
 # General Rule
 
 Prefer the **simplest working solution**.
