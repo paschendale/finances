@@ -1,4 +1,4 @@
--- RPC function to create a transaction with its entries
+-- Improve smart defaults heuristic to better handle transfers and capture currency correctly
 DROP FUNCTION IF EXISTS create_transaction(DATE, TEXT, JSONB);
 DROP FUNCTION IF EXISTS create_transaction(p_date DATE, p_description TEXT, p_entries JSONB);
 

@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { parseQuickEntry, type TransactionPreview } from '@/lib/ledger-parser/parser';
-import { fetchAccounts, fetchTransactions, createTransaction, fetchCategoryUsage } from '@/lib/api';
+import { fetchAccounts, fetchTransactions, createTransaction, fetchCategoryUsage, fetchDescriptionMemories, fetchGlobalSettings } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { Check, Loader2, AlertCircle, Calendar, Wallet, Tag, ChevronDown, Search, Info, ArrowRight, ArrowLeft, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
+import { Check, Loader2, AlertCircle, Calendar, Wallet, Tag, ChevronDown, Search, Info, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
 
 // --- SearchableSelect Component ---
 interface Option {
@@ -155,19 +155,62 @@ export function QuickEntryInput() {
     queryFn: fetchCategoryUsage,
   });
 
+  const { data: descriptionMemories } = useQuery({
+    queryKey: ['descriptionMemories'],
+    queryFn: fetchDescriptionMemories,
+  });
+
+  const { data: globalSettings } = useQuery({
+    queryKey: ['globalSettings'],
+    queryFn: fetchGlobalSettings,
+  });
+
   const accountOptions = useMemo(() => 
     (accounts || []).filter(a => a.account_type === 'asset' || a.account_type === 'liability' || a.account_type === 'equity').map(a => ({ label: a.account_name, value: a.account_name })),
   [accounts]);
 
-  const categoryOptions = useMemo(() => 
+  const allAccountOptions = useMemo(() => 
     (accounts || [])
-      .filter(a => ['expense', 'income', 'asset', 'liability'].includes(a.account_type))
       .map(a => ({ label: a.account_name, value: a.account_name })),
   [accounts]);
 
   const topCategoryOptions = useMemo(() => 
     (topCategories || []).map(c => ({ label: c.category_name, value: c.category_name })),
   [topCategories]);
+
+  const lastUsedCurrency = useMemo(() => 
+    globalSettings?.find(s => s.key === 'last_used_currency')?.value || 'BRL',
+  [globalSettings]);
+
+  const lastUsedAccountId = useMemo(() => 
+    globalSettings?.find(s => s.key === 'last_used_account_id')?.value,
+  [globalSettings]);
+
+  const lastUsedAccount = useMemo(() => {
+    if (lastUsedAccountId && accounts) {
+      const match = accounts.find(a => a.account_id === lastUsedAccountId);
+      if (match) return match.account_name;
+    }
+    // Fallback to most recent transaction's asset account if global settings are empty
+    if (transactions && transactions.length > 0) {
+      const recentAsset = transactions[0].entries.find(e => ['asset', 'liability', 'equity'].includes(e.account_type));
+      if (recentAsset) return recentAsset.account_name;
+    }
+    // Final fallback to first available asset/liability account
+    return accountOptions[0]?.value || '';
+  }, [lastUsedAccountId, accounts, transactions, accountOptions]);
+
+  const memoryMap = useMemo(() => {
+    const map = new Map<string, { category: string, account: string, currency: string }>();
+    (descriptionMemories || []).forEach(m => {
+      map.set(m.description.toLowerCase(), {
+        category: m.category_name,
+        account: m.account_name,
+        currency: m.currency
+      });
+    });
+    return map;
+  }, [descriptionMemories]);
 
   const mutation = useMutation({
     mutationFn: createTransaction,
@@ -177,33 +220,24 @@ export function QuickEntryInput() {
       setIsEdited(false);
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['descriptionMemories'] });
+      queryClient.invalidateQueries({ queryKey: ['globalSettings'] });
       if (inputRef.current) inputRef.current.focus();
     },
   });
 
-  // Smart defaults logic
-  const history = useMemo(() => {
-    if (!transactions) return { descriptions: [], mappings: new Map<string, string>(), lastAccount: '' };
-    
-    const descriptions = Array.from(new Set(transactions.map(t => t.description)));
-    const mappings = new Map<string, string>();
-    
-    transactions.forEach(t => {
-      const expenseEntry = t.entries.find(e => e.account_name.startsWith('expenses:'));
-      if (expenseEntry) mappings.set(t.description.toLowerCase(), expenseEntry.account_name);
-    });
-
-    const lastAccount = transactions[0]?.entries.find(e => e.account_name.startsWith('assets:'))?.account_name || '';
-
-    return { descriptions, mappings, lastAccount };
+  // Descriptions for autocomplete still come from transaction history
+  const historyDescriptions = useMemo(() => {
+    if (!transactions) return [];
+    return Array.from(new Set(transactions.map(t => t.description)));
   }, [transactions]);
 
-  // Sync default account from history if not set
+  // Sync default account from global settings
   useEffect(() => {
-    if (history.lastAccount && !selectedAccount) {
-      setSelectedAccount(history.lastAccount);
+    if (lastUsedAccount && !selectedAccount) {
+      setSelectedAccount(lastUsedAccount);
     }
-  }, [history.lastAccount, selectedAccount]);
+  }, [lastUsedAccount, selectedAccount]);
 
   useEffect(() => {
     if (!input.trim()) {
@@ -216,13 +250,13 @@ export function QuickEntryInput() {
     const parsed = parseQuickEntry(input, {
       selectedAccount,
       selectedDate,
-      defaultCurrency: 'BRL',
+      defaultCurrency: lastUsedCurrency,
     });
     
     // Description Autocomplete
     const lowerInput = parsed.description.toLowerCase();
     if (lowerInput.length > 1) {
-      const match = history.descriptions.find(d => d.toLowerCase().startsWith(lowerInput));
+      const match = historyDescriptions.find(d => d.toLowerCase().startsWith(lowerInput));
       setSuggestion(match && match.toLowerCase() !== lowerInput ? match : null);
     } else {
       setSuggestion(null);
@@ -235,8 +269,8 @@ export function QuickEntryInput() {
       }
 
       if (parsed.type === 'transfer') {
-        const fromAccount = accountOptions.find(o => o.value.toLowerCase().includes(parsed.from!.toLowerCase()))?.value || `assets:${parsed.from}`;
-        const toAccount = accountOptions.find(o => o.value.toLowerCase().includes(parsed.to!.toLowerCase()))?.value || `assets:${parsed.to}`;
+        const fromAccount = allAccountOptions.find(o => o.value.toLowerCase().includes(parsed.from!.toLowerCase()))?.value || `assets:${parsed.from}`;
+        const toAccount = allAccountOptions.find(o => o.value.toLowerCase().includes(parsed.to!.toLowerCase()))?.value || `assets:${parsed.to}`;
         
         setPreview({
           date: parsed.date!,
@@ -247,15 +281,18 @@ export function QuickEntryInput() {
           ],
         });
       } else {
-        const historyCategory = history.mappings.get(parsed.description.toLowerCase());
-        const categoryFallback = topCategoryOptions[0]?.value || categoryOptions.find(o => o.value.startsWith('expenses:'))?.value || 'expenses:unknown';
-        const category = parsed.account === selectedAccount ? (historyCategory || categoryFallback) : parsed.account!;
-        const account = parsed.account === selectedAccount ? selectedAccount : (parsed.account || selectedAccount);
+        const memory = memoryMap.get(parsed.description.toLowerCase());
+        const categoryFallback = topCategoryOptions[0]?.value || allAccountOptions.find(o => o.value.startsWith('expenses:'))?.value || 'expenses:unknown';
         
-        // Use logic from test cases: if account is override, parsed.account contains it
-        const finalAccountName = parsed.account || selectedAccount;
-        const finalAccount = accountOptions.find(o => o.value.toLowerCase().includes(finalAccountName.toLowerCase()))?.value || `assets:${finalAccountName}`;
-        const finalCategory = historyCategory || categoryFallback;
+        const finalAccountName = parsed.account || (memory?.account) || selectedAccount;
+        
+        // Robust account resolution
+        const accountMatch = allAccountOptions.find(o => o.value.toLowerCase() === finalAccountName.toLowerCase() || o.value.toLowerCase().includes(finalAccountName.toLowerCase()));
+        const finalAccount = accountMatch ? accountMatch.value : (finalAccountName.includes(':') ? finalAccountName : `assets:${finalAccountName}`);
+
+        const memoryCategoryName = memory?.category;
+        const categoryMatch = memoryCategoryName ? allAccountOptions.find(o => o.value === memoryCategoryName) : null;
+        const finalCategory = categoryMatch ? categoryMatch.value : categoryFallback;
 
         setPreview({
           date: parsed.date!,
@@ -267,7 +304,7 @@ export function QuickEntryInput() {
         });
       }
     }
-  }, [input, history, isEdited, selectedAccount, selectedDate, topCategoryOptions, categoryOptions]);
+  }, [input, historyDescriptions, memoryMap, isEdited, selectedAccount, selectedDate, topCategoryOptions, allAccountOptions, lastUsedCurrency, accountOptions]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Tab' && suggestion) {
@@ -295,7 +332,7 @@ export function QuickEntryInput() {
           return {
             account_id: account.account_id,
             amount: e.amount,
-            currency: 'BRL',
+            currency: lastUsedCurrency,
             exchange_rate: 1.0,
             amount_base: e.amount,
           };
@@ -419,7 +456,7 @@ export function QuickEntryInput() {
                     <div className="flex-1 min-w-0">
                       <div className="px-2.5 pb-0.5 text-[9px] font-bold text-muted-foreground/40 uppercase tracking-wider">{label}</div>
                       <SearchableSelect
-                        options={categoryOptions}
+                        options={allAccountOptions}
                         topOptions={!isTransfer && isPositive ? topCategoryOptions : []}
                         value={entry.account}
                         onChange={(val) => updateEntryField(i, 'account', val)}

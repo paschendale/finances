@@ -56,13 +56,48 @@ export async function fetchCategoryUsage(): Promise<CategoryUsage[]> {
   return response.json();
 }
 
+export interface DescriptionMemory {
+  description: string;
+  category_id: string;
+  category_name: string;
+  account_id: string;
+  account_name: string;
+  currency: string;
+  updated_at: string;
+}
+
+export async function fetchDescriptionMemories(): Promise<DescriptionMemory[]> {
+  const response = await fetch(`${API_URL}/description_memories_with_names`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch description memories');
+  }
+  return response.json();
+}
+
+export interface GlobalSetting {
+  key: string;
+  value: string;
+}
+
+export async function fetchGlobalSettings(): Promise<GlobalSetting[]> {
+  const response = await fetch(`${API_URL}/global_settings`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch global settings');
+  }
+  return response.json();
+}
+
 export async function createTransaction(transaction: Omit<Transaction, 'id' | 'entries'> & { entries: Omit<Entry, 'id' | 'account_name' | 'account_type'>[] }) {
   const response = await fetch(`${API_URL}/rpc/create_transaction`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(transaction),
+    body: JSON.stringify({
+      p_date: transaction.date,
+      p_description: transaction.description,
+      p_entries: transaction.entries,
+    }),
   });
 
   if (!response.ok) {

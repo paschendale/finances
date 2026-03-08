@@ -1,11 +1,11 @@
--- RPC function to create a transaction with its entries
+-- Revert parameter names to keep API compatibility but fix ambiguity using function prefix
 DROP FUNCTION IF EXISTS create_transaction(DATE, TEXT, JSONB);
 DROP FUNCTION IF EXISTS create_transaction(p_date DATE, p_description TEXT, p_entries JSONB);
 
 CREATE OR REPLACE FUNCTION create_transaction(
-  p_date DATE,
-  p_description TEXT,
-  p_entries JSONB
+  date DATE,
+  description TEXT,
+  entries JSONB
 ) RETURNS JSONB AS $$
 DECLARE
   v_transaction_id UUID;
@@ -20,12 +20,13 @@ DECLARE
   v_currency TEXT;
 BEGIN
   -- 1. Insert transaction
+  -- Use function name prefix to resolve ambiguity: create_transaction.date
   INSERT INTO transactions (date, description)
-  VALUES (p_date, p_description)
+  VALUES (create_transaction.date, create_transaction.description)
   RETURNING id INTO v_transaction_id;
 
   -- 2. Insert entries
-  FOR v_entry IN SELECT * FROM jsonb_array_elements(p_entries)
+  FOR v_entry IN SELECT * FROM jsonb_array_elements(create_transaction.entries)
   LOOP
     INSERT INTO entries (
       transaction_id,
@@ -60,7 +61,6 @@ BEGIN
   -- 5. Update smart defaults
   
   -- Heuristic to find primary accounts
-  -- Category (Destination): First expense or income account, else the positive entry
   SELECT e.account_id INTO v_category_id
   FROM entries e
   JOIN accounts a ON e.account_id = a.id
@@ -68,36 +68,31 @@ BEGIN
     AND a.type IN ('expense', 'income')
   LIMIT 1;
   
+  SELECT e.account_id, e.currency INTO v_account_id, v_currency
+  FROM entries e
+  JOIN accounts a ON e.account_id = a.id
+  WHERE e.transaction_id = v_transaction_id
+    AND a.type IN ('asset', 'liability', 'equity')
+  LIMIT 1;
+
   IF v_category_id IS NULL THEN
       SELECT e.account_id INTO v_category_id
       FROM entries e
       WHERE e.transaction_id = v_transaction_id AND e.amount > 0
       LIMIT 1;
   END IF;
-
-  -- Account (Source): First asset/liability account that is NOT the category, else the negative entry
-  SELECT e.account_id, e.currency INTO v_account_id, v_currency
-  FROM entries e
-  JOIN accounts a ON e.account_id = a.id
-  WHERE e.transaction_id = v_transaction_id
-    AND a.type IN ('asset', 'liability', 'equity')
-    AND e.account_id != COALESCE(v_category_id, '00000000-0000-0000-0000-000000000000'::UUID)
-  ORDER BY (e.amount < 0) DESC -- Prefer negative (source) account
-  LIMIT 1;
   
   IF v_account_id IS NULL THEN
-      SELECT e.account_id, e.currency INTO v_account_id, v_currency
+      SELECT e.account_id INTO v_account_id
       FROM entries e
-      WHERE e.transaction_id = v_transaction_id 
-        AND e.amount < 0
-        AND e.account_id != COALESCE(v_category_id, '00000000-0000-0000-0000-000000000000'::UUID)
+      WHERE e.transaction_id = v_transaction_id AND e.amount < 0
       LIMIT 1;
   END IF;
 
   -- If we have both, update the description-based memory
   IF v_category_id IS NOT NULL AND v_account_id IS NOT NULL THEN
       INSERT INTO description_memories (description, category_id, account_id, currency, updated_at)
-      VALUES (p_description, v_category_id, v_account_id, v_currency, now())
+      VALUES (create_transaction.description, v_category_id, v_account_id, v_currency, now())
       ON CONFLICT (description) DO UPDATE SET
           category_id = EXCLUDED.category_id,
           account_id = EXCLUDED.account_id,

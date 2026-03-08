@@ -247,9 +247,72 @@
 - Prevented automatic submission of edited previews to ensure users verify manual changes.
 - Integrated `ParserContext` into the parser to support smart defaults based on the current UI state (selected account/date).
 
+---
+
+## 2026-03-08 - Smart Defaults System Implementation
+
+### Tasks
+- [x] Create migration `0007_smart_defaults.sql` with `description_memories` and `global_settings` tables
+- [x] Update `create_transaction` RPC in `0008_update_create_transaction_rpc.sql` to automatically learn from new transactions
+- [x] Add heuristic in RPC to identify "category" (expense/income) and "account" (asset/liability)
+- [x] Implement persistent storage for `last_used_account` and `last_used_currency`
+- [x] Create view `description_memories_with_names` for efficient frontend fetching
+- [x] Update `app/src/lib/api.ts` with new fetch functions
+- [x] Refactor `QuickEntryInput.tsx` to use the new smart defaults system instead of local memory heuristics
+- [x] Ensure automatic cache invalidation of memories after successful transaction submission
+- [x] Cleanup unused imports and verify build
+
+### Decisions
+- Chose to handle memory updates directly in the `create_transaction` PL/pgSQL function to ensure atomicity and reduce API roundtrips.
+- Implemented a heuristic in SQL to distinguish between categories and accounts based on account types (`expense`/`income` vs others).
+- `global_settings` stores the last used asset account and currency globally, while `description_memories` provides fine-grained defaults per description.
+- Replaced the previous `useMemo`-based history mapping in the frontend with a robust database-backed system.
+- Default currency now flows from `global_settings` instead of being hardcoded to `BRL`.
+
 ### Files Created/Modified
-- `app/src/lib/ledger-parser/parser.ts`
-- `app/src/lib/ledger-parser/parser.test.ts`
+- `migrations/0007_smart_defaults.sql`
+- `migrations/0008_update_create_transaction_rpc.sql`
+- `migrations/0009_fix_ambiguous_params.sql`
+- `migrations/0010_fix_api_compatibility.sql`
+- `db/functions/create_transaction.sql` (updated reference)
+- `app/src/lib/api.ts`
 - `app/src/components/QuickEntryInput.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
+## 2026-03-08 - API Compatibility Fix
+
+### Tasks
+- [x] Create migration `0010_fix_api_compatibility.sql` to restore original parameter names
+- [x] Revert `p_*` prefix to maintain compatibility with existing frontend/curl requests
+- [x] Resolve column/parameter ambiguity using function name prefix (e.g., `create_transaction.date`)
+- [x] Update reference SQL file in `db/functions/`
+
+### Decisions
+- Restored original parameter names (`date`, `description`, `entries`) because PostgREST uses them as JSON keys in RPC calls.
+- Switched to using `create_transaction.<param_name>` inside the PL/pgSQL function to disambiguate from table columns.
+
+---
+
+## 2026-03-08 - Smart Defaults Heuristic Refinement & RPC Alignment
+
+### Tasks
+- [x] Refine smart defaults heuristic in `create_transaction` RPC
+- [x] Ensure `v_currency` is captured correctly even in fallback scenarios
+- [x] Improve transfer handling by explicitly distinguishing source (negative) and destination (positive) accounts
+- [x] Align `db/functions/create_transaction.sql` with migration `0011` (using `p_` prefix)
+- [x] Create migration `0012_improve_smart_defaults_heuristic.sql` to apply improvements
+- [x] Verify API compatibility with `p_` parameter prefixes in `app/src/lib/api.ts`
+
+### Decisions
+- Modified the heuristic to ensure `v_category_id` (destination) and `v_account_id` (source) are distinct, especially for transfers between two asset accounts.
+- Added `ORDER BY (e.amount < 0) DESC` when selecting the source account to prioritize the account where money is coming from.
+- Guaranteed `v_currency` capture in all account selection paths to ensure `global_settings` and `description_memories` stay accurate.
+- Standardized on `p_` prefix for all RPC parameters to resolve potential column name ambiguity once and for all.
+
+### Files Created/Modified
+- `db/functions/create_transaction.sql`
+- `migrations/0012_improve_smart_defaults_heuristic.sql`
 - `IMPLEMENTATION_LOG.md`
 
