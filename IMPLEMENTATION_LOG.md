@@ -36,3 +36,26 @@
 - `app/src/components/ui/button.tsx`
 - `.env.example`
 - `.gitignore`
+
+---
+
+## 2026-03-08 - Database Seeding Implementation
+
+### Tasks
+- [x] Create database seed script (`scripts/seed.py`)
+- [x] Implement hierarchical account creation logic
+- [x] Generate 1,000 realistic transactions over 6 months
+- [x] Implement multi-currency support (BRL/USD) with random exchange rates
+- [x] Support for expenses, income, and transfers
+- [x] Update `.gitignore` to include Python environment artifacts
+
+### Decisions
+- Using a standalone Python script for seeding to keep it separate from schema migrations.
+- Implemented a recursive `get_or_create_account` function to handle hierarchical names like `expenses:food:grocery`.
+- Hardcoded some fixed values (rent, internet) to make the generated data more realistic.
+- Cross-currency transfers (BRL <-> USD) are handled by calculating `amount_base` correctly for both entries.
+- Added `venv/` and `__pycache__/` to `.gitignore` as they are environment-specific.
+
+### Files Created/Modified
+- `scripts/seed.py`
+- `.gitignore`

@@ -296,3 +296,38 @@ compatible with PostgREST
 ```
 
 It avoids introducing unnecessary tooling while remaining fully production-ready.
+
+---
+
+# Data Seeding
+
+For development and testing, a seeding script is provided to populate the database with initial data.
+
+Location:
+
+```
+scripts/seed.py
+```
+
+### Purpose
+
+The seed script is used to:
+
+1. create a standard set of accounts and categories
+2. generate realistic historical transactions
+3. test multi-currency calculations
+4. verify ledger balancing logic
+
+### Usage
+
+Run the script using Python:
+
+```bash
+python3 scripts/seed.py
+```
+
+The script requires `psycopg2-binary` and `python-dotenv`.
+
+### Note
+
+The seed script is **not part of the migration system**. It should be run manually after all migrations have been applied.

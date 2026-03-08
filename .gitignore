@@ -1,1 +1,5 @@
 .env
+.metaprompt
+venv/
+__pycache__/
+*.pyc
