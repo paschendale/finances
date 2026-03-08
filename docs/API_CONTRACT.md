@@ -106,6 +106,39 @@ Returns the created transaction object with nested entries.
 }
 ```
 
+### `update_transaction`
+
+Updates an existing transaction and its entries. Atomic operation that replaces old entries with new ones.
+
+**Endpoint:** `POST /rpc/update_transaction`
+
+**Arguments:**
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `p_id` | `UUID` | The ID of the transaction to update. |
+| `p_date` | `DATE` | The new date (YYYY-MM-DD). |
+| `p_description` | `TEXT` | The new description. |
+| `p_entries` | `JSONB` | Array of entry objects (same schema as `create_transaction`). |
+
+**Constraints:**
+
+- Same as `create_transaction`.
+- Transaction ID must exist.
+
+**Example Request:**
+
+```bash
+curl -X POST https://api-finances-dev.marotta.dev/rpc/update_transaction \
+-H "Content-Type: application/json" \
+-d '{
+  "p_id": "...",
+  "p_date": "2026-03-08",
+  "p_description": "Updated Description",
+  "p_entries": [...]
+}'
+```
+
 ## Database Views
 
 These views are exposed via PostgREST as read-only endpoints.

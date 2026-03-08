@@ -281,6 +281,53 @@
 
 ---
 
+## 2026-03-08 - Transaction Editing Implementation
+
+### Tasks
+- [x] Create migration `0015_update_transaction_rpc.sql` with `update_transaction` RPC
+- [x] Implement atomic transaction update (delete entries, update transaction, insert new entries)
+- [x] Add balance validation and smart defaults update to `update_transaction`
+- [x] Export `SearchableSelect` to a standalone component for reuse
+- [x] Enhance `app/src/lib/api.ts` with `updateTransaction` function
+- [x] Refactor `LedgerTable.tsx` to include `TransactionRow` with editing state
+- [x] Implement interactive editing for description, date, and entries
+- [x] Add support for adding and removing splits during editing
+- [x] Implement auto-balancing logic in the editing UI
+
+### Decisions
+- Used an RPC for updates to ensure atomicity and reuse the complex balance/smart-defaults logic from creation.
+- Extracted `SearchableSelect` to its own file to maintain DRY principles between `QuickEntryInput` and `LedgerTable`.
+- Opted for a "Delete and Re-insert" strategy for entries within the RPC to simplify the handling of splits (adding/removing).
+- Added an "Edit" button that only appears on hover to keep the UI clean while providing easy access to modifications.
+- Implemented a "Smart Auto-balance" in the UI that adjusts the first negative entry (source account) when positive entries (categories) are modified.
+
+### Files Created/Modified
+- `migrations/0015_update_transaction_rpc.sql`
+- `app/src/components/SearchableSelect.tsx`
+- [x] Update `app/src/components/QuickEntryInput.tsx`
+- [x] Update `app/src/components/LedgerTable.tsx`
+- [x] Update `app/src/lib/api.ts`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
+## 2026-03-08 - Database Schema Fix: Added updated_at
+
+### Tasks
+- [x] Create migration `0016_add_updated_at.sql` to add `updated_at` columns
+- [x] Refine `updateTransaction` in `api.ts` to exclude `created_at` from entry objects
+
+### Decisions
+- Added `updated_at` to `transactions`, `accounts`, and `entries` to fix a runtime error in the `update_transaction` RPC and support better auditing.
+- Excluded `created_at` from the entries array sent to the API to minimize payload and ensure the database handles temporal data correctly.
+
+### Files Created/Modified
+- `migrations/0016_add_updated_at.sql`
+- `app/src/lib/api.ts`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
 ## 2026-03-08 - API Compatibility Fix
 
 ### Tasks

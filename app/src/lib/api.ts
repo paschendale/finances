@@ -107,3 +107,25 @@ export async function createTransaction(transaction: Omit<Transaction, 'id' | 'e
 
   return response.json();
 }
+
+export async function updateTransaction(transaction: Transaction) {
+  const response = await fetch(`${API_URL}/rpc/update_transaction`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      p_id: transaction.id,
+      p_date: transaction.date,
+      p_description: transaction.description,
+      p_entries: transaction.entries.map(({ id, account_name, account_type, created_at, ...rest }: any) => rest),
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.message || 'Failed to update transaction');
+  }
+
+  return response.json();
+}
