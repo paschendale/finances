@@ -295,24 +295,25 @@
 
 ---
 
-## 2026-03-08 - Smart Defaults Heuristic Refinement & RPC Alignment
+## 2026-03-08 - Hierarchical Accounts & Split Category Support
 
 ### Tasks
-- [x] Refine smart defaults heuristic in `create_transaction` RPC
-- [x] Ensure `v_currency` is captured correctly even in fallback scenarios
-- [x] Improve transfer handling by explicitly distinguishing source (negative) and destination (positive) accounts
-- [x] Align `db/functions/create_transaction.sql` with migration `0011` (using `p_` prefix)
-- [x] Create migration `0012_improve_smart_defaults_heuristic.sql` to apply improvements
-- [x] Verify API compatibility with `p_` parameter prefixes in `app/src/lib/api.ts`
+- [x] Update database views (`account_balances`, `transactions_with_entries`, `category_totals`) to support full hierarchical paths using recursive CTE
+- [x] Implement hierarchical display in `SearchableSelect` (breadcrumbs for path + bold leaf name)
+- [x] Enhance `QuickEntryInput` to support split categories in the staging area
+- [x] Add "Add Category Split" and "Remove Split" functionality in the preview
+- [x] Implement intelligent balance logic for splits (source account auto-balances against multiple categories)
+- [x] Improve `SearchableSelect` searching to include full hierarchical paths
+- [x] Fix `z-index` stacking for multiple split entries in the preview
 
 ### Decisions
-- Modified the heuristic to ensure `v_category_id` (destination) and `v_account_id` (source) are distinct, especially for transfers between two asset accounts.
-- Added `ORDER BY (e.amount < 0) DESC` when selecting the source account to prioritize the account where money is coming from.
-- Guaranteed `v_currency` capture in all account selection paths to ensure `global_settings` and `description_memories` stay accurate.
-- Standardized on `p_` prefix for all RPC parameters to resolve potential column name ambiguity once and for all.
+- Chose a recursive CTE in Postgres to build the `full_name` (e.g., `expenses:food:grocery`) dynamically, ensuring the frontend always has the full context without extra complexity.
+- In `SearchableSelect`, the button label shows only the "leaf" name to keep the UI clean, while the dropdown shows the full path as breadcrumbs.
+- For splits, the source account (negative entry) is automatically calculated as the negative sum of all other entries, simplifying the user experience.
+- Prevented splits in "Transfer" mode to maintain clarity, as transfers are typically 1-to-1.
 
 ### Files Created/Modified
-- `db/functions/create_transaction.sql`
-- `migrations/0012_improve_smart_defaults_heuristic.sql`
+- `migrations/0013_hierarchical_account_names.sql`
+- `app/src/components/QuickEntryInput.tsx`
 - `IMPLEMENTATION_LOG.md`
 

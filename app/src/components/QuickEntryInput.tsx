@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { parseQuickEntry, type TransactionPreview } from '@/lib/ledger-parser/parser';
 import { fetchAccounts, fetchTransactions, createTransaction, fetchCategoryUsage, fetchDescriptionMemories, fetchGlobalSettings } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { Check, Loader2, AlertCircle, Calendar, Wallet, Tag, ChevronDown, Search, Info, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
+import { Check, Loader2, AlertCircle, Calendar, Wallet, Tag, ChevronDown, Search, Info, ArrowUpRight, ArrowDownLeft, Plus, Trash2 } from 'lucide-react';
 
 // --- SearchableSelect Component ---
 interface Option {
@@ -33,9 +33,30 @@ function SearchableSelect({
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const formatLabel = (label: string) => {
+    const parts = label.split(':');
+    if (parts.length <= 1) return label;
+    const leaf = parts[parts.length - 1];
+    const path = parts.slice(0, -1).join(' > ');
+    return (
+      <div className="flex flex-col items-start overflow-hidden">
+        <span className="text-[10px] text-muted-foreground/50 truncate w-full uppercase tracking-tighter">{path}</span>
+        <span className="font-semibold truncate w-full leading-tight">{leaf}</span>
+      </div>
+    );
+  };
+
+  const getButtonLabel = (val: string) => {
+    const opt = options.find(o => o.value === val);
+    if (!opt) return placeholder;
+    const parts = opt.label.split(':');
+    return parts[parts.length - 1];
+  };
+
   const displayOptions = useMemo(() => {
     if (search.length > 0) {
       const s = search.toLowerCase();
+      // Search in full label or just leaf
       return options.filter(o => o.label.toLowerCase().includes(s));
     }
     return topOptions.length > 0 ? topOptions : options.slice(0, 20);
@@ -74,15 +95,15 @@ function SearchableSelect({
           isOpen && "ring-1 ring-primary/30 bg-accent/30"
         )}
       >
-        {Icon && <Icon className="w-3.5 h-3.5 text-muted-foreground/70" />}
+        {Icon && <Icon className="w-3.5 h-3.5 text-muted-foreground/70 shrink-0" />}
         <span className="flex-1 text-left truncate">
-          {options.find(o => o.value === value)?.label || placeholder}
+          {getButtonLabel(value)}
         </span>
-        <ChevronDown className={cn("w-3 h-3 text-muted-foreground/50 transition-transform duration-200", isOpen && "rotate-180")} />
+        <ChevronDown className={cn("w-3 h-3 text-muted-foreground/50 transition-transform duration-200 shrink-0", isOpen && "rotate-180")} />
       </button>
 
       {isOpen && (
-        <div className="absolute z-[100] top-full mt-1.5 w-full min-w-[220px] bg-popover/95 border border-border/50 rounded-xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.3)] backdrop-blur-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div className="absolute z-[100] top-full mt-1.5 w-full min-w-[240px] bg-popover/95 border border-border/50 rounded-xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.3)] backdrop-blur-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
           <div className="p-2 border-b border-border/40 bg-muted/20 flex items-center gap-2">
             <Search className="w-3.5 h-3.5 text-muted-foreground/50" />
             <input
@@ -115,7 +136,7 @@ function SearchableSelect({
                     setSearch('');
                   }}
                 >
-                  {opt.label}
+                  {formatLabel(opt.label)}
                 </button>
               ))
             ) : (
@@ -349,9 +370,54 @@ export function QuickEntryInput() {
     setIsEdited(true);
     const newEntries = [...preview.entries];
     newEntries[index] = { ...newEntries[index], [field]: value };
-    if (field === 'amount' && newEntries.length === 2) {
-      newEntries[index === 0 ? 1 : 0].amount = -value;
+    
+    const positiveEntries = newEntries.filter(e => e.amount > 0);
+    const negativeEntries = newEntries.filter(e => e.amount < 0);
+    
+    if (newEntries.length === 2) {
+      if (field === 'amount') {
+        newEntries[index === 0 ? 1 : 0].amount = -value;
+      }
+    } else {
+      // Multiple entries (Split)
+      if (field === 'amount') {
+        const sourceIndex = newEntries.findIndex(e => e.amount < 0);
+        if (sourceIndex !== -1 && index !== sourceIndex) {
+          const positiveSum = newEntries.reduce((sum, e, i) => i !== sourceIndex ? sum + (e.amount || 0) : sum, 0);
+          newEntries[sourceIndex].amount = -positiveSum;
+        }
+      }
     }
+    
+    setPreview({ ...preview, entries: newEntries });
+  };
+
+  const addSplit = () => {
+    if (!preview) return;
+    setIsEdited(true);
+    const categoryFallback = topCategoryOptions[0]?.value || allAccountOptions.find(o => o.value.startsWith('expenses:'))?.value || 'expenses:unknown';
+    
+    setPreview({
+      ...preview,
+      entries: [
+        ...preview.entries,
+        { account: categoryFallback, amount: 0 }
+      ]
+    });
+  };
+
+  const removeSplit = (index: number) => {
+    if (!preview || preview.entries.length <= 2) return;
+    setIsEdited(true);
+    const newEntries = preview.entries.filter((_, i) => i !== index);
+    
+    // Re-balance
+    const sourceIndex = newEntries.findIndex(e => e.amount < 0);
+    if (sourceIndex !== -1) {
+      const positiveSum = newEntries.reduce((sum, e, i) => i !== sourceIndex ? sum + (e.amount || 0) : sum, 0);
+      newEntries[sourceIndex].amount = -positiveSum;
+    }
+    
     setPreview({ ...preview, entries: newEntries });
   };
 
@@ -443,7 +509,7 @@ export function QuickEntryInput() {
                 const isTransfer = parseQuickEntry(input).type === 'transfer';
                 const isPositive = entry.amount >= 0;
                 
-                let label = isPositive ? 'Category' : 'Source Account';
+                let label = isPositive ? (preview.entries.filter(e => e.amount >= 0).length > 1 ? `Category Split ${preview.entries.filter((e, idx) => e.amount >= 0 && idx <= i).length}` : 'Category') : 'Source Account';
                 let Icon = isPositive ? Tag : Wallet;
 
                 if (isTransfer) {
@@ -452,9 +518,19 @@ export function QuickEntryInput() {
                 }
 
                 return (
-                  <div key={i} className="flex gap-2 items-center bg-background/20 p-0.5 rounded-lg border border-border/10 relative" style={{ zIndex: 10 - i }}>
+                  <div key={i} className="flex gap-2 items-center bg-background/20 p-0.5 rounded-lg border border-border/10 relative" style={{ zIndex: 20 - i }}>
                     <div className="flex-1 min-w-0">
-                      <div className="px-2.5 pb-0.5 text-[9px] font-bold text-muted-foreground/40 uppercase tracking-wider">{label}</div>
+                      <div className="px-2.5 pb-0.5 text-[9px] font-bold text-muted-foreground/40 uppercase tracking-wider flex justify-between">
+                        <span>{label}</span>
+                        {isPositive && preview.entries.length > 2 && (
+                          <button 
+                            onClick={() => removeSplit(i)}
+                            className="hover:text-destructive transition-colors"
+                          >
+                            <Trash2 className="w-2.5 h-2.5" />
+                          </button>
+                        )}
+                      </div>
                       <SearchableSelect
                         options={allAccountOptions}
                         topOptions={!isTransfer && isPositive ? topCategoryOptions : []}
@@ -485,6 +561,16 @@ export function QuickEntryInput() {
                   </div>
                 );
               })}
+
+              {!parseQuickEntry(input).type.includes('transfer') && (
+                <button
+                  onClick={addSplit}
+                  className="w-full py-2 border-2 border-dashed border-border/20 rounded-lg text-[11px] font-bold text-muted-foreground/40 hover:border-primary/30 hover:text-primary/50 transition-all flex items-center justify-center gap-1.5 mt-2"
+                >
+                  <Plus className="w-3 h-3" />
+                  Add Category Split
+                </button>
+              )}
             </div>
           </div>
 
