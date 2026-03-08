@@ -59,3 +59,29 @@
 ### Files Created/Modified
 - `scripts/seed.py`
 - `.gitignore`
+
+---
+
+## 2026-03-08 - RPC Implementation: create_transaction
+
+### Tasks
+- [x] Create RPC function `create_transaction` in PL/pgSQL
+- [x] Implement atomic transaction and entry creation
+- [x] Add balance validation (SUM(amount_base) = 0)
+- [x] Add entry count validation (minimum 2 entries)
+- [x] Document RPC in `docs/API_CONTRACT.md`
+- [x] Set up local Python virtual environment `.venv` for migrations
+- [x] Verify implementation with successful and failing `curl` requests
+
+### Decisions
+- RPC function is written in PL/pgSQL to ensure atomicity within the database.
+- The function returns the full transaction object including nested entries as JSONB, matching the expected frontend consumption pattern.
+- Balance validation is strictly enforced within the RPC to prevent data corruption.
+- Created `db/functions/create_transaction.sql` as a persistent reference for the function's source code, separate from migrations.
+- Used `.venv` as the local virtual environment directory.
+
+### Files Created/Modified
+- `migrations/0005_create_transaction_rpc.sql`
+- `db/functions/create_transaction.sql`
+- `docs/API_CONTRACT.md`
+- `IMPLEMENTATION_LOG.md`
