@@ -149,6 +149,21 @@ This document helps ensure the implementation follows a **consistent project str
 
 ---
 
+## API_CONTRACT.md
+
+Defines the **available API endpoints and RPC functions**.
+
+This document describes:
+
+- available RPC functions (e.g., `create_transaction`)
+- available database views (e.g., `account_balances`)
+- request and response schemas
+- usage examples with `curl`
+
+This document defines **how to interact with the system API**.
+
+---
+
 # Source of Truth
 
 Each part of the system has a clear source of truth.
@@ -161,6 +176,7 @@ Each part of the system has a clear source of truth.
 | System architecture  | ARCHITECTURE.md         |
 | Database evolution   | MIGRATION_STRATEGY.md   |
 | Repository Structure | REPOSITORY_STRUCTURE.md |
+| API Specification    | API_CONTRACT.md         |
 
 ---
 

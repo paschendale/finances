@@ -84,4 +84,30 @@
 - `migrations/0005_create_transaction_rpc.sql`
 - `db/functions/create_transaction.sql`
 - `docs/API_CONTRACT.md`
+
+---
+
+## 2026-03-08 - Database Views: Account Balances, Transactions, and Categories
+
+### Tasks
+- [x] Create view `account_balances` for real-time account tracking
+- [x] Create view `transactions_with_entries` for efficient frontend consumption
+- [x] Create view `category_totals` for expense and income breakdown
+- [x] Document new views in `docs/API_CONTRACT.md`
+- [x] Apply changes through migration `0006_views.sql`
+- [x] Create individual reference files in `db/views/`
+- [x] Verify API responses using `curl`
+
+### Decisions
+- `transactions_with_entries` aggregates entries into a `jsonb` array to minimize API requests from the frontend.
+- `category_totals` is filtered to only include `expense` and `income` account types to simplify dashboard implementation.
+- `account_balances` uses a `LEFT JOIN` to ensure accounts with no entries still show a zero balance.
+- All views are included in the same migration file (`0006_views.sql`) for simplicity during initial development.
+
+### Files Created/Modified
+- `migrations/0006_views.sql`
+- `db/views/account_balances.sql`
+- `db/views/transactions_with_entries.sql`
+- `db/views/category_totals.sql`
+- `docs/API_CONTRACT.md`
 - `IMPLEMENTATION_LOG.md`

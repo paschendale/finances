@@ -105,3 +105,87 @@ Returns the created transaction object with nested entries.
   "hint": null
 }
 ```
+
+## Database Views
+
+These views are exposed via PostgREST as read-only endpoints.
+
+### `account_balances`
+
+Returns the current balance for all accounts.
+
+**Endpoint:** `GET /account_balances`
+
+**Response Schema:**
+
+| Property | Type | Description |
+| :--- | :--- | :--- |
+| `account_id` | `UUID` | Unique identifier of the account. |
+| `account_name` | `TEXT` | Name of the account. |
+| `account_type` | `TEXT` | Type of account (asset, liability, expense, income, equity). |
+| `balance` | `NUMERIC` | Current balance in base currency. |
+
+**Example Request:**
+
+```bash
+curl -s https://api-finances-dev.marotta.dev/account_balances
+```
+
+---
+
+### `transactions_with_entries`
+
+Returns a list of transactions with their associated entries nested as a JSON array.
+
+**Endpoint:** `GET /transactions_with_entries`
+
+**Response Schema:**
+
+| Property | Type | Description |
+| :--- | :--- | :--- |
+| `id` | `UUID` | Unique identifier of the transaction. |
+| `date` | `DATE` | Date of the transaction (YYYY-MM-DD). |
+| `description` | `TEXT` | Transaction description. |
+| `metadata` | `JSONB` | Additional metadata. |
+| `entries` | `JSONB` | Array of entry objects. |
+
+**Entry Object:**
+
+| Property | Type | Description |
+| :--- | :--- | :--- |
+| `id` | `UUID` | Unique identifier of the entry. |
+| `account_id` | `UUID` | ID of the account. |
+| `account_name` | `TEXT` | Name of the account. |
+| `account_type` | `TEXT` | Type of account. |
+| `amount` | `NUMERIC` | Amount in original currency. |
+| `currency` | `TEXT` | ISO currency code. |
+| `exchange_rate`| `NUMERIC` | Conversion rate used. |
+| `amount_base` | `NUMERIC` | Amount in base currency. |
+
+**Example Request:**
+
+```bash
+curl -s https://api-finances-dev.marotta.dev/transactions_with_entries
+```
+
+---
+
+### `category_totals`
+
+Returns the total sum of entries for each expense and income category.
+
+**Endpoint:** `GET /category_totals`
+
+**Response Schema:**
+
+| Property | Type | Description |
+| :--- | :--- | :--- |
+| `category_name` | `TEXT` | Name of the category (account name). |
+| `category_type` | `TEXT` | Type of category (expense or income). |
+| `total` | `NUMERIC` | Total sum in base currency. |
+
+**Example Request:**
+
+```bash
+curl -s https://api-finances-dev.marotta.dev/category_totals
+```
