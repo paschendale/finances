@@ -24,6 +24,7 @@ export interface Transaction {
   description: string;
   metadata?: Record<string, any>;
   entries: Entry[];
+  account_ids?: string[];
 }
 
 export async function fetchAccounts(): Promise<Account[]> {
@@ -34,8 +35,25 @@ export async function fetchAccounts(): Promise<Account[]> {
   return response.json();
 }
 
-export async function fetchTransactions(limit = 100, offset = 0): Promise<Transaction[]> {
-  const response = await fetch(`${API_URL}/transactions_with_entries?order=date.desc,created_at.desc&limit=${limit}&offset=${offset}`);
+export async function fetchTransactions(
+  limit = 100, 
+  offset = 0, 
+  startDate?: string, 
+  endDate?: string, 
+  accountIds?: string[]
+): Promise<Transaction[]> {
+  const params = new URLSearchParams();
+  params.append('order', 'date.desc,created_at.desc');
+  params.append('limit', limit.toString());
+  params.append('offset', offset.toString());
+
+  if (startDate) params.append('date', `gte.${startDate}`);
+  if (endDate) params.append('date', `lte.${endDate}`);
+  if (accountIds && accountIds.length > 0) {
+    params.append('account_ids', `ov.{${accountIds.join(',')}}`);
+  }
+
+  const response = await fetch(`${API_URL}/transactions_with_entries?${params.toString()}`);
   if (!response.ok) {
     throw new Error('Failed to fetch transactions');
   }
@@ -119,6 +137,24 @@ export async function fetchDailyBalances(): Promise<DailyBalance[]> {
   const response = await fetch(`${API_URL}/daily_balances?order=date.asc`);
   if (!response.ok) {
     throw new Error('Failed to fetch daily balances');
+  }
+  return response.json();
+}
+
+export interface DailyAccountBalance {
+  date: string;
+  account_id: string;
+  balance: number;
+}
+
+export async function fetchDailyAccountBalances(dates: string[], accountIds: string[]): Promise<DailyAccountBalance[]> {
+  const params = new URLSearchParams();
+  if (dates.length > 0) params.append('date', `in.(${dates.join(',')})`);
+  if (accountIds.length > 0) params.append('account_id', `in.(${accountIds.join(',')})`);
+  
+  const response = await fetch(`${API_URL}/daily_account_balances?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch daily account balances');
   }
   return response.json();
 }
