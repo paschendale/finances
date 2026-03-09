@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { cn } from '@/lib/utils';
+import { cn, formatHierarchicalName } from '@/lib/utils';
 import { ChevronDown, Search, Check } from 'lucide-react';
 
 export interface Option {
@@ -28,15 +28,10 @@ export function MultiSearchableSelect({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const formatLabel = (label: string) => {
-    const parts = label.split(':');
-    if (parts.length <= 1) return label;
-    const leaf = parts[parts.length - 1];
-    const path = parts.slice(0, -1).join(' > ');
     return (
-      <div className="flex flex-col items-start overflow-hidden">
-        <span className="text-[10px] text-muted-foreground/40 truncate w-full uppercase tracking-tighter">{path}</span>
-        <span className="font-semibold truncate w-full leading-tight">{leaf}</span>
-      </div>
+      <span className="font-semibold truncate w-full leading-tight">
+        {formatHierarchicalName(label)}
+      </span>
     );
   };
 

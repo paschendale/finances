@@ -1,7 +1,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchTransactions, updateTransaction, fetchAccounts, fetchCategoryUsage, fetchDailyAccountBalances, fetchDailyBalances, type Transaction, type Entry } from '@/lib/api';
 import { useMemo, useEffect, useRef, useState } from 'react';
-import { cn } from '@/lib/utils';
+import { cn, formatHierarchicalName } from '@/lib/utils';
 import { SearchableSelect } from './SearchableSelect';
 import { Wallet, Tag, Trash2, Plus, Check, Loader2, X } from 'lucide-react';
 import { type LedgerFilters } from './LedgerFilterBar';
@@ -217,11 +217,11 @@ function TransactionRow({
           </span>
           
           <span className="text-[12px] text-muted-foreground/80 truncate font-mono">
-            {item.categories.join(', ')}
+            {item.categories.map(formatHierarchicalName).join(', ')}
           </span>
           
           <span className="text-[12px] text-muted-foreground/60 truncate">
-            {item.accounts.join(' • ')}
+            {item.accounts.map(formatHierarchicalName).join(' • ')}
           </span>
           
           <div className="text-right font-mono font-bold text-[14px]">
@@ -381,7 +381,7 @@ function TransactionRow({
               {item.entries.map((entry, idx) => (
                 <div key={idx} className="flex justify-between items-center py-1 border-b border-border/10 last:border-0 text-[13px]">
                   <div className="flex flex-col">
-                    <span className="font-medium text-primary/80">{entry.account_name}</span>
+                    <span className="font-medium text-primary/80">{formatHierarchicalName(entry.account_name)}</span>
                     <span className="text-[10px] text-muted-foreground/60 uppercase font-bold tracking-tighter">{entry.account_type}</span>
                   </div>
                   <span className={cn(
@@ -500,7 +500,7 @@ export function LedgerTable({ filters }: { filters: LedgerFilters }) {
 
         const accounts = t.entries
           .filter((e) => e.account_type === 'asset' || e.account_type === 'liability' || e.account_type === 'equity')
-          .map((e) => e.account_name.split(':').pop() || e.account_name);
+          .map((e) => e.account_name);
 
         let amount = 0;
         let currency = 'BRL';

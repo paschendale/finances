@@ -7,7 +7,7 @@ import {
 } from 'recharts';
 import { format, startOfMonth, endOfMonth, subMonths, startOfYear, endOfYear, subYears, parseISO, isWithinInterval, differenceInDays, startOfWeek } from 'date-fns';
 import { Calendar } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, formatHierarchicalName } from '@/lib/utils';
 import { type LedgerFilters } from './LedgerFilterBar';
 
 // Rich, darker muted colors for dark mode comfort
@@ -146,11 +146,15 @@ export function Dashboard({ filters, onFilterChange }: DashboardProps) {
 
     const formatPie = (map: Record<string, number>) => 
       Object.entries(map)
-        .map(([fullName, value]) => ({ 
-          name: fullName.split(':').pop() || fullName, 
-          fullName, 
-          value 
-        }))
+        .map(([fullName, value]) => {
+          const parts = fullName.split(':');
+          const displayName = parts.length > 1 ? parts.slice(1).join(':') : fullName;
+          return { 
+            name: formatHierarchicalName(displayName), 
+            fullName, 
+            value 
+          };
+        })
         .sort((a, b) => b.value - a.value);
 
     const expensesL1 = formatPie(l1Map);
@@ -539,7 +543,7 @@ export function Dashboard({ filters, onFilterChange }: DashboardProps) {
                 onClick={() => setCategoryFilter(null)}
                 className="px-6 py-3 bg-white text-black rounded-full text-sm font-bold shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center gap-2 border border-white/20"
             >
-                Viewing: {categoryFilter.split(':').pop()}
+                Viewing: {formatHierarchicalName(categoryFilter)}
                 <span className="opacity-40 font-normal">| Clear</span>
             </button>
         </div>
@@ -564,7 +568,7 @@ function BalanceCard({ title, amount, color, accounts = [] }: { title: string, a
           <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
             {accounts.map(acc => (
               <div key={acc.account_id} className="flex justify-between items-center text-[10px]">
-                <span className="text-white/60 truncate mr-2">{acc.account_name.split(':').pop()}</span>
+                <span className="text-white/60 truncate mr-2">{formatHierarchicalName(acc.account_name)}</span>
                 <span className="font-mono font-bold text-white">R$ {acc.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
               </div>
             ))}
