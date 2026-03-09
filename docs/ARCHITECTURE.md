@@ -33,6 +33,27 @@ Each layer has a clearly defined responsibility.
 
 ---
 
+# Authentication
+
+The system uses a **Token-based JWT Authentication** implemented entirely within Postgres.
+
+### Authentication Flow
+
+1.  **Login**: Frontend sends an Access Token to `POST /rpc/login_with_token`.
+2.  **Validation**: Database verifies the token against `auth_tokens` table.
+3.  **Issuance**: Database signs a JWT using `app.jwt_secret` and returns it to the frontend.
+4.  **Storage**: Frontend stores the JWT in `localStorage`.
+5.  **Requests**: Frontend includes the JWT in the `Authorization: Bearer <token>` header for all subsequent requests.
+6.  **Verification**: PostgREST verifies the JWT and switches the database role to `authenticated`.
+7.  **Permissions**: Database RLS and Role-based permissions control access to data.
+
+### Roles
+
+-   **anon**: Can only call the `login_with_token` RPC.
+-   **authenticated**: Has full access to the ledger data.
+
+---
+
 # Frontend
 
 The frontend is responsible for:

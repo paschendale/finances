@@ -1,5 +1,56 @@
 const API_URL = import.meta.env.VITE_APP_API_URL || 'http://localhost:3000';
 
+export const AUTH_TOKEN_KEY = 'finances_auth_token';
+
+function getHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...extraHeaders,
+  };
+
+  const token = localStorage.getItem(AUTH_TOKEN_KEY);
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  return headers;
+}
+
+export async function loginWithToken(token: string): Promise<string> {
+  const response = await fetch(`${API_URL}/rpc/login_with_token`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ token }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: 'Login failed' }));
+    throw new Error(error.message || 'Login failed');
+  }
+
+  const jwt = await response.json();
+  localStorage.setItem(AUTH_TOKEN_KEY, jwt);
+  return jwt;
+}
+
+let onLogoutCallback: (() => void) | null = null;
+
+export function setOnLogout(callback: () => void) {
+  onLogoutCallback = callback;
+}
+
+export function logout() {
+  const hadToken = !!localStorage.getItem(AUTH_TOKEN_KEY);
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+  if (hadToken && onLogoutCallback) {
+    onLogoutCallback();
+  } else if (hadToken) {
+    window.location.reload();
+  }
+}
+
 export interface Account {
   account_id: string;
   account_name: string;
@@ -28,8 +79,11 @@ export interface Transaction {
 }
 
 export async function fetchAccounts(): Promise<Account[]> {
-  const response = await fetch(`${API_URL}/account_balances`);
+  const response = await fetch(`${API_URL}/account_balances`, {
+    headers: getHeaders(),
+  });
   if (!response.ok) {
+    if (response.status === 401) logout();
     throw new Error('Failed to fetch accounts');
   }
   return response.json();
@@ -53,8 +107,11 @@ export async function fetchTransactions(
     params.append('account_ids', `ov.{${accountIds.join(',')}}`);
   }
 
-  const response = await fetch(`${API_URL}/transactions_with_entries?${params.toString()}`);
+  const response = await fetch(`${API_URL}/transactions_with_entries?${params.toString()}`, {
+    headers: getHeaders(),
+  });
   if (!response.ok) {
+    if (response.status === 401) logout();
     throw new Error('Failed to fetch transactions');
   }
   return response.json();
@@ -81,16 +138,22 @@ export async function fetchDashboardData(startDate?: string, endDate?: string): 
   if (endDate) params.append('date', `lte.${endDate}`);
   if (params.toString()) url += `?${params.toString()}`;
   
-  const response = await fetch(url);
+  const response = await fetch(url, {
+    headers: getHeaders(),
+  });
   if (!response.ok) {
+    if (response.status === 401) logout();
     throw new Error('Failed to fetch dashboard data');
   }
   return response.json();
 }
 
 export async function fetchCategoryUsage(): Promise<CategoryUsage[]> {
-  const response = await fetch(`${API_URL}/category_totals?order=total.desc&limit=10`);
+  const response = await fetch(`${API_URL}/category_totals?order=total.desc&limit=10`, {
+    headers: getHeaders(),
+  });
   if (!response.ok) {
+    if (response.status === 401) logout();
     throw new Error('Failed to fetch category usage');
   }
   return response.json();
@@ -107,8 +170,11 @@ export interface DescriptionMemory {
 }
 
 export async function fetchDescriptionMemories(): Promise<DescriptionMemory[]> {
-  const response = await fetch(`${API_URL}/description_memories_with_names?order=updated_at.desc`);
+  const response = await fetch(`${API_URL}/description_memories_with_names?order=updated_at.desc`, {
+    headers: getHeaders(),
+  });
   if (!response.ok) {
+    if (response.status === 401) logout();
     throw new Error('Failed to fetch description memories');
   }
   return response.json();
@@ -120,8 +186,11 @@ export interface GlobalSetting {
 }
 
 export async function fetchGlobalSettings(): Promise<GlobalSetting[]> {
-  const response = await fetch(`${API_URL}/global_settings`);
+  const response = await fetch(`${API_URL}/global_settings`, {
+    headers: getHeaders(),
+  });
   if (!response.ok) {
+    if (response.status === 401) logout();
     throw new Error('Failed to fetch global settings');
   }
   return response.json();
@@ -134,8 +203,11 @@ export interface DailyBalance {
 }
 
 export async function fetchDailyBalances(): Promise<DailyBalance[]> {
-  const response = await fetch(`${API_URL}/daily_balances?order=date.asc`);
+  const response = await fetch(`${API_URL}/daily_balances?order=date.asc`, {
+    headers: getHeaders(),
+  });
   if (!response.ok) {
+    if (response.status === 401) logout();
     throw new Error('Failed to fetch daily balances');
   }
   return response.json();
@@ -152,8 +224,11 @@ export async function fetchDailyAccountBalances(dates: string[], accountIds: str
   if (dates.length > 0) params.append('date', `in.(${dates.join(',')})`);
   if (accountIds.length > 0) params.append('account_id', `in.(${accountIds.join(',')})`);
   
-  const response = await fetch(`${API_URL}/daily_account_balances?${params.toString()}`);
+  const response = await fetch(`${API_URL}/daily_account_balances?${params.toString()}`, {
+    headers: getHeaders(),
+  });
   if (!response.ok) {
+    if (response.status === 401) logout();
     throw new Error('Failed to fetch daily account balances');
   }
   return response.json();
@@ -162,9 +237,7 @@ export async function fetchDailyAccountBalances(dates: string[], accountIds: str
 export async function createTransaction(transaction: Omit<Transaction, 'id' | 'entries'> & { entries: Omit<Entry, 'id' | 'account_name' | 'account_type'>[] }) {
   const response = await fetch(`${API_URL}/rpc/create_transaction`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: getHeaders(),
     body: JSON.stringify({
       p_date: transaction.date,
       p_description: transaction.description,
@@ -173,6 +246,7 @@ export async function createTransaction(transaction: Omit<Transaction, 'id' | 'e
   });
 
   if (!response.ok) {
+    if (response.status === 401) logout();
     const error = await response.json();
     throw new Error(error.message || 'Failed to create transaction');
   }
@@ -183,9 +257,7 @@ export async function createTransaction(transaction: Omit<Transaction, 'id' | 'e
 export async function updateTransaction(transaction: Transaction) {
   const response = await fetch(`${API_URL}/rpc/update_transaction`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: getHeaders(),
     body: JSON.stringify({
       p_id: transaction.id,
       p_date: transaction.date,
@@ -195,6 +267,7 @@ export async function updateTransaction(transaction: Transaction) {
   });
 
   if (!response.ok) {
+    if (response.status === 401) logout();
     const error = await response.json();
     throw new Error(error.message || 'Failed to update transaction');
   }
