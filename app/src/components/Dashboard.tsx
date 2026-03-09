@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { type Account, fetchAccounts, fetchDashboardData, fetchDailyBalances } from '@/lib/api';
 import { 
@@ -8,6 +8,7 @@ import {
 import { format, startOfMonth, endOfMonth, subMonths, startOfYear, endOfYear, subYears, parseISO, isWithinInterval, differenceInDays, startOfWeek } from 'date-fns';
 import { Calendar } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { type LedgerFilters } from './LedgerFilterBar';
 
 // Rich, darker muted colors for dark mode comfort
 const COLORS = [
@@ -35,29 +36,52 @@ const DATE_PRESETS: DateRange[] = [
   { label: 'Custom', start: startOfMonth(new Date()), end: endOfMonth(new Date()) },
 ];
 
-export function Dashboard() {
-  const [dateRange, setDateRange] = useState<DateRange>(DATE_PRESETS[2]);
-  const [isCustom, setIsCustom] = useState(false);
+interface DashboardProps {
+  filters: LedgerFilters;
+  onFilterChange: (filters: LedgerFilters) => void;
+}
+
+export function Dashboard({ filters, onFilterChange }: DashboardProps) {
+  const [showCustom, setShowCustom] = useState(false);
+
+  // Derived date range from filters
+  const dateRange = useMemo<DateRange>(() => {
+    const start = parseISO(filters.startDate);
+    const end = parseISO(filters.endDate);
+    
+    // Try to find matching preset
+    const preset = DATE_PRESETS.find(p => 
+        format(p.start, 'yyyy-MM-dd') === filters.startDate && 
+        format(p.end, 'yyyy-MM-dd') === filters.endDate
+    );
+    
+    return {
+        start,
+        end,
+        label: preset?.label || 'Custom'
+    };
+  }, [filters.startDate, filters.endDate]);
 
   const handlePresetClick = (preset: DateRange) => {
-    setDateRange(preset);
-    setIsCustom(preset.label === 'Custom');
+    onFilterChange({
+        ...filters,
+        startDate: format(preset.start, 'yyyy-MM-dd'),
+        endDate: format(preset.end, 'yyyy-MM-dd')
+    });
+    setShowCustom(preset.label === 'Custom');
   };
 
   const handleCustomDateChange = (type: 'start' | 'end', val: string) => {
-    const newDate = new Date(val);
-    if (isNaN(newDate.getTime())) return;
-    setDateRange(prev => ({
-        ...prev,
-        [type]: newDate,
-        label: 'Custom'
-    }));
+    onFilterChange({
+        ...filters,
+        [type === 'start' ? 'startDate' : 'endDate']: val
+    });
   };
 
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
 
-  const startDateStr = format(dateRange.start, 'yyyy-MM-dd');
-  const endDateStr = format(dateRange.end, 'yyyy-MM-dd');
+  const startDateStr = filters.startDate;
+  const endDateStr = filters.endDate;
 
   const { data: accounts = [] } = useQuery({
     queryKey: ['accounts'],
@@ -216,7 +240,7 @@ export function Dashboard() {
                 onClick={() => handlePresetClick(preset)}
                 className={cn(
                     "px-4 py-1.5 rounded-full text-sm font-medium transition-all",
-                    dateRange.label === preset.label && (preset.label !== 'Custom' || isCustom)
+                    dateRange.label === preset.label && (!showCustom || preset.label !== 'Custom')
                     ? "bg-white text-black shadow-lg" 
                     : "bg-white/5 hover:bg-white/10 text-muted-foreground"
                 )}
@@ -225,19 +249,28 @@ export function Dashboard() {
                 </button>
             ))}
             </div>
-            <div className="flex items-center gap-2 text-sm font-medium px-4 py-1.5 rounded-full bg-white/5 border border-white/10">
-            <Calendar className="w-4 h-4 text-white/60" />
-            <span>{format(dateRange.start, 'MMM d')} - {format(dateRange.end, 'MMM d, yyyy')}</span>
-            </div>
+
+            <button 
+                onClick={() => setShowCustom(!showCustom)}
+                className={cn(
+                    "flex items-center gap-2 text-sm font-medium px-4 py-1.5 rounded-full transition-all border",
+                    showCustom || dateRange.label === 'Custom'
+                        ? "bg-white/10 border-white/20 text-white" 
+                        : "bg-white/5 border-white/10 text-white/60 hover:text-white"
+                )}
+            >
+                <Calendar className="w-4 h-4" />
+                <span>{format(dateRange.start, 'MMM d')} - {format(dateRange.end, 'MMM d, yyyy')}</span>
+            </button>
         </div>
 
-        {isCustom && (
-            <div className="flex gap-4 items-center animate-in fade-in slide-in-from-top-2 duration-300">
+        {showCustom && (
+            <div className="flex gap-4 items-center animate-in fade-in slide-in-from-top-2 duration-300 bg-white/5 p-3 rounded-2xl border border-white/5">
                 <div className="flex flex-col gap-1">
                     <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold px-1">From</label>
                     <input 
                         type="date" 
-                        value={format(dateRange.start, 'yyyy-MM-dd')}
+                        value={filters.startDate}
                         onChange={(e) => handleCustomDateChange('start', e.target.value)}
                         className="bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-white/20 text-white"
                     />
@@ -246,7 +279,7 @@ export function Dashboard() {
                     <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold px-1">To</label>
                     <input 
                         type="date" 
-                        value={format(dateRange.end, 'yyyy-MM-dd')}
+                        value={filters.endDate}
                         onChange={(e) => handleCustomDateChange('end', e.target.value)}
                         className="bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-white/20 text-white"
                     />

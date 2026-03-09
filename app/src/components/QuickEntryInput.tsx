@@ -276,16 +276,16 @@ export function QuickEntryInput() {
   };
 
   return (
-    <div className="w-full max-w-2xl mx-auto space-y-4 relative z-[100]">
+    <div className="w-full space-y-2 relative z-[100]">
       {/* Compact Context Bar - High Z-Index relative to sibling sections */}
-      <div className="flex flex-wrap gap-2 items-center bg-muted/10 px-2 py-1 rounded-lg border border-border/30 backdrop-blur-xl relative z-30">
+      <div className="flex flex-wrap gap-2 items-center bg-muted/10 px-2 py-0.5 rounded-lg border border-border/30 backdrop-blur-xl relative z-30">
         <div className="flex items-center gap-1.5 group cursor-pointer px-1">
           <Calendar className="w-3 h-3 text-muted-foreground/50 group-hover:text-primary transition-colors" />
           <input 
             type="date"
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
-            className="bg-transparent border-none p-0 focus:ring-0 text-[12px] font-semibold text-foreground/70"
+            className="bg-transparent border-none p-0 focus:ring-0 text-[11px] font-semibold text-foreground/70"
           />
         </div>
         <div className="h-3 w-px bg-border/30 mx-0.5" />
@@ -296,7 +296,7 @@ export function QuickEntryInput() {
             onChange={setSelectedAccount}
             placeholder="Account"
             icon={Wallet}
-            className="border-none bg-transparent"
+            className="border-none bg-transparent [&>button]:py-1"
           />
         </div>
         <div className="px-2 group relative">
@@ -324,8 +324,8 @@ export function QuickEntryInput() {
           onKeyDown={handleKeyDown}
           placeholder="New transaction..."
           className={cn(
-            "w-full bg-input/40 text-foreground px-5 py-4 rounded-xl border border-border/40 backdrop-blur-md",
-            "focus:outline-none focus:border-primary/40 focus:bg-input/60 transition-all text-xl font-semibold shadow-[0_4px_20px_rgba(0,0,0,0.08)]",
+            "w-full bg-input/40 text-foreground px-4 py-3 rounded-xl border border-border/40 backdrop-blur-md",
+            "focus:outline-none focus:border-primary/40 focus:bg-input/60 transition-all text-lg font-semibold shadow-[0_4px_20px_rgba(0,0,0,0.08)]",
             "placeholder:text-muted-foreground/20"
           )}
           autoFocus

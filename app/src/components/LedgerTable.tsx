@@ -1,9 +1,10 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchTransactions, updateTransaction, fetchAccounts, fetchCategoryUsage, type Transaction, type Entry } from '@/lib/api';
+import { fetchTransactions, updateTransaction, fetchAccounts, fetchCategoryUsage, fetchDailyAccountBalances, fetchDailyBalances, type Transaction, type Entry } from '@/lib/api';
 import { useMemo, useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { SearchableSelect } from './SearchableSelect';
 import { Wallet, Tag, Trash2, Plus, Check, Loader2, X } from 'lucide-react';
+import { type LedgerFilters } from './LedgerFilterBar';
 
 interface TransactionItem {
   type: 'transaction';
@@ -94,7 +95,8 @@ function TransactionRow({
       id: item.id,
       date: item.date,
       description: item.description,
-      entries: sortedEntries.map(e => ({ ...e }))
+      entries: sortedEntries.map(e => ({ ...e })),
+      account_ids: item.entries.map(e => e.account_id)
     });
     setIsEditing(true);
     if (!isExpanded) onToggle();
@@ -401,7 +403,7 @@ function TransactionRow({
   );
 }
 
-export function LedgerTable() {
+export function LedgerTable({ filters }: { filters: LedgerFilters }) {
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -413,14 +415,50 @@ export function LedgerTable() {
     isLoading,
     isError,
   } = useInfiniteQuery({
-    queryKey: ['transactions'],
-    queryFn: ({ pageParam = 0 }) => fetchTransactions(50, pageParam),
+    queryKey: ['transactions', filters],
+    queryFn: ({ pageParam = 0 }) => fetchTransactions(
+        50, 
+        pageParam, 
+        filters.startDate, 
+        filters.endDate, 
+        filters.accountIds
+    ),
     initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) => {
       if (lastPage.length < 50) return undefined;
       return allPages.length * 50;
     },
   });
+
+  const allDates = useMemo(() => {
+    if (!data) return [];
+    const dates = new Set<string>();
+    data.pages.forEach(page => page.forEach(t => dates.add(t.date)));
+    return Array.from(dates);
+  }, [data]);
+
+  const { data: dateBalances = [] } = useQuery({
+    queryKey: ['dateBalances', allDates, filters.accountIds],
+    queryFn: () => fetchDailyAccountBalances(allDates, filters.accountIds),
+    enabled: allDates.length > 0
+  });
+
+  const { data: netWorthBalances = [] } = useQuery({
+    queryKey: ['netWorthBalances'],
+    queryFn: fetchDailyBalances,
+  });
+
+  const getBalanceForDate = (date: string) => {
+    if (filters.accountIds.length > 0) {
+        return dateBalances
+            .filter(db => db.date === date)
+            .reduce((sum, db) => sum + Number(db.balance), 0);
+    } else {
+        return netWorthBalances
+            .find(db => db.date === date && db.account_type === 'net_worth')
+            ?.balance || 0;
+    }
+  };
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -537,24 +575,34 @@ export function LedgerTable() {
   }
 
   return (
-    <div className="w-full mt-8 mb-20">
-      <div className="max-w-5xl mx-auto">
+    <div className="w-full mt-4 mb-20">
+      <div className="w-full">
         {ledgerItems.map((item) => {
           if (item.type === 'date-header') {
             const date = new Date(item.date + 'T00:00:00');
+            const balance = getBalanceForDate(item.date);
             return (
               <div 
                 key={item.id} 
-                className="pt-6 pb-2 px-4 sticky top-0 bg-background/90 backdrop-blur-sm z-10 border-b border-border/40"
+                className="pt-4 pb-2 px-4 sticky top-0 bg-background/90 backdrop-blur-xl z-10 border-b border-white/[0.05] flex justify-between items-end"
               >
-                <h3 className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground/70">
+                <h3 className="text-[11px] font-bold uppercase tracking-[0.15em] text-white/50">
                   {date.toLocaleDateString('en-US', {
-                    weekday: 'long',
+                    weekday: 'short',
                     day: 'numeric',
-                    month: 'long',
+                    month: 'short',
                     year: 'numeric',
                   })}
                 </h3>
+                <div className="flex flex-col items-end gap-0.5">
+                   <span className="text-[9px] uppercase tracking-widest font-bold text-white/20">Total to this day</span>
+                   <span className={cn(
+                       "text-[14px] font-mono font-bold tracking-tighter",
+                       balance < 0 ? "text-destructive/80" : "text-green-500/80"
+                   )}>
+                    R$ {balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                   </span>
+                </div>
               </div>
             );
           }

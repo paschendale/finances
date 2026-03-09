@@ -2,30 +2,58 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { QuickEntryInput } from '@/components/QuickEntryInput';
 import { LedgerTable } from '@/components/LedgerTable';
 import { Dashboard } from '@/components/Dashboard';
-import { useState } from 'react';
+import { LedgerFilterBar, type LedgerFilters } from '@/components/LedgerFilterBar';
+import { useState, useEffect, useCallback } from 'react';
 import { LayoutDashboard, List, Wallet } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { format, startOfYear, endOfMonth } from 'date-fns';
 
 const queryClient = new QueryClient();
 
 function App() {
-  const [view, setView] = useState<'ledger' | 'dashboard'>('dashboard');
+  const [view, setView] = useState<'ledger' | 'dashboard'>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return (params.get('view') as 'ledger' | 'dashboard') || 'dashboard';
+  });
+
+  const [filters, setFilters] = useState<LedgerFilters>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const startDate = params.get('start') || format(startOfYear(new Date()), 'yyyy-MM-dd');
+    const endDate = params.get('end') || format(endOfMonth(new Date()), 'yyyy-MM-dd');
+    const accountIds = params.get('accounts')?.split(',').filter(Boolean) || [];
+    return { startDate, endDate, accountIds };
+  });
+
+  const updateURL = useCallback((view: string, filters: LedgerFilters) => {
+    const params = new URLSearchParams();
+    params.set('view', view);
+    if (filters.startDate) params.set('start', filters.startDate);
+    if (filters.endDate) params.set('end', filters.endDate);
+    if (filters.accountIds.length > 0) params.set('accounts', filters.accountIds.join(','));
+    
+    const newURL = `${window.location.pathname}?${params.toString()}`;
+    window.history.replaceState({}, '', newURL);
+  }, []);
+
+  useEffect(() => {
+    updateURL(view, filters);
+  }, [view, filters, updateURL]);
 
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="dark min-h-screen bg-[#050505] text-foreground flex flex-col items-center px-2">
-        <header className="w-full max-w-4xl mb-14 flex flex-row justify-between items-center border-b border-white/[0.06] pb-4 py-4">
+      <div className="dark min-h-screen bg-[#050505] text-foreground flex flex-col items-center px-4">
+        <header className="w-full max-w-5xl mb-6 flex flex-row justify-between items-center border-b border-white/[0.06] pb-3 py-3 shrink-0">
           <h1 className="logo-glassy text-xl font-semibold tracking-tight antialiased flex items-center gap-2.5">
             <Wallet className="h-6 w-6 opacity-90 shrink-0" />
             <span className="tracking-[-0.03em]">Finances</span>
           </h1>
-          <nav className="flex rounded-lg border border-white/[0.08] bg-white/[0.02] p-0.5">
+          <nav className="flex rounded-lg border border-white/[0.08] bg-white/[0.02] p-0.5 backdrop-blur-md">
             <button
               onClick={() => setView("dashboard")}
               className={cn(
                 "flex items-center gap-2 px-4 py-2 rounded-md text-[13px] font-medium tracking-[-0.01em] transition-colors",
                 view === "dashboard"
-                  ? "bg-white/10 text-foreground"
+                  ? "bg-white/10 text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground/80",
               )}
             >
@@ -37,7 +65,7 @@ function App() {
               className={cn(
                 "flex items-center gap-2 px-4 py-2 rounded-md text-[13px] font-medium tracking-[-0.01em] transition-colors",
                 view === "ledger"
-                  ? "bg-white/10 text-foreground"
+                  ? "bg-white/10 text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground/80",
               )}
             >
@@ -47,14 +75,17 @@ function App() {
           </nav>
         </header>
 
-        <main className="w-full max-w-5xl">
+        <main className="w-full max-w-5xl flex-1">
           {view === "ledger" ? (
-            <div className="space-y-12">
+            <div className="w-full space-y-6 pb-20">
               <QuickEntryInput />
-              <LedgerTable />
+              <div className="w-full space-y-4">
+                <LedgerFilterBar filters={filters} onChange={setFilters} />
+                <LedgerTable filters={filters} />
+              </div>
             </div>
           ) : (
-            <Dashboard />
+            <Dashboard filters={filters} onFilterChange={setFilters} />
           )}
         </main>
       </div>
