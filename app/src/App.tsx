@@ -3,7 +3,7 @@ import { QuickEntryInput } from '@/components/QuickEntryInput';
 import { LedgerTable } from '@/components/LedgerTable';
 import { Dashboard } from '@/components/Dashboard';
 import { useState } from 'react';
-import { LayoutDashboard, List } from 'lucide-react';
+import { LayoutDashboard, List, Wallet } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const queryClient = new QueryClient();
@@ -15,8 +15,9 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <div className="dark min-h-screen bg-[#050505] text-foreground flex flex-col items-center px-2">
         <header className="w-full max-w-4xl mb-14 flex flex-row justify-between items-center border-b border-white/[0.06] pb-4 py-4">
-          <h1 className="logo-glassy text-[15px] font-semibold tracking-[-0.02em] antialiased">
-            Paschendale's Finances
+          <h1 className="logo-glassy text-xl font-semibold tracking-tight antialiased flex items-center gap-2.5">
+            <Wallet className="h-6 w-6 opacity-90 shrink-0" />
+            <span className="tracking-[-0.03em]">Finances</span>
           </h1>
           <nav className="flex rounded-lg border border-white/[0.08] bg-white/[0.02] p-0.5">
             <button

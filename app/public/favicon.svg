@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+  <rect width="32" height="32" rx="6" fill="rgba(255,255,255,0.06)"/>
+  <!-- Coin -->
+  <circle cx="14" cy="14" r="7" stroke="rgba(255,255,255,0.9)" stroke-width="1.4" fill="none"/>
+  <!-- Dollar sign (simplified for small size) -->
+  <path d="M14 8v12M12 11h2a1 1 0 0 1 1 1v0a1 1 0 0 1-1 1h-2a1 1 0 0 0-1 1v0a1 1 0 0 0 1 1h4" stroke="rgba(255,255,255,0.95)" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Upward trend line -->
+  <path d="M20 20l6-6" stroke="rgba(255,255,255,0.75)" stroke-width="1.2" stroke-linecap="round" fill="none"/>
+</svg>
