@@ -322,3 +322,37 @@ export async function updateTransaction(transaction: Transaction) {
 
   return response.json();
 }
+
+export async function deleteTransaction(id: string) {
+  const response = await fetch(`${API_URL}/rpc/delete_transaction`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify({ p_id: id }),
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    const error = await response.json().catch(() => ({ message: 'Failed to delete transaction' }));
+    throw new Error(error.message || 'Failed to delete transaction');
+  }
+
+  return response.json();
+}
+
+export interface AccountUsage {
+  account_id: string;
+  account_name: string;
+  account_type: string;
+  usage_count: number;
+}
+
+export async function fetchAccountUsage(): Promise<AccountUsage[]> {
+  const response = await fetch(`${API_URL}/account_usage?order=usage_count.desc`, {
+    headers: getHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to fetch account usage');
+  }
+  return response.json();
+}

@@ -459,3 +459,31 @@
 - `app/src/components/QuickEntryInput.tsx`
 - `db/views/daily_balances.sql`
 - `IMPLEMENTATION_LOG.md`
+
+---
+
+## 2026-03-09 - Transaction Deletion and Transformation Implementation
+
+### Tasks
+- [x] Create migration `0029_delete_transaction_rpc.sql` with `delete_transaction` RPC
+- [x] Create view `account_usage` for smart account suggestions (all account types)
+- [x] Implement `deleteTransaction` in `app/src/lib/api.ts` using the new RPC
+- [x] Implement `fetchAccountUsage` in `app/src/lib/api.ts`
+- [x] Add "Delete" button with confirmation to `LedgerTable.tsx` (Expanded & Editing views)
+- [x] Enhance `TransactionRow` editing UI to support transformations (Category <-> Asset)
+- [x] Integrate `topAccountOptions` into `SearchableSelect` for transfers/assets
+- [x] Refine color-coded feedback during transformation (Red/Green/White)
+- [x] Invalidate relevant queries (transactions, accounts) after deletion or update
+
+### Decisions
+- Chose to implement a formal `delete_transaction` RPC to maintain consistency with the project's "Postgres-first" architecture and ensure atomicity.
+- Created the `account_usage` view to provide "top suggested accounts" for transfers, paralleling the `category_totals` logic but for asset/liability accounts.
+- Positioned the "Delete" button in the expanded view and editing footer to ensure it's easily accessible while preventing accidental clicks through a native `window.confirm`.
+- Leveraged the existing `update_transaction` RPC for "Transformations"; since the RPC deletes old entries and inserts new ones, changing an expense category to an asset account seamlessly converts an Expense into a Transfer.
+- Dynamically switched `topOptions` in `SearchableSelect` based on the entry type (Categories for expenses/income, Top Accounts for transfers).
+
+### Files Created/Modified
+- `migrations/0029_delete_transaction_rpc.sql`
+- `app/src/lib/api.ts`
+- `app/src/components/LedgerTable.tsx`
+- `IMPLEMENTATION_LOG.md`

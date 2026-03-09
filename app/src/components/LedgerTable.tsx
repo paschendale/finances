@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchTransactions, updateTransaction, fetchAccounts, fetchCategoryUsage, fetchDailyAccountBalances, fetchDailyBalances, type Transaction, type Entry } from '@/lib/api';
+import { fetchTransactions, updateTransaction, deleteTransaction, fetchAccounts, fetchCategoryUsage, fetchAccountUsage, fetchDailyAccountBalances, fetchDailyBalances, type Transaction, type Entry } from '@/lib/api';
 import { useMemo, useEffect, useRef, useState } from 'react';
 import { cn, formatHierarchicalName } from '@/lib/utils';
 import { SearchableSelect } from './SearchableSelect';
@@ -50,10 +50,23 @@ function TransactionRow({
     queryFn: fetchCategoryUsage,
   });
 
+  const { data: accountUsage } = useQuery({
+    queryKey: ['accountUsage'],
+    queryFn: fetchAccountUsage,
+  });
+
   const mutation = useMutation({
     mutationFn: updateTransaction,
     onSuccess: () => {
       setIsEditing(false);
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteTransaction,
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
     },
@@ -69,6 +82,13 @@ function TransactionRow({
       return { label: c.category_name, value: acc?.account_id || '' };
     }).filter(o => o.value !== ''),
   [topCategories, accounts]);
+
+  const topAccountOptions = useMemo(() => 
+    (accountUsage || [])
+      .filter(u => u.account_type === 'asset' || u.account_type === 'liability')
+      .slice(0, 10)
+      .map(u => ({ label: u.account_name, value: u.account_id })),
+  [accountUsage]);
 
   const totalDifference = useMemo(() => {
     if (!editState) return 0;
@@ -282,7 +302,7 @@ function TransactionRow({
                       <div className="flex-1">
                          <SearchableSelect
                             options={allAccountOptions}
-                            topOptions={isExpenseAcc || isIncomeAcc ? topCategoryOptions : []}
+                            topOptions={isExpenseAcc || isIncomeAcc ? topCategoryOptions : topAccountOptions}
                             value={entry.account_id}
                             onChange={(val) => updateEntry(idx, 'account_id', val)}
                             placeholder="Select Account..."
@@ -351,6 +371,18 @@ function TransactionRow({
                  </div>
                  <div className="flex gap-2">
                     <button 
+                        onClick={() => {
+                            if (window.confirm('Delete this transaction?')) {
+                                deleteMutation.mutate(item.id);
+                            }
+                        }}
+                        disabled={deleteMutation.isPending}
+                        className="px-3 py-1.5 rounded-md text-[12px] font-bold text-destructive/60 hover:bg-destructive/10 transition-all flex items-center gap-1"
+                    >
+                    {deleteMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                    Delete
+                    </button>
+                    <button 
                         onClick={cancelEditing}
                         className="px-3 py-1.5 rounded-md text-[12px] font-bold text-muted-foreground hover:bg-muted/50 transition-all flex items-center gap-1"
                     >
@@ -395,6 +427,25 @@ function TransactionRow({
                   </span>
                 </div>
               ))}
+              <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-border/20">
+                <button 
+                    onClick={(e) => {
+                        if (window.confirm('Delete this transaction?')) {
+                            deleteMutation.mutate(item.id);
+                        }
+                    }}
+                    disabled={deleteMutation.isPending}
+                    className="px-3 py-1.5 rounded-md text-[12px] font-bold text-destructive/60 hover:bg-destructive/10 transition-all flex items-center gap-1"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Delete
+                </button>
+                <button 
+                    onClick={startEditing}
+                    className="px-3 py-1.5 rounded-md text-[12px] font-bold text-primary/70 hover:bg-primary/10 transition-all flex items-center gap-1"
+                >
+                  Edit Transaction
+                </button>
+              </div>
             </>
           )}
         </div>
