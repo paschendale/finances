@@ -5,3 +5,4 @@ __pycache__/
 *.pyc
 Controle.xlsx
 .DS_Store
+scripts/import_excel.py
