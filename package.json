@@ -1,0 +1,13 @@
+{
+  "name": "finances",
+  "version": "0.0.0",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/paschendale/finances.git"
+  },
+  "devDependencies": {
+    "@semantic-release/exec": "^7.1.0",
+    "semantic-release": "^24.2.0"
+  }
+}
