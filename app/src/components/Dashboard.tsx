@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { fetchAccounts, fetchDashboardData, fetchDailyBalances } from '@/lib/api';
+import { type Account, fetchAccounts, fetchDashboardData, fetchDailyBalances } from '@/lib/api';
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, 
   AreaChart, Area, XAxis, YAxis, CartesianGrid 
@@ -20,8 +20,6 @@ const COLORS = [
   '#06B6D4', // Cyan
   '#F97316', // Orange
 ];
-
-const INCOME_COLOR = '#10B981';
 
 interface DateRange {
   start: Date;
@@ -138,51 +136,73 @@ export function Dashboard() {
 
     // Asset History with Dynamic Granularity
     const daysDiff = differenceInDays(dateRange.end, dateRange.start);
+    const targetTypes = ['checking', 'emergency', 'investments', 'credit-card'];
     const filteredDaily = dailyBalances
-      .filter(db => db.account_type === 'asset')
+      .filter(db => targetTypes.includes(db.account_type))
       .filter(db => {
         const d = parseISO(db.date);
         return isWithinInterval(d, { start: dateRange.start, end: dateRange.end });
       });
 
-    let assetHistory: { label: string, assets: number }[] = [];
+    let assetHistory: any[] = [];
+
+    const aggregateByDate = (data: typeof filteredDaily) => {
+      const map: Record<string, any> = {};
+      data.forEach(db => {
+        if (!map[db.date]) {
+          map[db.date] = { date: db.date, label: format(parseISO(db.date), 'MMM d') };
+          targetTypes.forEach(t => map[db.date][t] = 0);
+        }
+        map[db.date][db.account_type] = Number(db.balance);
+      });
+      return Object.values(map).sort((a, b) => a.date.localeCompare(b.date));
+    };
 
     if (daysDiff > 35) {
       // Weekly aggregation (take the last balance of the week)
-      const weeklyMap: Record<string, { date: Date, balance: number }> = {};
+      const weeklyMap: Record<string, any> = {};
       filteredDaily.forEach(db => {
         const d = parseISO(db.date);
         const weekKey = format(startOfWeek(d), 'yyyy-MM-dd');
-        // We want the most recent date in the week
-        if (!weeklyMap[weekKey] || d > weeklyMap[weekKey].date) {
-          weeklyMap[weekKey] = { date: d, balance: Number(db.balance) };
+        if (!weeklyMap[weekKey]) {
+            weeklyMap[weekKey] = { weekKey, date: d, label: format(d, 'MMM d') };
+            targetTypes.forEach(t => weeklyMap[weekKey][t] = null);
+        }
+        // Update if this date is more recent for this type in this week
+        if (!weeklyMap[weekKey][`${db.account_type}_date`] || d > weeklyMap[weekKey][`${db.account_type}_date`]) {
+            weeklyMap[weekKey][`${db.account_type}_date`] = d;
+            weeklyMap[weekKey][db.account_type] = Number(db.balance);
         }
       });
       assetHistory = Object.values(weeklyMap)
-        .sort((a, b) => a.date.getTime() - b.date.getTime())
-        .map(w => ({
-          label: format(w.date, 'MMM d'),
-          assets: w.balance
-        }));
+        .sort((a, b) => a.weekKey.localeCompare(b.weekKey))
+        .map(w => {
+            const { weekKey, date, label, ...vals } = w;
+            return { label, ...vals };
+        });
     } else {
-      // Daily granularity
-      assetHistory = filteredDaily.map(db => ({
-        label: format(parseISO(db.date), 'MMM d'),
-        assets: Number(db.balance)
-      }));
+      assetHistory = aggregateByDate(filteredDaily);
     }
 
     return { expensesL1, expensesL2, expensesL3, incomePie, assetHistory };
   }, [filteredEntries, dailyBalances, dateRange]);
-  const totalAssets = accounts
-    .filter(a => a.account_type === 'asset')
-    .reduce((sum, a) => sum + a.balance, 0);
+  const accountGroups = useMemo(() => {
+    const checking = accounts.filter(a => a.account_name.startsWith('assets:checking:'));
+    const emergency = accounts.filter(a => a.account_name.startsWith('assets:emergency:'));
+    const investments = accounts.filter(a => a.account_name.startsWith('assets:investments:'));
+    const creditCards = accounts.filter(a => a.account_name.startsWith('liabilities:credit-card:'));
 
-  const totalLiabilities = accounts
-    .filter(a => a.account_type === 'liability')
-    .reduce((sum, a) => sum + a.balance, 0);
+    const sum = (accs: Account[]) => accs.reduce((s, a) => s + a.balance, 0);
 
-  const netWorth = totalAssets + totalLiabilities;
+    return {
+      checking: { label: 'Checking Accounts', accounts: checking.sort((a, b) => b.balance - a.balance), total: sum(checking) },
+      emergency: { label: 'Emergency Funds', accounts: emergency.sort((a, b) => b.balance - a.balance), total: sum(emergency) },
+      investments: { label: 'Investments', accounts: investments.sort((a, b) => b.balance - a.balance), total: sum(investments) },
+      creditCards: { label: 'Credit Cards', accounts: creditCards.sort((a, b) => a.balance - b.balance), total: sum(creditCards) },
+    };
+  }, [accounts]);
+
+  const netWorth = accountGroups.checking.total + accountGroups.emergency.total + accountGroups.investments.total + accountGroups.creditCards.total;
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -236,10 +256,18 @@ export function Dashboard() {
       </div>
 
       {/* Balances Panel */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <BalanceCard title="Total Assets" amount={totalAssets} color="text-[#10B981]" />
-        <BalanceCard title="Liabilities" amount={totalLiabilities} color="text-[#EF4444]" />
-        <BalanceCard title="Net Worth" amount={netWorth} color="text-white" />
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <BalanceCard title="Checking" amount={accountGroups.checking.total} accounts={accountGroups.checking.accounts} color="text-white" />
+        <BalanceCard title="Emergency" amount={accountGroups.emergency.total} accounts={accountGroups.emergency.accounts} color="text-[#3B82F6]" />
+        <BalanceCard title="Investments" amount={accountGroups.investments.total} accounts={accountGroups.investments.accounts} color="text-[#10B981]" />
+        <BalanceCard title="Credit Cards" amount={accountGroups.creditCards.total} accounts={accountGroups.creditCards.accounts} color="text-[#EF4444]" />
+      </div>
+
+      <div className="flex justify-center">
+        <div className="bg-white/5 px-6 py-2 rounded-full border border-white/10">
+           <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold mr-3">Net Worth</span>
+           <span className="text-xl font-bold tracking-tight">R$ {netWorth.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+        </div>
       </div>
 
       {/* Main Charts */}
@@ -389,14 +417,26 @@ export function Dashboard() {
         </ChartCard>
 
         {/* Monthly Area Chart */}
-        <ChartCard title="Asset Growth History" className="lg:col-span-3">
-          <div className="h-[350px]">
+        <ChartCard title="Asset Breakdown History" className="lg:col-span-3">
+          <div className="h-[450px]">
             <ResponsiveContainer width="100%" height="100%" key={`${dateRange.start.getTime()}-${dateRange.end.getTime()}`}>
               <AreaChart data={stats.assetHistory} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
                 <defs>
-                  <linearGradient id="colorAssets" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={INCOME_COLOR} stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor={INCOME_COLOR} stopOpacity={0}/>
+                  <linearGradient id="colorInvest" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10B981" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#10B981" stopOpacity={0}/>
+                  </linearGradient>
+                  <linearGradient id="colorEmergency" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/>
+                  </linearGradient>
+                  <linearGradient id="colorChecking" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#FFFFFF" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#FFFFFF" stopOpacity={0}/>
+                  </linearGradient>
+                  <linearGradient id="colorCredit" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#EF4444" stopOpacity={0.1}/>
+                    <stop offset="95%" stopColor="#EF4444" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.03)" />
@@ -414,15 +454,45 @@ export function Dashboard() {
                 />
                 <Tooltip 
                   contentStyle={{ backgroundColor: 'rgba(0,0,0,0.9)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(20px)' }}
-                  formatter={(value: any) => `R$ ${Number(value).toLocaleString()}`}
+                  formatter={(value: any, name: any) => [`R$ ${Number(value).toLocaleString()}`, String(name || '').replace('-', ' ')]}
                 />
+                {/* Credit Card - Usually negative, shown separately (not stacked with assets) */}
                 <Area 
                   type="monotone" 
-                  dataKey="assets" 
-                  stroke={INCOME_COLOR} 
-                  strokeWidth={4} 
+                  dataKey="credit-card" 
+                  stroke="#EF4444" 
+                  strokeWidth={2} 
                   fillOpacity={1} 
-                  fill="url(#colorAssets)" 
+                  fill="url(#colorCredit)" 
+                  strokeDasharray="5 5"
+                />
+                {/* Stacked Assets */}
+                <Area 
+                  stackId="1"
+                  type="monotone" 
+                  dataKey="investments" 
+                  stroke="#10B981" 
+                  strokeWidth={3} 
+                  fillOpacity={1} 
+                  fill="url(#colorInvest)" 
+                />
+                <Area 
+                  stackId="1"
+                  type="monotone" 
+                  dataKey="emergency" 
+                  stroke="#3B82F6" 
+                  strokeWidth={3} 
+                  fillOpacity={1} 
+                  fill="url(#colorEmergency)" 
+                />
+                <Area 
+                  stackId="1"
+                  type="monotone" 
+                  dataKey="checking" 
+                  stroke="#FFFFFF" 
+                  strokeWidth={3} 
+                  fillOpacity={1} 
+                  fill="url(#colorChecking)" 
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -445,13 +515,29 @@ export function Dashboard() {
   );
 }
 
-function BalanceCard({ title, amount, color }: { title: string, amount: number, color: string }) {
+function BalanceCard({ title, amount, color, accounts = [] }: { title: string, amount: number, color: string, accounts?: Account[] }) {
   return (
-    <div className="bg-white/[0.03] backdrop-blur-3xl p-8 rounded-[2.5rem] border border-white/5 hover:border-white/10 transition-all group shadow-sm">
-      <h3 className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-bold mb-4">{title}</h3>
-      <p className={cn("text-4xl font-bold tracking-tighter", color)}>
-        {amount < 0 ? '-' : ''} R$ {Math.abs(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-      </p>
+    <div className="relative group">
+      <div className="bg-white/[0.03] backdrop-blur-3xl p-6 rounded-[2rem] border border-white/5 group-hover:border-white/20 transition-all shadow-sm">
+        <h3 className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-bold mb-3">{title}</h3>
+        <p className={cn("text-2xl font-bold tracking-tighter truncate", color)}>
+          {amount < 0 ? '-' : ''} R$ {Math.abs(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </p>
+      </div>
+      
+      {/* Hover Detail Card */}
+      {accounts.length > 0 && (
+        <div className="absolute top-full left-0 w-full mt-2 p-4 bg-black/90 backdrop-blur-2xl border border-white/10 rounded-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[60] shadow-2xl scale-95 group-hover:scale-100 origin-top">
+          <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
+            {accounts.map(acc => (
+              <div key={acc.account_id} className="flex justify-between items-center text-[10px]">
+                <span className="text-white/60 truncate mr-2">{acc.account_name.split(':').pop()}</span>
+                <span className="font-mono font-bold text-white">R$ {acc.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

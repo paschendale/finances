@@ -147,8 +147,8 @@ export function QuickEntryInput() {
       }
 
       if (parsed.type === 'transfer') {
-        const fromAccount = allAccountOptions.find(o => o.value.toLowerCase().includes(parsed.from!.toLowerCase()))?.value || `assets:${parsed.from}`;
-        const toAccount = allAccountOptions.find(o => o.value.toLowerCase().includes(parsed.to!.toLowerCase()))?.value || `assets:${parsed.to}`;
+        const fromAccount = allAccountOptions.find(o => o.value.toLowerCase().includes(parsed.from!.toLowerCase()))?.value || `assets:checking:${parsed.from}`;
+        const toAccount = allAccountOptions.find(o => o.value.toLowerCase().includes(parsed.to!.toLowerCase()))?.value || `assets:checking:${parsed.to}`;
         
         setPreview({
           date: parsed.date!,
@@ -166,7 +166,7 @@ export function QuickEntryInput() {
         
         // Robust account resolution
         const accountMatch = allAccountOptions.find(o => o.value.toLowerCase() === finalAccountName.toLowerCase() || o.value.toLowerCase().includes(finalAccountName.toLowerCase()));
-        const finalAccount = accountMatch ? accountMatch.value : (finalAccountName.includes(':') ? finalAccountName : `assets:${finalAccountName}`);
+        const finalAccount = accountMatch ? accountMatch.value : (finalAccountName.includes(':') ? finalAccountName : `assets:checking:${finalAccountName}`);
 
         const memoryCategoryName = memory?.category;
         const categoryMatch = memoryCategoryName ? allAccountOptions.find(o => o.value === memoryCategoryName) : null;

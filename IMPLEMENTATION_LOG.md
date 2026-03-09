@@ -431,7 +431,31 @@
 - Implemented chunked inserts for transactions to retrieve generated IDs efficiently without overloading the database.
 - Added Unicode normalization (NFKD) to the slugification process to handle international characters in account/category names correctly.
 
+---
+
+## 2026-03-09 - Account Standardization & Dashboard Enhancements
+
+### Tasks
+- [x] Refine `import_excel.py` with standardized account hierarchy (`checking`, `emergency`, `investments`, `credit-card`)
+- [x] Standardize category normalization in `import_excel.py` (Income vs Expenses based on keywords)
+- [x] Update `QuickEntryInput.tsx` to align with new `assets:checking:` hierarchy
+- [x] Enhance `Dashboard` with categorized balance cards (Checking, Emergency, Investments, Credit Cards)
+- [x] Implement "Hover to Detail" in `BalanceCard` to show constituent accounts and balances
+- [x] Update `daily_balances` view to support granular account subtypes using `LIKE` patterns
+- [x] Transform "Asset Growth History" into "Asset Breakdown History" (Stacked Area Chart)
+- [x] Fix TypeScript type errors in `Dashboard.tsx` (import types and tooltip formatters)
+- [x] Verify frontend production build (`npm run build`)
+
+### Decisions
+- Adopted a strict four-tier account hierarchy for assets and liabilities to drive the dashboard's visual logic and simplify user navigation.
+- Implemented the breakdown chart as a stacked area for assets (`investments` -> `emergency` -> `checking`) to visualize asset composition over time.
+- Positioned `credit-card` as a separate, non-stacked dashed area to represent liabilities without distorting the positive asset stack.
+- Moved account-level details into a hover popover to keep the dashboard clean while providing deep-dive capabilities for each category.
+- Updated the database view `daily_balances` to pre-aggregate subtypes based on naming patterns, ensuring high performance for temporal charts while maintaining backward compatibility with base types.
+
 ### Files Created/Modified
 - `scripts/import_excel.py`
-- `scripts/reset_db.py`
+- `app/src/components/Dashboard.tsx`
+- `app/src/components/QuickEntryInput.tsx`
+- `db/views/daily_balances.sql`
 - `IMPLEMENTATION_LOG.md`
