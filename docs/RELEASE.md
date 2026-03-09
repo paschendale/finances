@@ -38,6 +38,9 @@ feat(api): add filter by date range
 feat!: drop support for legacy import format
 ```
 
-## Running migrations only on release
+## When migrations run
 
-Migrations run only when semantic-release **creates a new release**. If there are no release-worthy commits, no release is created and the migration step is not run. This keeps production migrations in sync with released versions.
+Migrations run in two cases:
+
+1. **On release** – When semantic-release creates a new release (tag + GitHub release), the release workflow runs migrations via the exec plugin so production is updated with the new version.
+2. **On `migrations/` changes** – The [Migrate](.github/workflows/migrate.yml) workflow runs on every push to `main` that touches files under `migrations/`. This applies new migrations to production even when no new app release is cut (e.g. schema-only or data migrations).
