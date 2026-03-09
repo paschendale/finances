@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { fetchAccounts, fetchDashboardData } from '@/lib/api';
+import { fetchAccounts, fetchDashboardData, fetchDailyBalances } from '@/lib/api';
 import { 
-  PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, 
-  LineChart, Line, XAxis, YAxis, CartesianGrid 
+  PieChart, Pie, Cell, ResponsiveContainer, Tooltip, 
+  AreaChart, Area, XAxis, YAxis, CartesianGrid 
 } from 'recharts';
-import { format, startOfMonth, endOfMonth, subMonths, startOfYear, endOfYear, subYears, parseISO } from 'date-fns';
+import { format, startOfMonth, endOfMonth, subMonths, startOfYear, endOfYear, subYears, parseISO, isWithinInterval, differenceInDays, startOfWeek } from 'date-fns';
 import { Calendar } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -22,7 +22,6 @@ const COLORS = [
 ];
 
 const INCOME_COLOR = '#10B981';
-const EXPENSE_COLOR = '#EF4444';
 
 interface DateRange {
   start: Date;
@@ -39,7 +38,7 @@ const DATE_PRESETS: DateRange[] = [
 ];
 
 export function Dashboard() {
-  const [dateRange, setDateRange] = useState<DateRange>(DATE_PRESETS[0]);
+  const [dateRange, setDateRange] = useState<DateRange>(DATE_PRESETS[2]);
   const [isCustom, setIsCustom] = useState(false);
 
   const handlePresetClick = (preset: DateRange) => {
@@ -70,6 +69,11 @@ export function Dashboard() {
   const { data: entries = [] } = useQuery({
     queryKey: ['dashboardData', startDateStr, endDateStr],
     queryFn: () => fetchDashboardData(startDateStr, endDateStr),
+  });
+
+  const { data: dailyBalances = [] } = useQuery({
+    queryKey: ['dailyBalances'],
+    queryFn: fetchDailyBalances,
   });
 
   // Filter and Aggregate Data
@@ -132,15 +136,44 @@ export function Dashboard() {
     const expensesL3 = formatPie(l3Map);
     const incomePie = formatPie(incomeMap);
 
-    const lineData = Object.values(monthlyData).sort((a, b) => {
-        const da = parseISO(entries.find(e => format(parseISO(e.date), 'MMM yyyy') === a.month)?.date || '');
-        const db = parseISO(entries.find(e => format(parseISO(e.date), 'MMM yyyy') === b.month)?.date || '');
-        return da.getTime() - db.getTime();
-    });
+    // Asset History with Dynamic Granularity
+    const daysDiff = differenceInDays(dateRange.end, dateRange.start);
+    const filteredDaily = dailyBalances
+      .filter(db => db.account_type === 'asset')
+      .filter(db => {
+        const d = parseISO(db.date);
+        return isWithinInterval(d, { start: dateRange.start, end: dateRange.end });
+      });
 
-    return { expensesL1, expensesL2, expensesL3, incomePie, lineData };
-  }, [filteredEntries]);
+    let assetHistory: { label: string, assets: number }[] = [];
 
+    if (daysDiff > 35) {
+      // Weekly aggregation (take the last balance of the week)
+      const weeklyMap: Record<string, { date: Date, balance: number }> = {};
+      filteredDaily.forEach(db => {
+        const d = parseISO(db.date);
+        const weekKey = format(startOfWeek(d), 'yyyy-MM-dd');
+        // We want the most recent date in the week
+        if (!weeklyMap[weekKey] || d > weeklyMap[weekKey].date) {
+          weeklyMap[weekKey] = { date: d, balance: Number(db.balance) };
+        }
+      });
+      assetHistory = Object.values(weeklyMap)
+        .sort((a, b) => a.date.getTime() - b.date.getTime())
+        .map(w => ({
+          label: format(w.date, 'MMM d'),
+          assets: w.balance
+        }));
+    } else {
+      // Daily granularity
+      assetHistory = filteredDaily.map(db => ({
+        label: format(parseISO(db.date), 'MMM d'),
+        assets: Number(db.balance)
+      }));
+    }
+
+    return { expensesL1, expensesL2, expensesL3, incomePie, assetHistory };
+  }, [filteredEntries, dailyBalances, dateRange]);
   const totalAssets = accounts
     .filter(a => a.account_type === 'asset')
     .reduce((sum, a) => sum + a.balance, 0);
@@ -355,14 +388,20 @@ export function Dashboard() {
           </div>
         </ChartCard>
 
-        {/* Monthly Line Chart */}
-        <ChartCard title="Cash Flow Trends" className="lg:col-span-3">
+        {/* Monthly Area Chart */}
+        <ChartCard title="Asset Growth History" className="lg:col-span-3">
           <div className="h-[350px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={stats.lineData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+            <ResponsiveContainer width="100%" height="100%" key={`${dateRange.start.getTime()}-${dateRange.end.getTime()}`}>
+              <AreaChart data={stats.assetHistory} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                <defs>
+                  <linearGradient id="colorAssets" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={INCOME_COLOR} stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor={INCOME_COLOR} stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.03)" />
                 <XAxis 
-                  dataKey="month" 
+                  dataKey="label" 
                   axisLine={false} 
                   tickLine={false} 
                   tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 11 }} 
@@ -377,24 +416,15 @@ export function Dashboard() {
                   contentStyle={{ backgroundColor: 'rgba(0,0,0,0.9)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(20px)' }}
                   formatter={(value: any) => `R$ ${Number(value).toLocaleString()}`}
                 />
-                <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} />
-                <Line 
+                <Area 
                   type="monotone" 
-                  dataKey="income" 
+                  dataKey="assets" 
                   stroke={INCOME_COLOR} 
                   strokeWidth={4} 
-                  dot={{ r: 0 }} 
-                  activeDot={{ r: 6, strokeWidth: 0 }}
+                  fillOpacity={1} 
+                  fill="url(#colorAssets)" 
                 />
-                <Line 
-                  type="monotone" 
-                  dataKey="expense" 
-                  stroke={EXPENSE_COLOR} 
-                  strokeWidth={4} 
-                  dot={{ r: 0 }}
-                  activeDot={{ r: 6, strokeWidth: 0 }}
-                />
-              </LineChart>
+              </AreaChart>
             </ResponsiveContainer>
           </div>
         </ChartCard>

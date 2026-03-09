@@ -323,7 +323,33 @@
 
 ---
 
-## 2026-03-08 - Dashboard Implementation
+## 2026-03-08 - Dashboard Chart Improvement: Dynamic Asset Growth
+
+### Tasks
+- [x] Create migration `0018_monthly_balances.sql` and `0019_daily_balances.sql`
+- [x] Implement `monthly_balances` and `daily_balances` views for temporal tracking
+- [x] Update `app/src/lib/api.ts` with `fetchDailyBalances`
+- [x] Transition Dashboard "Cash Flow Trends" from LineChart to AreaChart
+- [x] Implement dynamic granularity: Weekly for > 35 days, Daily otherwise
+- [x] Set "This Year" as the default Dashboard date range
+- [x] Fix chart sync issues by ensuring asset history is independent of category filters
+- [x] Add re-render trigger (key) to ResponsiveContainer for stable chart updates
+
+### Decisions
+- Switched from Income/Expense lines to an Area Chart for Assets to better visualize net worth accumulation.
+- Chose a 35-day threshold for granularity switching to maintain high-density readability without overcrowding the X-axis.
+- Used `startOfWeek` from `date-fns` to group daily balances for the weekly view, taking the last recorded balance of each week.
+- Kept `monthly_balances` view as a fallback, though the frontend currently utilizes `daily_balances` for all granularities.
+
+### Files Created/Modified
+- `migrations/0018_monthly_balances.sql`
+- `migrations/0019_daily_balances.sql`
+- `db/views/monthly_balances.sql`
+- `db/views/daily_balances.sql`
+- `app/src/lib/api.ts`
+- `app/src/components/Dashboard.tsx`
+- `IMPLEMENTATION_LOG.md`
+
 
 ### Tasks
 - [x] Create migration `0017_dashboard_view.sql` with `dashboard_data` view

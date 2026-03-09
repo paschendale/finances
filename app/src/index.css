@@ -116,6 +116,20 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Glassy logo typography: gradient clipped to text */
+.logo-glassy {
+  color: transparent;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 1) 0%,
+    rgba(255, 255, 255, 0.92) 45%,
+    rgba(255, 255, 255, 0.72) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

@@ -109,6 +109,20 @@ export async function fetchGlobalSettings(): Promise<GlobalSetting[]> {
   return response.json();
 }
 
+export interface DailyBalance {
+  date: string;
+  account_type: string;
+  balance: number;
+}
+
+export async function fetchDailyBalances(): Promise<DailyBalance[]> {
+  const response = await fetch(`${API_URL}/daily_balances?order=date.asc`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch daily balances');
+  }
+  return response.json();
+}
+
 export async function createTransaction(transaction: Omit<Transaction, 'id' | 'entries'> & { entries: Omit<Entry, 'id' | 'account_name' | 'account_type'>[] }) {
   const response = await fetch(`${API_URL}/rpc/create_transaction`, {
     method: 'POST',
