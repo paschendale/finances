@@ -234,6 +234,54 @@ export async function fetchDailyAccountBalances(dates: string[], accountIds: str
   return response.json();
 }
 
+export interface DescriptionMatch {
+  description: string;
+  category_id: string;
+  category_name: string;
+  category_type: string;
+  account_id: string;
+  account_name: string;
+  account_type: string;
+  currency: string;
+  similarity: number;
+  score: number;
+}
+
+export async function matchDescriptionMemory(input: string): Promise<DescriptionMatch[]> {
+  const response = await fetch(`${API_URL}/rpc/match_description_memory`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify({ p_input: input }),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    return [];
+  }
+  return response.json();
+}
+
+export interface AccountMatch {
+  account_id: string;
+  account_name: string;
+  full_name: string;
+  type: string;
+  similarity: number;
+}
+
+export async function matchAccount(input: string): Promise<AccountMatch | null> {
+  const response = await fetch(`${API_URL}/rpc/match_account`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify({ p_input: input }),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    return null;
+  }
+  const results = await response.json();
+  return results.length > 0 ? results[0] : null;
+}
+
 export async function createTransaction(transaction: Omit<Transaction, 'id' | 'entries'> & { entries: Omit<Entry, 'id' | 'account_name' | 'account_type'>[] }) {
   const response = await fetch(`${API_URL}/rpc/create_transaction`, {
     method: 'POST',

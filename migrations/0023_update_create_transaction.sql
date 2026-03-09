@@ -1,11 +1,13 @@
--- RPC function to update a transaction and its entries
-CREATE OR REPLACE FUNCTION update_transaction(
-  p_id UUID,
+-- 0023_update_create_transaction.sql
+-- Update create_transaction RPC to include improved memory tracking
+
+CREATE OR REPLACE FUNCTION create_transaction(
   p_date DATE,
   p_description TEXT,
   p_entries JSONB
 ) RETURNS JSONB AS $$
 DECLARE
+  v_transaction_id UUID;
   v_entry JSONB;
   v_total_amount_base NUMERIC := 0;
   v_entry_count INTEGER := 0;
@@ -16,21 +18,12 @@ DECLARE
   v_account_id UUID;
   v_currency TEXT;
 BEGIN
-  -- 1. Update transaction
-  UPDATE transactions
-  SET date = p_date,
-      description = p_description,
-      updated_at = now()
-  WHERE id = p_id;
+  -- 1. Insert transaction
+  INSERT INTO transactions (date, description)
+  VALUES (p_date, p_description)
+  RETURNING id INTO v_transaction_id;
 
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'Transaction with ID % not found', p_id;
-  END IF;
-
-  -- 2. Delete existing entries
-  DELETE FROM entries WHERE transaction_id = p_id;
-
-  -- 3. Insert new entries
+  -- 2. Insert entries
   FOR v_entry IN SELECT * FROM jsonb_array_elements(p_entries)
   LOOP
     INSERT INTO entries (
@@ -41,7 +34,7 @@ BEGIN
       exchange_rate,
       amount_base
     ) VALUES (
-      p_id,
+      v_transaction_id,
       (v_entry->>'account_id')::UUID,
       (v_entry->>'amount')::NUMERIC,
       (v_entry->>'currency')::TEXT,
@@ -53,33 +46,31 @@ BEGIN
     v_entry_count := v_entry_count + 1;
   END LOOP;
 
-  -- 4. Validate entry count
+  -- 3. Validate entry count
   IF v_entry_count < 2 THEN
     RAISE EXCEPTION 'Transaction must have at least two entries';
   END IF;
 
-  -- 5. Validate balance (SUM(amount_base) = 0)
-  -- Use a small epsilon for floating point comparison if needed, 
-  -- but NUMERIC should be exact.
+  -- 4. Validate balance (SUM(amount_base) = 0)
   IF v_total_amount_base <> 0 THEN
     RAISE EXCEPTION 'Transaction is not balanced: SUM(amount_base) = %', v_total_amount_base;
   END IF;
 
-  -- 6. Update smart defaults (Same logic as create_transaction)
+  -- 5. Update smart defaults
   
   -- Heuristic to find primary accounts
   -- Category (Destination): First expense or income account, else the positive entry
   SELECT e.account_id INTO v_category_id
   FROM entries e
   JOIN accounts a ON e.account_id = a.id
-  WHERE e.transaction_id = p_id
+  WHERE e.transaction_id = v_transaction_id
     AND a.type IN ('expense', 'income')
   LIMIT 1;
   
   IF v_category_id IS NULL THEN
       SELECT e.account_id INTO v_category_id
       FROM entries e
-      WHERE e.transaction_id = p_id AND e.amount > 0
+      WHERE e.transaction_id = v_transaction_id AND e.amount > 0
       LIMIT 1;
   END IF;
 
@@ -87,7 +78,7 @@ BEGIN
   SELECT e.account_id, e.currency INTO v_account_id, v_currency
   FROM entries e
   JOIN accounts a ON e.account_id = a.id
-  WHERE e.transaction_id = p_id
+  WHERE e.transaction_id = v_transaction_id
     AND a.type IN ('asset', 'liability', 'equity')
     AND e.account_id != COALESCE(v_category_id, '00000000-0000-0000-0000-000000000000'::UUID)
   ORDER BY (e.amount < 0) DESC -- Prefer negative (source) account
@@ -96,7 +87,7 @@ BEGIN
   IF v_account_id IS NULL THEN
       SELECT e.account_id, e.currency INTO v_account_id, v_currency
       FROM entries e
-      WHERE e.transaction_id = p_id 
+      WHERE e.transaction_id = v_transaction_id 
         AND e.amount < 0
         AND e.account_id != COALESCE(v_category_id, '00000000-0000-0000-0000-000000000000'::UUID)
       LIMIT 1;
@@ -128,30 +119,19 @@ BEGIN
       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now();
   END IF;
 
-  -- 7. Construct return object
+  -- 6. Construct return object
   SELECT jsonb_build_object(
     'id', t.id,
     'date', t.date,
     'description', t.description,
     'entries', (
-      SELECT jsonb_agg(jsonb_build_object(
-                'id', e.id,
-                'account_id', e.account_id,
-                'account_name', a.full_name,
-                'account_type', a.type,
-                'amount', e.amount,
-                'currency', e.currency,
-                'exchange_rate', e.exchange_rate,
-                'amount_base', e.amount_base,
-                'created_at', e.created_at
-            ) ORDER BY e.created_at DESC)
+      SELECT jsonb_agg(e.*)
       FROM entries e
-      JOIN account_names_hierarchical a ON e.account_id = a.id
       WHERE e.transaction_id = t.id
     )
   ) INTO v_result
   FROM transactions t
-  WHERE t.id = p_id;
+  WHERE t.id = v_transaction_id;
 
   RETURN v_result;
 END;

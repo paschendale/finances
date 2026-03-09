@@ -4,3 +4,4 @@ venv/
 __pycache__/
 *.pyc
 Controle.xlsx
+.DS_Store

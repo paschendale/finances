@@ -29,15 +29,25 @@ export function SearchableSelect({
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const formatLabel = (label: string) => {
+  const formatLabel = (label: string, isSelected: boolean) => {
     const parts = label.split(':');
-    if (parts.length <= 1) return label;
+    if (parts.length <= 1) return <span className={cn("font-medium", isSelected ? "text-primary-foreground" : "text-foreground")}>{label}</span>;
     const leaf = parts[parts.length - 1];
     const path = parts.slice(0, -1).join(' > ');
     return (
-      <div className="flex flex-col items-start overflow-hidden">
-        <span className="text-[10px] text-muted-foreground/50 truncate w-full uppercase tracking-tighter">{path}</span>
-        <span className="font-semibold truncate w-full leading-tight">{leaf}</span>
+      <div className="flex flex-col items-start overflow-hidden py-0.5">
+        <span className={cn(
+          "text-[9px] uppercase tracking-wider truncate w-full leading-none mb-1 font-bold",
+          isSelected ? "text-primary-foreground/60" : "text-muted-foreground/70"
+        )}>
+          {path}
+        </span>
+        <span className={cn(
+          "text-[13px] font-bold truncate w-full leading-tight",
+          isSelected ? "text-primary-foreground" : "text-foreground/90"
+        )}>
+          {leaf}
+        </span>
       </div>
     );
   };
@@ -131,7 +141,7 @@ export function SearchableSelect({
                     setSearch('');
                   }}
                 >
-                  {formatLabel(opt.label)}
+                  {formatLabel(opt.label, opt.value === value)}
                 </button>
               ))
             ) : (

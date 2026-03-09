@@ -1,10 +1,29 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { parseQuickEntry, type TransactionPreview } from '@/lib/ledger-parser/parser';
-import { fetchAccounts, fetchTransactions, createTransaction, fetchCategoryUsage, fetchDescriptionMemories, fetchGlobalSettings } from '@/lib/api';
+import { 
+  fetchAccounts, 
+  fetchTransactions, 
+  createTransaction, 
+  fetchCategoryUsage, 
+  fetchGlobalSettings, 
+  matchDescriptionMemory, 
+  matchAccount 
+} from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { Check, Loader2, AlertCircle, Calendar, Wallet, Tag, Info, ArrowUpRight, ArrowDownLeft, Plus, Trash2 } from 'lucide-react';
+import { Check, Loader2, AlertCircle, Calendar, Wallet, Tag, Info, ArrowUpRight, ArrowDownLeft, Plus, Trash2, Zap } from 'lucide-react';
 import { SearchableSelect } from './SearchableSelect';
+
+// --- Helper for normalization ---
+function normalizeString(str: string): string {
+  return str
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Remove accents
+    .replace(/[^\w\s]/g, '')        // Remove punctuation
+    .replace(/\s+/g, ' ')           // Collapse spaces
+    .trim();
+}
 
 // --- Main QuickEntryInput Component ---
 export function QuickEntryInput() {
@@ -14,6 +33,7 @@ export function QuickEntryInput() {
   const [preview, setPreview] = useState<TransactionPreview | null>(null);
   const [isEdited, setIsEdited] = useState(false);
   const [suggestion, setSuggestion] = useState<string | null>(null);
+  const [matchInfo, setMatchInfo] = useState<{ similarity: number, categoryType?: string } | null>(null);
   
   const inputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
@@ -31,11 +51,6 @@ export function QuickEntryInput() {
   const { data: topCategories } = useQuery({
     queryKey: ['categoryUsage'],
     queryFn: fetchCategoryUsage,
-  });
-
-  const { data: descriptionMemories } = useQuery({
-    queryKey: ['descriptionMemories'],
-    queryFn: fetchDescriptionMemories,
   });
 
   const { data: globalSettings } = useQuery({
@@ -78,27 +93,16 @@ export function QuickEntryInput() {
     return accountOptions[0]?.value || '';
   }, [lastUsedAccountId, accounts, transactions, accountOptions]);
 
-  const memoryMap = useMemo(() => {
-    const map = new Map<string, { category: string, account: string, currency: string }>();
-    (descriptionMemories || []).forEach(m => {
-      map.set(m.description.toLowerCase(), {
-        category: m.category_name,
-        account: m.account_name,
-        currency: m.currency
-      });
-    });
-    return map;
-  }, [descriptionMemories]);
-
   const mutation = useMutation({
     mutationFn: createTransaction,
     onSuccess: () => {
       setInput('');
       setPreview(null);
       setIsEdited(false);
+      setMatchInfo(null);
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      queryClient.invalidateQueries({ queryKey: ['descriptionMemories'] });
+      queryClient.invalidateQueries({ queryKey: ['categoryUsage'] });
       queryClient.invalidateQueries({ queryKey: ['globalSettings'] });
       if (inputRef.current) inputRef.current.focus();
     },
@@ -122,6 +126,7 @@ export function QuickEntryInput() {
       setPreview(null);
       setSuggestion(null);
       setIsEdited(false);
+      setMatchInfo(null);
       return;
     }
 
@@ -143,46 +148,63 @@ export function QuickEntryInput() {
     if (!isEdited) {
       if (parsed.type === 'error') {
         setPreview(null);
+        setMatchInfo(null);
         return;
       }
 
-      if (parsed.type === 'transfer') {
-        const fromAccount = allAccountOptions.find(o => o.value.toLowerCase().includes(parsed.from!.toLowerCase()))?.value || `assets:checking:${parsed.from}`;
-        const toAccount = allAccountOptions.find(o => o.value.toLowerCase().includes(parsed.to!.toLowerCase()))?.value || `assets:checking:${parsed.to}`;
-        
-        setPreview({
-          date: parsed.date!,
-          description: parsed.description,
-          entries: [
-            { account: toAccount, amount: parsed.amount || 0 },
-            { account: fromAccount, amount: -(parsed.amount || 0) },
-          ],
-        });
-      } else {
-        const memory = memoryMap.get(parsed.description.toLowerCase());
-        const categoryFallback = topCategoryOptions[0]?.value || allAccountOptions.find(o => o.value.startsWith('expenses:'))?.value || 'expenses:unknown';
-        
-        const finalAccountName = parsed.account || (memory?.account) || selectedAccount;
-        
-        // Robust account resolution
-        const accountMatch = allAccountOptions.find(o => o.value.toLowerCase() === finalAccountName.toLowerCase() || o.value.toLowerCase().includes(finalAccountName.toLowerCase()));
-        const finalAccount = accountMatch ? accountMatch.value : (finalAccountName.includes(':') ? finalAccountName : `assets:checking:${finalAccountName}`);
+      const updatePreview = async () => {
+        if (parsed.type === 'transfer') {
+          // Resolve accounts for transfer
+          const [fromRes, toRes] = await Promise.all([
+            matchAccount(parsed.from!),
+            matchAccount(parsed.to!)
+          ]);
 
-        const memoryCategoryName = memory?.category;
-        const categoryMatch = memoryCategoryName ? allAccountOptions.find(o => o.value === memoryCategoryName) : null;
-        const finalCategory = categoryMatch ? categoryMatch.value : categoryFallback;
+          const fromAccount = fromRes?.full_name || `assets:checking:${parsed.from}`;
+          const toAccount = toRes?.full_name || `assets:checking:${parsed.to}`;
+          
+          setPreview({
+            date: parsed.date!,
+            description: parsed.description,
+            entries: [
+              { account: toAccount, amount: parsed.amount || 0 },
+              { account: fromAccount, amount: -(parsed.amount || 0) },
+            ],
+          });
+          setMatchInfo({ similarity: 1 });
+        } else {
+          // Resolve memory and account for expense
+          const [matches, accMatch] = await Promise.all([
+            matchDescriptionMemory(normalizeString(parsed.description)),
+            parsed.account ? matchAccount(parsed.account) : Promise.resolve(null)
+          ]);
 
-        setPreview({
-          date: parsed.date!,
-          description: parsed.description,
-          entries: [
-            { account: finalCategory, amount: parsed.amount || 0 },
-            { account: finalAccount, amount: -(parsed.amount || 0) },
-          ],
-        });
-      }
+          const bestMatch = matches[0];
+          const categoryFallback = topCategoryOptions[0]?.value || allAccountOptions.find(o => o.value.startsWith('expenses:'))?.value || 'expenses:unknown';
+          
+          const finalAccount = accMatch?.full_name || bestMatch?.account_name || selectedAccount;
+          const finalCategory = bestMatch?.category_name || categoryFallback;
+
+          setPreview({
+            date: parsed.date!,
+            description: parsed.description,
+            entries: [
+              { account: finalCategory, amount: parsed.amount || 0 },
+              { account: finalAccount, amount: -(parsed.amount || 0) },
+            ],
+          });
+          setMatchInfo({ 
+            similarity: bestMatch ? bestMatch.similarity : 0, 
+            categoryType: bestMatch?.category_type || (finalCategory.startsWith('income:') ? 'income' : 'expense')
+          });
+        }
+      };
+
+      // Simple debounce-like behavior
+      const timeoutId = setTimeout(updatePreview, 50);
+      return () => clearTimeout(timeoutId);
     }
-  }, [input, historyDescriptions, memoryMap, isEdited, selectedAccount, selectedDate, topCategoryOptions, allAccountOptions, lastUsedCurrency, accountOptions]);
+  }, [input, historyDescriptions, isEdited, selectedAccount, selectedDate, topCategoryOptions, allAccountOptions, lastUsedCurrency, accountOptions]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Tab' && suggestion) {
@@ -348,14 +370,25 @@ export function QuickEntryInput() {
       {preview && (
         <div className="bg-card/30 border border-border/40 rounded-xl shadow-[0_15px_40px_rgba(0,0,0,0.08)] backdrop-blur-2xl animate-in slide-in-from-bottom-2 duration-400 relative z-10">
           <div className="p-4 space-y-4">
-            <div className="flex justify-between items-center border-b border-border/20 pb-2.5">
-              <input 
-                value={preview.description}
-                onChange={(e) => { setIsEdited(true); setPreview({...preview, description: e.target.value})}}
-                className="bg-transparent border-none p-0 focus:ring-0 text-[15px] font-bold text-foreground/80 w-full"
-                placeholder="Description"
-              />
-              <span className="text-[11px] font-bold text-muted-foreground/40 tracking-tight uppercase">{preview.date}</span>
+            <div className="flex items-center justify-between border-b border-border/20 pb-2.5 gap-4">
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <input 
+                  value={preview.description}
+                  onChange={(e) => { setIsEdited(true); setPreview({...preview, description: e.target.value})}}
+                  className="bg-transparent border-none p-0 focus:ring-0 text-[15px] font-bold text-foreground/80 w-full truncate"
+                  placeholder="Description"
+                />
+                {matchInfo && matchInfo.similarity > 0 && (
+                  <div className={cn(
+                    "flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest shrink-0 whitespace-nowrap",
+                    matchInfo.similarity > 0.8 ? "bg-green-500/15 text-green-500" : "bg-yellow-500/15 text-yellow-500"
+                  )}>
+                    <Zap className="w-2.5 h-2.5 fill-current" />
+                    {Math.round(matchInfo.similarity * 100)}% Match
+                  </div>
+                )}
+              </div>
+              <span className="text-[10px] font-black text-muted-foreground/30 tracking-widest uppercase shrink-0 tabular-nums">{preview.date}</span>
             </div>
 
             <div className="space-y-2">
@@ -374,12 +407,20 @@ export function QuickEntryInput() {
                 return (
                   <div key={i} className="flex gap-2 items-center bg-background/20 p-0.5 rounded-lg border border-border/10 relative" style={{ zIndex: 20 - i }}>
                     <div className="flex-1 min-w-0">
-                      <div className="px-2.5 pb-0.5 text-[9px] font-bold text-muted-foreground/40 uppercase tracking-wider flex justify-between">
-                        <span>{label}</span>
+                      <div className="px-2.5 pb-0.5 text-[9px] font-black text-muted-foreground/40 uppercase tracking-widest flex items-center gap-2 h-4">
+                        <span className="shrink-0">{label}</span>
+                        {isPositive && !isTransfer && matchInfo?.categoryType && (
+                          <span className={cn(
+                            "px-1.5 py-0.5 rounded-[3px] text-[8px] font-black uppercase leading-none",
+                            matchInfo.categoryType === 'income' ? "bg-green-500/20 text-green-500" : "bg-red-500/20 text-red-500"
+                          )}>
+                            {matchInfo.categoryType}
+                          </span>
+                        )}
                         {isPositive && preview.entries.length > 2 && (
                           <button 
                             onClick={() => removeSplit(i)}
-                            className="hover:text-destructive transition-colors"
+                            className="ml-auto hover:text-destructive transition-colors"
                           >
                             <Trash2 className="w-2.5 h-2.5" />
                           </button>

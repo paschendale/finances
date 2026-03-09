@@ -96,13 +96,15 @@ BEGIN
 
   -- If we have both, update the description-based memory
   IF v_category_id IS NOT NULL AND v_account_id IS NOT NULL THEN
-      INSERT INTO description_memories (description, category_id, account_id, currency, updated_at)
-      VALUES (p_description, v_category_id, v_account_id, v_currency, now())
+      INSERT INTO description_memories (description, category_id, account_id, currency, updated_at, usage_count, last_used_at)
+      VALUES (p_description, v_category_id, v_account_id, v_currency, now(), 1, now())
       ON CONFLICT (description) DO UPDATE SET
           category_id = EXCLUDED.category_id,
           account_id = EXCLUDED.account_id,
           currency = EXCLUDED.currency,
-          updated_at = now();
+          updated_at = now(),
+          usage_count = description_memories.usage_count + 1,
+          last_used_at = now();
   END IF;
 
   -- Update global settings for last used account and currency
