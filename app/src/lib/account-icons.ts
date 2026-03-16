@@ -11,28 +11,30 @@ import {
 // slug must match exactly what Simple Icons uses; listed below per brand.
 
 export interface InstitutionIcon {
-  /** Simple Icons slug, or null if using initials fallback */
+  /** Simple Icons slug for CDN lookup, or null */
   simpleIconsSlug: string | null;
+  /** Path to local badge image in /public/icons/ (full styled badge, no bg needed) */
+  localBadge: string | null;
   /** Brand background color */
   color: string;
-  /** 1-3 uppercase chars shown when simpleIconsSlug is null */
+  /** 1-3 uppercase chars shown as last fallback */
   initials: string;
 }
 
 export const INSTITUTION_ICONS: Record<string, InstitutionIcon> = {
-  nubank:        { simpleIconsSlug: 'nubank',        color: '#820AD1', initials: 'Nu' },
-  itau:          { simpleIconsSlug: 'itau',           color: '#EC7000', initials: 'It' },
-  wise:          { simpleIconsSlug: 'wise',           color: '#163300', initials: 'Wi' },
-  bancodobrasil: { simpleIconsSlug: 'bancodobrasil',  color: '#FFCC00', initials: 'BB' },
-  inter:         { simpleIconsSlug: 'inter',          color: '#FF7A00', initials: 'In' },
-  picpay:        { simpleIconsSlug: 'picpay',         color: '#11C76F', initials: 'PP' },
-  binance:       { simpleIconsSlug: 'binance',        color: '#F0B90B', initials: 'Bi' },
-  xp:            { simpleIconsSlug: null,             color: '#000000', initials: 'XP' },
-  rico:          { simpleIconsSlug: null,             color: '#00C65E', initials: 'Ri' },
-  brb:           { simpleIconsSlug: null,             color: '#004B8D', initials: 'BRB' },
-  infinitepay:   { simpleIconsSlug: null,             color: '#00D4AA', initials: 'IP' },
-  nomad:         { simpleIconsSlug: null,             color: '#6366F1', initials: 'No' },
-  ifood:         { simpleIconsSlug: 'ifood',          color: '#EA1D2C', initials: 'iF' },
+  nubank:        { simpleIconsSlug: 'nubank',       localBadge: null,                    color: '#820AD1', initials: 'Nu'  },
+  itau:          { simpleIconsSlug: null,            localBadge: '/icons/itau.png',       color: '#EC7000', initials: 'It'  },
+  wise:          { simpleIconsSlug: 'wise',          localBadge: null,                    color: '#163300', initials: 'Wi'  },
+  bancodobrasil: { simpleIconsSlug: 'bancodobrasil', localBadge: null,                    color: '#FFCC00', initials: 'BB'  },
+  inter:         { simpleIconsSlug: null,            localBadge: '/icons/inter.png',      color: '#FF7A00', initials: 'In'  },
+  picpay:        { simpleIconsSlug: 'picpay',        localBadge: null,                    color: '#11C76F', initials: 'PP'  },
+  binance:       { simpleIconsSlug: 'binance',       localBadge: null,                    color: '#F0B90B', initials: 'Bi'  },
+  xp:            { simpleIconsSlug: null,            localBadge: null,                    color: '#000000', initials: 'XP'  },
+  rico:          { simpleIconsSlug: null,            localBadge: '/icons/rico.png',       color: '#00C65E', initials: 'Ri'  },
+  brb:           { simpleIconsSlug: null,            localBadge: '/icons/brb.png',        color: '#004B8D', initials: 'BRB' },
+  infinitepay:   { simpleIconsSlug: null,            localBadge: '/icons/infinitepay.png',color: '#00D4AA', initials: 'IP'  },
+  nomad:         { simpleIconsSlug: null,            localBadge: null,                    color: '#FFCE00', initials: 'No'  },
+  ifood:         { simpleIconsSlug: 'ifood',         localBadge: null,                    color: '#EA1D2C', initials: 'iF'  },
 };
 
 // Keyword → institution key (checked against the leaf account name slug)

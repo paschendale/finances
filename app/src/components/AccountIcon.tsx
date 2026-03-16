@@ -43,10 +43,23 @@ export function AccountIcon({
   };
 
   if (info.type === 'institution') {
-    const { simpleIconsSlug, color: bgColor, initials } = info.institution;
+    const { simpleIconsSlug, localBadge, color: bgColor, initials } = info.institution;
+
+    // Local badge image (full styled icon, already has background)
+    if (localBadge) {
+      return (
+        <img
+          src={localBadge}
+          alt=""
+          className={cn('shrink-0 object-cover', className)}
+          style={{ width: outer, height: outer, minWidth: outer, borderRadius: radius }}
+          title={accountName}
+        />
+      );
+    }
 
     if (simpleIconsSlug) {
-      // CDN SVG with white logo
+      // Simple Icons CDN — white logo on brand color background
       const src = `${CDN_BASE}/${simpleIconsSlug}/ffffff`;
       return (
         <span

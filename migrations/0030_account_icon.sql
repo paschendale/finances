@@ -35,15 +35,17 @@ WITH RECURSIVE account_tree AS (
 )
 SELECT * FROM account_tree;
 
--- Rebuild account_balances to expose icon + color
-CREATE OR REPLACE VIEW account_balances AS
+-- DROP first so we can redefine column order (adding icon/color after balance
+-- would silently succeed but before balance requires a full recreate)
+DROP VIEW IF EXISTS account_balances CASCADE;
+CREATE VIEW account_balances AS
 SELECT
     a.id AS account_id,
     a.full_name AS account_name,
     a.type AS account_type,
+    COALESCE(SUM(e.amount_base), 0) AS balance,
     a.icon AS icon,
-    a.color AS color,
-    COALESCE(SUM(e.amount_base), 0) AS balance
+    a.color AS color
 FROM account_names_hierarchical a
 LEFT JOIN entries e ON a.id = e.account_id
 GROUP BY a.id, a.full_name, a.type, a.icon, a.color;

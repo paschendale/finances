@@ -244,11 +244,13 @@ function TransactionRow({
             const catEntries = item.entries.filter(e => e.account_type === 'expense' || e.account_type === 'income');
             const first = catEntries[0];
             const firstAcc = first ? accounts?.find(a => a.account_id === first.account_id) : undefined;
+            // Use full account_name from account_balances (hierarchical path) for icon resolution
+            const iconName = firstAcc?.account_name || first?.account_name || '';
             return (
               <span className="text-[12px] text-muted-foreground/80 truncate font-mono flex items-center gap-1">
                 {first && (
                   <span className="flex items-center gap-1 truncate">
-                    <AccountIcon accountName={first.account_name} icon={firstAcc?.icon} color={firstAcc?.color} size="xs" />
+                    <AccountIcon accountName={iconName} icon={firstAcc?.icon} color={firstAcc?.color} size="xs" />
                     <span className="truncate">{formatHierarchicalName(first.account_name)}</span>
                   </span>
                 )}
@@ -263,11 +265,12 @@ function TransactionRow({
             const accEntries = item.entries.filter(e => e.account_type === 'asset' || e.account_type === 'liability' || e.account_type === 'equity');
             const first = accEntries[0];
             const firstAcc = first ? accounts?.find(a => a.account_id === first.account_id) : undefined;
+            const iconName = firstAcc?.account_name || first?.account_name || '';
             return (
               <span className="text-[12px] text-muted-foreground/60 truncate flex items-center gap-1">
                 {first && (
                   <span className="flex items-center gap-1 truncate">
-                    <AccountIcon accountName={first.account_name} icon={firstAcc?.icon} color={firstAcc?.color} size="xs" />
+                    <AccountIcon accountName={iconName} icon={firstAcc?.icon} color={firstAcc?.color} size="xs" />
                     <span className="truncate">{formatHierarchicalName(first.account_name)}</span>
                   </span>
                 )}
@@ -446,10 +449,11 @@ function TransactionRow({
               </div>
               {item.entries.map((entry, idx) => {
                 const entryAcc = accounts?.find(a => a.account_id === entry.account_id);
+                const entryIconName = entryAcc?.account_name || entry.account_name;
                 return (
                 <div key={idx} className="flex justify-between items-center py-1 border-b border-border/10 last:border-0 text-[13px]">
                   <div className="flex items-center gap-2">
-                    <AccountIcon accountName={entry.account_name} icon={entryAcc?.icon} color={entryAcc?.color} size="sm" />
+                    <AccountIcon accountName={entryIconName} icon={entryAcc?.icon} color={entryAcc?.color} size="sm" />
                     <div className="flex flex-col">
                       <span className="font-medium text-primary/80">{formatHierarchicalName(entry.account_name)}</span>
                       <span className="text-[10px] text-muted-foreground/60 uppercase font-bold tracking-tighter">{entry.account_type}</span>
