@@ -252,11 +252,12 @@ function TransactionRow({
               const srcAcc = accounts?.find(a => a.account_id === src.account_id);
               const dstAcc = accounts?.find(a => a.account_id === dst.account_id);
               return (
-                <span className="text-[12px] text-muted-foreground/70 flex items-center gap-1.5 truncate">
+                <span className="text-[12px] text-muted-foreground/70 flex items-center gap-1.5 min-w-0">
                   <AccountIcon accountName={srcAcc?.account_name || src.account_name} icon={srcAcc?.icon} color={srcAcc?.color} size="xs" />
-                  <span className="text-muted-foreground/30 text-[10px]">→</span>
+                  <span className="truncate shrink">{formatHierarchicalName(src.account_name)}</span>
+                  <span className="text-muted-foreground/30 text-[10px] shrink-0">→</span>
                   <AccountIcon accountName={dstAcc?.account_name || dst.account_name} icon={dstAcc?.icon} color={dstAcc?.color} size="xs" />
-                  <span className="truncate">{formatHierarchicalName(dst.account_name)}</span>
+                  <span className="truncate shrink">{formatHierarchicalName(dst.account_name)}</span>
                 </span>
               );
             }
