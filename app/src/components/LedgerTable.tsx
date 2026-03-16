@@ -242,9 +242,27 @@ function TransactionRow({
           
           {(() => {
             const catEntries = item.entries.filter(e => e.account_type === 'expense' || e.account_type === 'income');
+            const accEntries = item.entries.filter(e => e.account_type === 'asset' || e.account_type === 'liability' || e.account_type === 'equity');
+            const isTransfer = catEntries.length === 0 && accEntries.length >= 2;
+
+            if (isTransfer) {
+              // Show source → destination icons for transfers
+              const src = accEntries.find(e => e.amount_base < 0) ?? accEntries[1];
+              const dst = accEntries.find(e => e.amount_base > 0) ?? accEntries[0];
+              const srcAcc = accounts?.find(a => a.account_id === src.account_id);
+              const dstAcc = accounts?.find(a => a.account_id === dst.account_id);
+              return (
+                <span className="text-[12px] text-muted-foreground/70 flex items-center gap-1.5 truncate">
+                  <AccountIcon accountName={srcAcc?.account_name || src.account_name} icon={srcAcc?.icon} color={srcAcc?.color} size="xs" />
+                  <span className="text-muted-foreground/30 text-[10px]">→</span>
+                  <AccountIcon accountName={dstAcc?.account_name || dst.account_name} icon={dstAcc?.icon} color={dstAcc?.color} size="xs" />
+                  <span className="truncate">{formatHierarchicalName(dst.account_name)}</span>
+                </span>
+              );
+            }
+
             const first = catEntries[0];
             const firstAcc = first ? accounts?.find(a => a.account_id === first.account_id) : undefined;
-            // Use full account_name from account_balances (hierarchical path) for icon resolution
             const iconName = firstAcc?.account_name || first?.account_name || '';
             return (
               <span className="text-[12px] text-muted-foreground/80 truncate font-mono flex items-center gap-1">
@@ -262,7 +280,12 @@ function TransactionRow({
           })()}
 
           {(() => {
+            const catEntries = item.entries.filter(e => e.account_type === 'expense' || e.account_type === 'income');
             const accEntries = item.entries.filter(e => e.account_type === 'asset' || e.account_type === 'liability' || e.account_type === 'equity');
+            const isTransfer = catEntries.length === 0 && accEntries.length >= 2;
+            // For transfers the categories column already shows both sides; hide the accounts column
+            if (isTransfer) return <span />;
+
             const first = accEntries[0];
             const firstAcc = first ? accounts?.find(a => a.account_id === first.account_id) : undefined;
             const iconName = firstAcc?.account_name || first?.account_name || '';
