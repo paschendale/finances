@@ -246,18 +246,16 @@ function TransactionRow({
             const isTransfer = catEntries.length === 0 && accEntries.length >= 2;
 
             if (isTransfer) {
-              // Show source → destination icons for transfers
+              // Source in first column (mimics category column)
               const src = accEntries.find(e => e.amount_base < 0) ?? accEntries[1];
-              const dst = accEntries.find(e => e.amount_base > 0) ?? accEntries[0];
               const srcAcc = accounts?.find(a => a.account_id === src.account_id);
-              const dstAcc = accounts?.find(a => a.account_id === dst.account_id);
+              const iconName = srcAcc?.account_name || src.account_name;
               return (
-                <span className="text-[12px] text-muted-foreground/70 flex items-center gap-1.5 min-w-0">
-                  <AccountIcon accountName={srcAcc?.account_name || src.account_name} icon={srcAcc?.icon} color={srcAcc?.color} size="xs" />
-                  <span className="truncate shrink">{formatHierarchicalName(src.account_name)}</span>
-                  <span className="text-muted-foreground/30 text-[10px] shrink-0">→</span>
-                  <AccountIcon accountName={dstAcc?.account_name || dst.account_name} icon={dstAcc?.icon} color={dstAcc?.color} size="xs" />
-                  <span className="truncate shrink">{formatHierarchicalName(dst.account_name)}</span>
+                <span className="text-[12px] text-muted-foreground/80 truncate font-mono flex items-center gap-1">
+                  <span className="flex items-center gap-1 truncate">
+                    <AccountIcon accountName={iconName} icon={srcAcc?.icon} color={srcAcc?.color} size="xs" />
+                    <span className="truncate">{formatHierarchicalName(src.account_name)}</span>
+                  </span>
                 </span>
               );
             }
@@ -284,8 +282,23 @@ function TransactionRow({
             const catEntries = item.entries.filter(e => e.account_type === 'expense' || e.account_type === 'income');
             const accEntries = item.entries.filter(e => e.account_type === 'asset' || e.account_type === 'liability' || e.account_type === 'equity');
             const isTransfer = catEntries.length === 0 && accEntries.length >= 2;
-            // For transfers the categories column already shows both sides; hide the accounts column
-            if (isTransfer) return <span />;
+            if (isTransfer) {
+              // Destination in second column (mimics account column)
+              const dst = accEntries.find(e => e.amount_base > 0) ?? accEntries[0];
+              const dstAcc = accounts?.find(a => a.account_id === dst.account_id);
+              const iconName = dstAcc?.account_name || dst.account_name;
+              return (
+                <span className="text-[12px] text-muted-foreground/60 truncate flex items-center gap-1">
+                  <span className="flex items-center gap-1 truncate">
+                    <AccountIcon accountName={iconName} icon={dstAcc?.icon} color={dstAcc?.color} size="xs" />
+                    <span className="truncate">{formatHierarchicalName(dst.account_name)}</span>
+                  </span>
+                  {accEntries.length > 2 && (
+                    <span className="text-muted-foreground/40 shrink-0">+{accEntries.length - 2}</span>
+                  )}
+                </span>
+              );
+            }
 
             const first = accEntries[0];
             const firstAcc = first ? accounts?.find(a => a.account_id === first.account_id) : undefined;
