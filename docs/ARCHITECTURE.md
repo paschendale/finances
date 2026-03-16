@@ -45,7 +45,7 @@ The system uses a **Token-based JWT Authentication** implemented entirely within
 4.  **Storage**: Frontend stores the JWT in `localStorage`.
 5.  **Requests**: Frontend includes the JWT in the `Authorization: Bearer <token>` header for all subsequent requests.
 6.  **Verification**: PostgREST verifies the JWT and switches the database role to `authenticated`.
-7.  **Permissions**: Database RLS and Role-based permissions control access to data.
+7.  **Permissions**: Role-based grants control access. `anon` can only call `login_with_token`. `authenticated` has full access to all tables and functions. Row-Level Security (RLS) is not enabled — access control is enforced at the role/grant level.
 
 ### Roles
 
@@ -231,18 +231,15 @@ Database
 
 # What is NOT included
 
-The initial system intentionally excludes:
+The system intentionally excludes:
 
 ```
-authentication
 multi-user support
 bank synchronization
 receipt OCR
 budgeting
 notifications
 ```
-
-These may be added later but are not required for the MVP.
 
 ---
 

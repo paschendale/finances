@@ -16,7 +16,7 @@ Internally, all events are stored as **balanced ledger transactions**.
 
 Every transaction must satisfy the invariant:
 
-SUM(entries.amount) = 0
+SUM(entries.amount_base) = 0
 
 This ensures money is never created or destroyed accidentally.
 
@@ -437,6 +437,52 @@ assets:nubank      -18 BRL
 
 ---
 
+## description_memories
+
+Stores learned associations between transaction descriptions and their typical category/account/currency. Updated automatically by `create_transaction` and `update_transaction`.
+
+Fields:
+
+```
+description
+category_id         → FK to accounts (expense or income account)
+account_id          → FK to accounts (asset or liability account)
+currency            → last used currency for this description
+updated_at
+usage_count
+last_used_at
+normalized_description   → trigram-indexed form for fuzzy matching
+```
+
+---
+
+## global_settings
+
+Key-value store for app-wide defaults. Currently tracks `last_used_account_id` and `last_used_currency`, updated on every transaction mutation.
+
+Fields:
+
+```
+key
+value
+updated_at
+```
+
+---
+
+## account_aliases
+
+Maps alias strings to accounts. Used for flexible account resolution during import and quick entry.
+
+Fields:
+
+```
+alias
+account_id
+```
+
+---
+
 # Invariants
 
 The following rules must always hold.
@@ -531,11 +577,9 @@ All financial information must be derived from the ledger.
 
 ---
 
-### Append-only mindset
+### Edit and delete
 
-Transactions should not be modified after creation.
-
-Corrections should be done with new transactions.
+The system provides `update_transaction` and `delete_transaction` RPCs for correcting mistakes. Both enforce the balance invariant. This is a pragmatic product decision for a personal finance tool; auditing and immutability are not requirements.
 
 ---
 

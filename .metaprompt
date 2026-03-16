@@ -1,0 +1,12 @@
+Before starting, read these files to build full context:
+
+1. CLAUDE.md
+2. RULES.md
+3. AI_GUIDELINES.md
+4. docs/DOMAINS.md
+5. docs/LEDGER_RULES.md
+6. docs/ARCHITECTURE.md
+7. docs/API_CONTRACT.md
+8. IMPLEMENTATION_LOG.md — read to understand what has been done; append an entry when done
+
+Then read any files directly related to the task before making changes.

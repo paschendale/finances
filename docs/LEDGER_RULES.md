@@ -209,37 +209,15 @@ The ledger model itself allows any balanced transaction.
 
 ---
 
-# Append-Only Principle
+# Edit and Delete
 
-Ledger data should be treated as **append-only**.
+The system provides `update_transaction` and `delete_transaction` RPCs for correcting mistakes directly.
 
-Rules:
+`update_transaction` atomically replaces all entries for a transaction and re-validates the balance invariant.
 
-- transactions should not be modified after creation
-- corrections should be recorded as new transactions
-- entries should not be deleted
+`delete_transaction` hard-deletes the transaction and cascades to its entries.
 
-Example correction:
-
-Incorrect transaction:
-
-```
-expenses:food +18
-assets:nubank -18
-```
-
-Correct value should be:
-
-```
-20
-```
-
-Correction transaction:
-
-```
-expenses:food +2
-assets:nubank -2
-```
+Both operations require the balance invariant to hold after the change.
 
 ---
 
