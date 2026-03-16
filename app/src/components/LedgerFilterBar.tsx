@@ -21,8 +21,8 @@ export function LedgerFilterBar({ filters, onChange }: LedgerFilterBarProps) {
     queryFn: fetchAccounts,
   });
 
-  const accountOptions = useMemo(() => 
-    accounts.map(a => ({ label: a.account_name, value: a.account_id })),
+  const accountOptions = useMemo(() =>
+    accounts.map(a => ({ label: a.account_name, value: a.account_id, icon: a.icon, color: a.color })),
   [accounts]);
 
   const handleAccountChange = (ids: string[]) => {

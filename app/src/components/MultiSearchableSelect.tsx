@@ -1,10 +1,13 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { cn, formatHierarchicalName } from '@/lib/utils';
 import { ChevronDown, Search, Check } from 'lucide-react';
+import { AccountIcon } from './AccountIcon';
 
 export interface Option {
   label: string;
   value: string;
+  icon?: string | null;
+  color?: string | null;
 }
 
 export function MultiSearchableSelect({ 
@@ -27,10 +30,15 @@ export function MultiSearchableSelect({
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const formatLabel = (label: string) => {
+  const formatLabel = (opt: Option) => {
     return (
-      <span className="font-semibold truncate w-full leading-tight">
-        {formatHierarchicalName(label)}
+      <span className="flex items-center gap-2 min-w-0">
+        {(opt.icon || opt.color) && (
+          <AccountIcon accountName={opt.label} icon={opt.icon} color={opt.color} size="xs" />
+        )}
+        <span className="font-semibold truncate leading-tight">
+          {formatHierarchicalName(opt.label)}
+        </span>
       </span>
     );
   };
@@ -81,10 +89,22 @@ export function MultiSearchableSelect({
         )}
       >
         {Icon && <Icon className="w-3.5 h-3.5 text-white/50 shrink-0" />}
-        <span className="flex-1 text-left truncate text-white/80">
-          {values.length === 0 ? placeholder : 
-           values.length === options.length ? "All Accounts" :
-           `${values.length} Selected`}
+        <span className="flex-1 text-left truncate text-white/80 flex items-center gap-1.5">
+          {values.length === 0 ? (
+            <span className="text-white/40">{placeholder}</span>
+          ) : values.length === options.length ? (
+            "All Accounts"
+          ) : values.length === 1 ? (() => {
+            const sel = options.find(o => o.value === values[0]);
+            return sel ? (
+              <>
+                {(sel.icon || sel.color) && <AccountIcon accountName={sel.label} icon={sel.icon} color={sel.color} size="xs" />}
+                <span className="truncate">{formatHierarchicalName(sel.label)}</span>
+              </>
+            ) : '1 Selected';
+          })() : (
+            `${values.length} Selected`
+          )}
         </span>
         <ChevronDown className={cn("w-3.5 h-3.5 text-white/30 transition-transform duration-200 shrink-0", isOpen && "rotate-180")} />
       </button>
@@ -142,7 +162,7 @@ export function MultiSearchableSelect({
                         {isSelected && <Check className="w-3 h-3 text-black stroke-[3px]" />}
                     </div>
                     <div className="flex-1 text-left min-w-0">
-                        {formatLabel(opt.label)}
+                        {formatLabel(opt)}
                     </div>
                   </button>
                 );

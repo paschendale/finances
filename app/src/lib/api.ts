@@ -56,6 +56,18 @@ export interface Account {
   account_name: string;
   account_type: string;
   balance: number;
+  icon: string | null;
+  color: string | null;
+}
+
+export interface AccountNode {
+  id: string;
+  name: string;
+  full_name: string;
+  type: string;
+  parent_id: string | null;
+  icon: string | null;
+  color: string | null;
 }
 
 export interface Entry {
@@ -355,4 +367,91 @@ export async function fetchAccountUsage(): Promise<AccountUsage[]> {
     throw new Error('Failed to fetch account usage');
   }
   return response.json();
+}
+
+export async function fetchAccountsTree(): Promise<AccountNode[]> {
+  const response = await fetch(`${API_URL}/account_names_hierarchical?order=full_name.asc`, {
+    headers: getHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to fetch accounts tree');
+  }
+  return response.json();
+}
+
+export async function updateAccount(id: string, patch: Partial<Pick<AccountNode, 'icon' | 'color' | 'name'>>): Promise<void> {
+  const response = await fetch(`${API_URL}/accounts?id=eq.${id}`, {
+    method: 'PATCH',
+    headers: getHeaders({ 'Prefer': 'return=minimal' }),
+    body: JSON.stringify(patch),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to update account');
+  }
+}
+
+export async function createAccount(data: { name: string; type: string; parent_id?: string | null; icon?: string | null; color?: string | null }): Promise<AccountNode> {
+  const response = await fetch(`${API_URL}/accounts`, {
+    method: 'POST',
+    headers: getHeaders({ 'Prefer': 'return=representation' }),
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to create account');
+  }
+  const rows = await response.json();
+  return rows[0];
+}
+
+export async function deleteAccount(id: string): Promise<void> {
+  const response = await fetch(`${API_URL}/accounts?id=eq.${id}`, {
+    method: 'DELETE',
+    headers: getHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to delete account');
+  }
+}
+
+export interface AccountAlias {
+  alias: string;
+  account_id: string;
+}
+
+export async function fetchAliases(accountId: string): Promise<AccountAlias[]> {
+  const response = await fetch(`${API_URL}/account_aliases?account_id=eq.${accountId}`, {
+    headers: getHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to fetch aliases');
+  }
+  return response.json();
+}
+
+export async function createAlias(alias: string, accountId: string): Promise<void> {
+  const response = await fetch(`${API_URL}/account_aliases`, {
+    method: 'POST',
+    headers: getHeaders({ 'Prefer': 'return=minimal' }),
+    body: JSON.stringify({ alias, account_id: accountId }),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to create alias');
+  }
+}
+
+export async function deleteAlias(alias: string): Promise<void> {
+  const response = await fetch(`${API_URL}/account_aliases?alias=eq.${encodeURIComponent(alias)}`, {
+    method: 'DELETE',
+    headers: getHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to delete alias');
+  }
 }

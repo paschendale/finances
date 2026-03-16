@@ -3,6 +3,7 @@ import { fetchTransactions, updateTransaction, deleteTransaction, fetchAccounts,
 import { useMemo, useEffect, useRef, useState } from 'react';
 import { cn, formatHierarchicalName } from '@/lib/utils';
 import { SearchableSelect } from './SearchableSelect';
+import { AccountIcon } from './AccountIcon';
 import { Wallet, Tag, Trash2, Plus, Check, Loader2, X } from 'lucide-react';
 import { type LedgerFilters } from './LedgerFilterBar';
 
@@ -72,23 +73,26 @@ function TransactionRow({
     },
   });
 
-  const allAccountOptions = useMemo(() => 
-    (accounts || []).map(a => ({ label: a.account_name, value: a.account_id })),
+  const allAccountOptions = useMemo(() =>
+    (accounts || []).map(a => ({ label: a.account_name, value: a.account_id, icon: a.icon, color: a.color })),
   [accounts]);
 
-  const topCategoryOptions = useMemo(() => 
+  const topCategoryOptions = useMemo(() =>
     (topCategories || []).map(c => {
       const acc = accounts?.find(a => a.account_name === c.category_name);
-      return { label: c.category_name, value: acc?.account_id || '' };
+      return { label: c.category_name, value: acc?.account_id || '', icon: acc?.icon ?? null, color: acc?.color ?? null };
     }).filter(o => o.value !== ''),
   [topCategories, accounts]);
 
-  const topAccountOptions = useMemo(() => 
+  const topAccountOptions = useMemo(() =>
     (accountUsage || [])
       .filter(u => u.account_type === 'asset' || u.account_type === 'liability')
       .slice(0, 10)
-      .map(u => ({ label: u.account_name, value: u.account_id })),
-  [accountUsage]);
+      .map(u => {
+        const acc = accounts?.find(a => a.account_id === u.account_id);
+        return { label: u.account_name, value: u.account_id, icon: acc?.icon ?? null, color: acc?.color ?? null };
+      }),
+  [accountUsage, accounts]);
 
   const totalDifference = useMemo(() => {
     if (!editState) return 0;
@@ -236,13 +240,43 @@ function TransactionRow({
             )}
           </span>
           
-          <span className="text-[12px] text-muted-foreground/80 truncate font-mono">
-            {item.categories.map(formatHierarchicalName).join(', ')}
-          </span>
-          
-          <span className="text-[12px] text-muted-foreground/60 truncate">
-            {item.accounts.map(formatHierarchicalName).join(' • ')}
-          </span>
+          {(() => {
+            const catEntries = item.entries.filter(e => e.account_type === 'expense' || e.account_type === 'income');
+            const first = catEntries[0];
+            const firstAcc = first ? accounts?.find(a => a.account_id === first.account_id) : undefined;
+            return (
+              <span className="text-[12px] text-muted-foreground/80 truncate font-mono flex items-center gap-1">
+                {first && (
+                  <span className="flex items-center gap-1 truncate">
+                    <AccountIcon accountName={first.account_name} icon={firstAcc?.icon} color={firstAcc?.color} size="xs" />
+                    <span className="truncate">{formatHierarchicalName(first.account_name)}</span>
+                  </span>
+                )}
+                {catEntries.length > 1 && (
+                  <span className="text-muted-foreground/40 shrink-0">+{catEntries.length - 1}</span>
+                )}
+              </span>
+            );
+          })()}
+
+          {(() => {
+            const accEntries = item.entries.filter(e => e.account_type === 'asset' || e.account_type === 'liability' || e.account_type === 'equity');
+            const first = accEntries[0];
+            const firstAcc = first ? accounts?.find(a => a.account_id === first.account_id) : undefined;
+            return (
+              <span className="text-[12px] text-muted-foreground/60 truncate flex items-center gap-1">
+                {first && (
+                  <span className="flex items-center gap-1 truncate">
+                    <AccountIcon accountName={first.account_name} icon={firstAcc?.icon} color={firstAcc?.color} size="xs" />
+                    <span className="truncate">{formatHierarchicalName(first.account_name)}</span>
+                  </span>
+                )}
+                {accEntries.length > 1 && (
+                  <span className="text-muted-foreground/40 shrink-0">+{accEntries.length - 1}</span>
+                )}
+              </span>
+            );
+          })()}
           
           <div className="text-right font-mono font-bold text-[14px]">
             <span className={cn(
@@ -410,11 +444,16 @@ function TransactionRow({
                 <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Transaction Entries</span>
                 <span className="text-[10px] text-muted-foreground/50 font-mono uppercase">{item.id.slice(0, 8)}</span>
               </div>
-              {item.entries.map((entry, idx) => (
+              {item.entries.map((entry, idx) => {
+                const entryAcc = accounts?.find(a => a.account_id === entry.account_id);
+                return (
                 <div key={idx} className="flex justify-between items-center py-1 border-b border-border/10 last:border-0 text-[13px]">
-                  <div className="flex flex-col">
-                    <span className="font-medium text-primary/80">{formatHierarchicalName(entry.account_name)}</span>
-                    <span className="text-[10px] text-muted-foreground/60 uppercase font-bold tracking-tighter">{entry.account_type}</span>
+                  <div className="flex items-center gap-2">
+                    <AccountIcon accountName={entry.account_name} icon={entryAcc?.icon} color={entryAcc?.color} size="sm" />
+                    <div className="flex flex-col">
+                      <span className="font-medium text-primary/80">{formatHierarchicalName(entry.account_name)}</span>
+                      <span className="text-[10px] text-muted-foreground/60 uppercase font-bold tracking-tighter">{entry.account_type}</span>
+                    </div>
                   </div>
                   <span className={cn(
                     "font-mono font-medium",
@@ -426,10 +465,11 @@ function TransactionRow({
                     }).format(entry.amount)}
                   </span>
                 </div>
-              ))}
+                );
+              })}
               <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-border/20">
                 <button 
-                    onClick={(e) => {
+                    onClick={() => {
                         if (window.confirm('Delete this transaction?')) {
                             deleteMutation.mutate(item.id);
                         }

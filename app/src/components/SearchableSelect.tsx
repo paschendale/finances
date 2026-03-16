@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { cn, formatHierarchicalName } from '@/lib/utils';
 import { ChevronDown, Search } from 'lucide-react';
+import { AccountIcon } from './AccountIcon';
 
 export interface Option {
   label: string;
   value: string;
+  icon?: string | null;
+  color?: string | null;
 }
 
 export function SearchableSelect({ 
@@ -29,21 +32,43 @@ export function SearchableSelect({
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const formatLabel = (label: string, isSelected: boolean) => {
+  const formatLabel = (opt: Option, isSelected: boolean) => {
     return (
-      <span className={cn(
-        "text-[13px] font-bold truncate w-full leading-tight",
-        isSelected ? "text-primary-foreground" : "text-foreground/90"
-      )}>
-        {formatHierarchicalName(label)}
+      <span className="flex items-center gap-1.5 min-w-0">
+        {(opt.icon || opt.color) && (
+          <AccountIcon
+            accountName={opt.label}
+            icon={opt.icon}
+            color={opt.color}
+            size="xs"
+          />
+        )}
+        <span className={cn(
+          "text-[13px] font-bold truncate leading-tight",
+          isSelected ? "text-primary-foreground" : "text-foreground/90"
+        )}>
+          {formatHierarchicalName(opt.label)}
+        </span>
       </span>
     );
   };
 
   const getButtonLabel = (val: string) => {
     const opt = options.find(o => o.value === val);
-    if (!opt) return placeholder;
-    return formatHierarchicalName(opt.label);
+    if (!opt) return <span className="text-muted-foreground/50">{placeholder}</span>;
+    return (
+      <span className="flex items-center gap-1.5 min-w-0">
+        {(opt.icon || opt.color) && (
+          <AccountIcon
+            accountName={opt.label}
+            icon={opt.icon}
+            color={opt.color}
+            size="xs"
+          />
+        )}
+        <span className="truncate">{formatHierarchicalName(opt.label)}</span>
+      </span>
+    );
   };
 
   const displayOptions = useMemo(() => {
@@ -88,7 +113,7 @@ export function SearchableSelect({
         )}
       >
         {Icon && <Icon className="w-3.5 h-3.5 text-muted-foreground/70 shrink-0" />}
-        <span className="flex-1 text-left truncate">
+        <span className="flex-1 text-left truncate flex items-center">
           {getButtonLabel(value)}
         </span>
         <ChevronDown className={cn("w-3 h-3 text-muted-foreground/50 transition-transform duration-200 shrink-0", isOpen && "rotate-180")} />
@@ -118,8 +143,8 @@ export function SearchableSelect({
                   key={opt.value}
                   className={cn(
                     "w-full text-left px-2.5 py-1.5 rounded-md text-[13px] transition-all",
-                    opt.value === value 
-                      ? "bg-primary text-primary-foreground shadow-sm" 
+                    opt.value === value
+                      ? "bg-primary text-primary-foreground shadow-sm"
                       : "hover:bg-accent hover:text-accent-foreground"
                   )}
                   onClick={() => {
@@ -128,7 +153,7 @@ export function SearchableSelect({
                     setSearch('');
                   }}
                 >
-                  {formatLabel(opt.label, opt.value === value)}
+                  {formatLabel(opt, opt.value === value)}
                 </button>
               ))
             ) : (

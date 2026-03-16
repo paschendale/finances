@@ -487,3 +487,64 @@
 - `app/src/lib/api.ts`
 - `app/src/components/LedgerTable.tsx`
 - `IMPLEMENTATION_LOG.md`
+
+## 2026-03-16 - Account Icons + Accounts Management Page
+
+### Tasks
+- [x] `migrations/0030_account_icon.sql` — add `icon` and `color` columns to `accounts`; rebuild `account_names_hierarchical` and `account_balances` views to expose these fields
+- [x] `app/src/lib/account-icons.ts` — icon registry: institution icons (Simple Icons CDN), category icons (Lucide), keyword resolvers, `getAccountIconInfo()` helper
+- [x] `app/src/components/AccountIcon.tsx` — Apple-style rounded-square badge (bank CDN logo, Lucide category icon, or initials fallback); sizes xs/sm/md/lg
+- [x] `app/src/lib/api.ts` — added `icon`/`color` to `Account` interface; added `AccountNode`, `AccountAlias` types; added `fetchAccountsTree`, `updateAccount`, `createAccount`, `deleteAccount`, `fetchAliases`, `createAlias`, `deleteAlias`
+- [x] `app/src/components/SearchableSelect.tsx` — extended `Option` with `icon`/`color`; renders `AccountIcon` in dropdown rows and button
+- [x] `app/src/components/LedgerTable.tsx` — shows `AccountIcon` in row categories/accounts columns and in expanded entry detail; account options now carry icon/color metadata
+- [x] `app/src/components/AccountsPage.tsx` — management page: type tabs (Assets/Liabilities/Expenses/Income/Equity), account list with icons, edit drawer (icon picker, color picker, alias manager, delete)
+- [x] `app/src/App.tsx` — added "Accounts" nav tab (BookMarked icon) routing to `AccountsPage`
+- [x] `scripts/import_excel.py` — `INSTITUTION_ICON_MAP` + `CATEGORY_ICON_MAP` constants; `auto_assign_icon()` called from `get_or_create_account()` to set icon/color on newly-created accounts (only when icon IS NULL)
+
+### Design Decisions
+- Bank institution logos served from Simple Icons CDN (`https://cdn.simpleicons.org/{slug}/ffffff`) — white logo on brand-colored background; no downloaded SVG assets needed
+- Brands not in Simple Icons (xp, rico, brb, infinitepay, nomad) use initials badge with brand color
+- Keyword matching on leaf account slug for assets/liabilities; first-level category slug for expenses/income
+- `account_balances` view updated to propagate `icon`/`color` so `fetchAccounts()` returns these fields for immediate use in LedgerTable without an extra query
+
+### Files Created/Modified
+- `migrations/0030_account_icon.sql` (new)
+- `app/src/lib/account-icons.ts` (new)
+- `app/src/components/AccountIcon.tsx` (new)
+- `app/src/components/AccountsPage.tsx` (new)
+- `app/src/lib/api.ts`
+- `app/src/components/SearchableSelect.tsx`
+- `app/src/components/LedgerTable.tsx`
+- `app/src/App.tsx`
+- `scripts/import_excel.py`
+
+## 2026-03-16 (follow-up) - Icon fixes, AccountsPage cards, alias import
+
+### Issues fixed
+- **Icons not resolving for bare leaf names**: `getAccountIconInfo` now handles single-segment names (e.g. `nubank` from `entry.account_name`) by trying institution keyword matching and category slug matching without requiring a full hierarchical path
+- **LedgerTable row icon lookup**: Changed row columns to look up account icons via `account_id` from `item.entries` instead of matching by `account_name` string (which was comparing leaf names against full-path keys)
+- **QuickEntryInput/FilterBar missing icon metadata**: `accountOptions`, `allAccountOptions`, `topCategoryOptions` now include `icon`/`color` fields — icons appear in account selector and preview entry rows
+- **MultiSearchableSelect**: Added `icon`/`color` to `Option` type; renders `AccountIcon` in dropdown rows and single-selection button display
+- **LedgerFilterBar**: Account options now pass `icon`/`color` to MultiSearchableSelect
+
+### AccountsPage redesign
+- Replaced list layout with responsive Apple-style card grid (2–4 columns)
+- Each card shows: `AccountIcon` (md), leaf name, parent path (muted mono), alias pills
+- Click anywhere on card opens edit modal (no separate edit button)
+- Modal header: large icon preview that updates live as icon/color picker changes
+- Cleaner modal with white Save button, destructive Delete in footer left
+
+### import_excel.py aliases
+- Added `add_alias_if_missing(cur, account_id, alias)` — inserts lowercase alias into `account_aliases`, ignoring conflicts
+- `get_or_create_account` now accepts optional `original_name` for direct alias registration
+- During `import_excel`, builds `alias_map: dict[normalized_path → set[original_name]]` from all rows (both `Conta` and `Categoria` columns)
+- After account creation loop, calls `add_alias_if_missing` for each original Excel name — e.g. `"Nubank"` → alias on `assets:checking:nubank`; `"Alimentação"` and full `"Despesas - Alimentação"` → aliases on `expenses:alimentacao`
+
+### Files modified
+- `app/src/lib/account-icons.ts`
+- `app/src/components/LedgerTable.tsx`
+- `app/src/components/QuickEntryInput.tsx`
+- `app/src/components/LedgerFilterBar.tsx`
+- `app/src/components/MultiSearchableSelect.tsx`
+- `app/src/components/AccountsPage.tsx`
+- `scripts/import_excel.py`

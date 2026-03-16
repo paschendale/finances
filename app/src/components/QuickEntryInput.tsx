@@ -58,18 +58,22 @@ export function QuickEntryInput() {
     queryFn: fetchGlobalSettings,
   });
 
-  const accountOptions = useMemo(() => 
-    (accounts || []).filter(a => a.account_type === 'asset' || a.account_type === 'liability' || a.account_type === 'equity').map(a => ({ label: a.account_name, value: a.account_name })),
-  [accounts]);
-
-  const allAccountOptions = useMemo(() => 
+  const accountOptions = useMemo(() =>
     (accounts || [])
-      .map(a => ({ label: a.account_name, value: a.account_name })),
+      .filter(a => a.account_type === 'asset' || a.account_type === 'liability' || a.account_type === 'equity')
+      .map(a => ({ label: a.account_name, value: a.account_name, icon: a.icon, color: a.color })),
   [accounts]);
 
-  const topCategoryOptions = useMemo(() => 
-    (topCategories || []).map(c => ({ label: c.category_name, value: c.category_name })),
-  [topCategories]);
+  const allAccountOptions = useMemo(() =>
+    (accounts || []).map(a => ({ label: a.account_name, value: a.account_name, icon: a.icon, color: a.color })),
+  [accounts]);
+
+  const topCategoryOptions = useMemo(() =>
+    (topCategories || []).map(c => {
+      const acc = accounts?.find(a => a.account_name === c.category_name);
+      return { label: c.category_name, value: c.category_name, icon: acc?.icon ?? null, color: acc?.color ?? null };
+    }),
+  [topCategories, accounts]);
 
   const lastUsedCurrency = useMemo(() => 
     globalSettings?.find(s => s.key === 'last_used_currency')?.value || 'BRL',
@@ -404,6 +408,7 @@ export function QuickEntryInput() {
                   Icon = isPositive ? ArrowDownLeft : ArrowUpRight;
                 }
 
+                const entryAcc = accounts?.find(a => a.account_name === entry.account);
                 return (
                   <div key={i} className="flex gap-2 items-center bg-background/20 p-0.5 rounded-lg border border-border/10 relative" style={{ zIndex: 20 - i }}>
                     <div className="flex-1 min-w-0">
@@ -432,7 +437,7 @@ export function QuickEntryInput() {
                         value={entry.account}
                         onChange={(val) => updateEntryField(i, 'account', val)}
                         placeholder="Select..."
-                        icon={Icon}
+                        icon={entryAcc ? undefined : Icon}
                         className="border-none bg-transparent shadow-none"
                       />
                     </div>

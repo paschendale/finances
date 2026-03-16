@@ -2,10 +2,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { QuickEntryInput } from '@/components/QuickEntryInput';
 import { LedgerTable } from '@/components/LedgerTable';
 import { Dashboard } from '@/components/Dashboard';
+import { AccountsPage } from '@/components/AccountsPage';
 import { LedgerFilterBar, type LedgerFilters } from '@/components/LedgerFilterBar';
 import { LoginPage } from '@/components/LoginPage';
 import { useState, useEffect, useCallback } from 'react';
-import { LayoutDashboard, List, Wallet, LogOut } from 'lucide-react';
+import { LayoutDashboard, List, Wallet, LogOut, BookMarked } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, startOfYear, endOfMonth } from 'date-fns';
 import { AUTH_TOKEN_KEY, logout, setOnLogout } from '@/lib/api';
@@ -20,9 +21,9 @@ function AppContent() {
     return () => setOnLogout(() => {});
   }, []);
 
-  const [view, setView] = useState<'ledger' | 'dashboard'>(() => {
+  const [view, setView] = useState<'ledger' | 'dashboard' | 'accounts'>(() => {
     const params = new URLSearchParams(window.location.search);
-    return (params.get('view') as 'ledger' | 'dashboard') || 'dashboard';
+    return (params.get('view') as 'ledger' | 'dashboard' | 'accounts') || 'dashboard';
   });
 
   const [filters, setFilters] = useState<LedgerFilters>(() => {
@@ -88,6 +89,18 @@ function AppContent() {
               <List className="w-3.5 h-3.5 opacity-80" />
               Ledger
             </button>
+            <button
+              onClick={() => setView("accounts")}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-md text-[13px] font-medium tracking-[-0.01em] transition-colors",
+                view === "accounts"
+                  ? "bg-white/10 text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground/80",
+              )}
+            >
+              <BookMarked className="w-3.5 h-3.5 opacity-80" />
+              Accounts
+            </button>
           </nav>
 
           <button
@@ -109,6 +122,8 @@ function AppContent() {
               <LedgerTable filters={filters} />
             </div>
           </div>
+        ) : view === "accounts" ? (
+          <AccountsPage />
         ) : (
           <Dashboard filters={filters} onFilterChange={setFilters} />
         )}
