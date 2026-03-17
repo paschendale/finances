@@ -1,5 +1,10 @@
 export type ParsedType = 'expense' | 'transfer' | 'income' | 'error';
 
+export interface InstallmentInfo {
+  current: number; // starting installment (e.g., 3 in "(3 de 12)")
+  total: number;   // total installments
+}
+
 export interface ParsedInput {
   type: ParsedType;
   description: string;
@@ -10,6 +15,7 @@ export interface ParsedInput {
   from?: string;    // For transfers
   to?: string;      // For transfers
   error?: string;
+  installments?: InstallmentInfo;
 }
 
 export interface ParserContext {
@@ -40,6 +46,17 @@ export function parseQuickEntry(input: string, context: ParserContext = {}): Par
   if (dateMatch) {
     date = dateMatch[1];
     trimmed = dateMatch[2].trim();
+  }
+
+  // Detect installment pattern: (N de M)
+  let installments: InstallmentInfo | undefined;
+  const installmentMatch = trimmed.match(/\((\d+)\s+de\s+(\d+)\)/);
+  if (installmentMatch) {
+    installments = {
+      current: parseInt(installmentMatch[1], 10),
+      total: parseInt(installmentMatch[2], 10),
+    };
+    trimmed = trimmed.replace(installmentMatch[0], '').replace(/\s+/g, ' ').trim();
   }
 
   // Rule 1: Transfers detected by ">"
@@ -76,6 +93,14 @@ export function parseQuickEntry(input: string, context: ParserContext = {}): Par
   let amount = null;
 
   for (let i = tokens.length - 1; i >= 0; i--) {
+    // Check for NxM shorthand (e.g. 120x12)
+    const xMatch = tokens[i].match(/^(\d+(?:[.,]\d+)?)x(\d+)$/i);
+    if (xMatch) {
+      amountIndex = i;
+      amount = parseFloat(xMatch[1].replace(',', '.'));
+      installments = { current: 1, total: parseInt(xMatch[2], 10) };
+      break;
+    }
     const val = tokens[i].replace(',', '.');
     if (!isNaN(parseFloat(val)) && isFinite(Number(val)) && /^-?\d+([.,]\d+)?$/.test(tokens[i])) {
       amountIndex = i;
@@ -131,6 +156,7 @@ export function parseQuickEntry(input: string, context: ParserContext = {}): Par
     currency,
     account,
     date,
+    installments,
   };
 }
 

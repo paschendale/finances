@@ -28,14 +28,27 @@ interface DateHeaderItem {
 
 type LedgerItem = TransactionItem | DateHeaderItem;
 
-function TransactionRow({ 
-  item, 
-  isExpanded, 
-  onToggle 
-}: { 
-  item: TransactionItem, 
-  isExpanded: boolean, 
-  onToggle: () => void 
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function getInstallmentNumber(desc: string): number {
+  const m = desc.match(/\((\d+) de \d+\)$/);
+  return m ? parseInt(m[1]) : 0;
+}
+
+function TransactionRow({
+  item,
+  isExpanded,
+  onToggle,
+  allTransactions,
+  hasFilters,
+}: {
+  item: TransactionItem,
+  isExpanded: boolean,
+  onToggle: () => void,
+  allTransactions?: TransactionItem[],
+  hasFilters?: boolean,
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editState, setEditState] = useState<Transaction | null>(null);
@@ -67,6 +80,14 @@ function TransactionRow({
 
   const deleteMutation = useMutation({
     mutationFn: deleteTransaction,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+    },
+  });
+
+  const anticipateMutation = useMutation({
+    mutationFn: updateTransaction,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
@@ -212,10 +233,31 @@ function TransactionRow({
     setEditState({ ...editState, entries: newEntries });
   };
 
+  const installmentPattern = item.description.match(/^(.+) \((\d+) de (\d+)\)$/);
+
+  const allSeriesItems = useMemo(() => {
+    if (!installmentPattern || !allTransactions) return [];
+    const [, baseDesc, , totalStr] = installmentPattern;
+    const total = parseInt(totalStr);
+    const all = [item, ...allTransactions.filter(t => t.id !== item.id && new RegExp(`^${escapeRegex(baseDesc)} \\(\\d+ de ${total}\\)$`).test(t.description))];
+    return all.sort((a, b) => getInstallmentNumber(a.description) - getInstallmentNumber(b.description));
+  }, [installmentPattern, allTransactions, item]);
+
   const formatter = new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: item.currency || 'BRL',
   });
+
+  const anticipateInstallment = (t: TransactionItem) => {
+    const newDate = item.date.slice(0, 7) + '-01';
+    anticipateMutation.mutate({
+      id: t.id,
+      date: newDate,
+      description: t.description,
+      entries: t.entries,
+      account_ids: t.entries.map(e => e.account_id),
+    });
+  };
 
   return (
     <div className={cn(
@@ -230,8 +272,13 @@ function TransactionRow({
         <div className="grid grid-cols-[1.5fr_1fr_1fr_120px] gap-4 w-full items-center">
           <span className="font-medium text-[14px] truncate text-foreground/90 flex items-center gap-2">
             {item.description}
+            {installmentPattern && (
+              <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400 uppercase tracking-wider shrink-0">
+                {installmentPattern[2]}/{installmentPattern[3]}
+              </span>
+            )}
             {!isEditing && (
-              <button 
+              <button
                 onClick={startEditing}
                 className="opacity-0 group-hover:opacity-100 text-[10px] text-primary hover:underline font-bold uppercase tracking-tighter transition-opacity"
               >
@@ -508,8 +555,64 @@ function TransactionRow({
                 </div>
                 );
               })}
+              {allSeriesItems.length > 0 && (
+                <div className="mt-3 pt-2 border-t border-border/20">
+                  {(() => {
+                    const seriesTotal = allSeriesItems.reduce((s, t) => s + t.amount, 0);
+                    const expectedTotal = installmentPattern ? parseInt(installmentPattern[3]) : 0;
+                    const seriesFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: item.currency || 'BRL' });
+                    return (
+                      <>
+                        <div className="flex items-center justify-between mb-1.5 px-1">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/40">
+                            Installment Series ({allSeriesItems.length}/{expectedTotal})
+                          </p>
+                          <span className="text-[10px] font-bold text-muted-foreground/50">
+                            Total: <span className="font-mono text-foreground/60">{seriesFormatter.format(seriesTotal)}</span>
+                          </span>
+                        </div>
+                        <div className="space-y-0.5">
+                          {allSeriesItems.map(t => {
+                            const isCurrentItem = t.id === item.id;
+                            const isFuture = t.date > item.date;
+                            const relFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: t.currency || 'BRL' });
+                            return (
+                              <div key={t.id} className={cn(
+                                "flex items-center px-2 py-1 rounded-md text-[12px]",
+                                isCurrentItem ? "bg-primary/10" : "hover:bg-muted/10"
+                              )}>
+                                <span className={cn("font-mono shrink-0 mr-2", isCurrentItem ? "text-muted-foreground/60" : "text-muted-foreground/40")}>{t.date}</span>
+                                <span className={cn("font-medium flex-1 truncate", isCurrentItem ? "text-foreground/80" : "text-foreground/60")}>{t.description}</span>
+                                <span className={cn("font-mono ml-2", isCurrentItem ? "font-bold text-primary/70" : "text-muted-foreground/60")}>{relFormatter.format(Math.abs(t.amount))}</span>
+                                {!isCurrentItem && isFuture && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); anticipateInstallment(t); }}
+                                    className="ml-2 text-[9px] font-bold text-blue-400/60 hover:text-blue-400 uppercase tracking-wider shrink-0 transition-colors"
+                                  >
+                                    Anticipate
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {allSeriesItems.length < expectedTotal && (
+                          <div className="mt-1.5 flex items-center gap-1.5 px-2 py-1 rounded bg-yellow-500/10 border border-yellow-500/20 text-[10px] text-yellow-400/80">
+                            <span>⚠</span>
+                            <span>
+                              Showing {allSeriesItems.length} of {expectedTotal} installments
+                              {hasFilters ? ' — others hidden by active filter' : ' — scroll to load more'}
+                            </span>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+
               <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-border/20">
-                <button 
+                <button
                     onClick={() => {
                         if (window.confirm('Delete this transaction?')) {
                             deleteMutation.mutate(item.id);
@@ -520,7 +623,7 @@ function TransactionRow({
                 >
                   <Trash2 className="w-3.5 h-3.5" /> Delete
                 </button>
-                <button 
+                <button
                     onClick={startEditing}
                     className="px-3 py-1.5 rounded-md text-[12px] font-bold text-primary/70 hover:bg-primary/10 transition-all flex items-center gap-1"
                 >
@@ -609,6 +712,32 @@ export function LedgerTable({ filters }: { filters: LedgerFilters }) {
     return () => observer.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
+  const allTransactionItems = useMemo<TransactionItem[]>(() => {
+    if (!data) return [];
+    return data.pages.flatMap(page => page.flatMap(t => {
+      const categories = t.entries.filter(e => e.account_type === 'expense' || e.account_type === 'income').map(e => e.account_name);
+      const accounts = t.entries.filter(e => e.account_type === 'asset' || e.account_type === 'liability' || e.account_type === 'equity').map(e => e.account_name);
+      const expenseEntries = t.entries.filter(e => e.account_type === 'expense');
+      const incomeEntries = t.entries.filter(e => e.account_type === 'income');
+      let amount = 0, currency = 'BRL';
+      let primaryType: 'expense' | 'income' | 'transfer' = 'transfer';
+      if (expenseEntries.length > 0) {
+        amount = Math.abs(expenseEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0));
+        currency = expenseEntries[0].currency;
+        primaryType = 'expense';
+      } else if (incomeEntries.length > 0) {
+        amount = Math.abs(incomeEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0));
+        currency = incomeEntries[0].currency;
+        primaryType = 'income';
+      } else {
+        const pos = t.entries.filter(e => (e.account_type === 'asset' || e.account_type === 'liability' || e.account_type === 'equity') && e.amount_base > 0);
+        amount = Math.abs(pos.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0));
+        if (pos.length > 0) currency = pos[0].currency;
+      }
+      return [{ type: 'transaction' as const, id: t.id, date: t.date, description: t.description, accounts, categories, amount, currency, entries: t.entries, primaryType }];
+    }));
+  }, [data]);
+
   const ledgerItems = useMemo<LedgerItem[]>(() => {
     if (!data) return [];
 
@@ -678,6 +807,8 @@ export function LedgerTable({ filters }: { filters: LedgerFilters }) {
     return items;
   }, [data]);
 
+  const hasFilters = !!(filters.startDate || filters.endDate || filters.accountIds.length > 0);
+
   const toggleExpand = (id: string) => {
     setExpandedId(expandedId === id ? null : id);
   };
@@ -740,11 +871,13 @@ export function LedgerTable({ filters }: { filters: LedgerFilters }) {
           }
 
           return (
-            <TransactionRow 
+            <TransactionRow
               key={item.id}
               item={item}
               isExpanded={expandedId === item.id}
               onToggle={() => toggleExpand(item.id)}
+              allTransactions={allTransactionItems}
+              hasFilters={hasFilters}
             />
           );
         })}

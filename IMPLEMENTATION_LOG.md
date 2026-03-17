@@ -1,5 +1,34 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-03-17 - Installment Feature + UI Improvements
+
+### Tasks
+- [x] `app/src/lib/ledger-parser/parser.ts` — Added `InstallmentInfo` interface (`current`, `total`); parser now detects two installment syntaxes: `(N de M)` inline tag and `AmountxM` shorthand (treated as `1 de M`); `installments` field added to `ParsedInput`
+- [x] `app/src/lib/ledger-parser/parser.test.ts` — Added 5 installment test cases (cases 36–40); fixed `runTest` helper to use `toEqual` for object comparisons
+- [x] `app/src/components/QuickEntryInput.tsx` — Installment state (`parsedInstallments`, `createInstallments`, `installmentAmountMode`); `calcInstallmentDate` helper; `confirmTransaction` fan-out creates one transaction per remaining installment dated to the 1st of successive months; amount is either divided across installments (total mode) or repeated (per-installment mode); Enter key disabled when multi-create is pending
+- [x] **UI: Toggle redesign** — Replaced flat row with a two-row card: "Amount mode" row with segmented `Total`/`Per installment` buttons (dark-mode contrast fixed, `bg-white/10` active state), and "Create all installments" row with helper text and emerald/subtle toggle
+- [x] **UI: Per-mode total display** — When `installmentAmountMode === 'per'`, computed total `= amount × remaining_count` shown inline next to the mode toggle
+- [x] **UI: Installment plan table** — When `createInstallments` is on, a scrollable table (`max-h-48`) renders each planned transaction with date, formatted description (`X de Y`), and amount
+- [x] **UI: Series always in order** — `allSeriesItems` (replaces `relatedInstallments`) includes the current item; sorted by installment number extracted from description via `getInstallmentNumber`
+- [x] **UI: Series total value** — Section header shows `(X/Y)` count and the sum of all visible installment amounts
+- [x] **UI: Filter warning** — When `allSeriesItems.length < expectedTotal`, a yellow warning banner explains whether installments are hidden by active filters or require scrolling
+- [x] **UI: Anticipate button** — Each future installment in the series list gets an "Anticipate" link; clicking it moves that transaction's date to the 1st of the currently expanded item's month via a separate `anticipateMutation`
+
+### Decisions
+- Two installment syntaxes supported: `(N de M)` (mid-purchase, explicit current) and `NxM` shorthand (always starts at 1). The `(N de M)` form is also used as the stored description suffix so the series can be reconstructed from the ledger.
+- `calcInstallmentDate` always places installments on the 1st of month N (offset from current installment's month), except for the current installment which keeps its exact date. This avoids end-of-month ambiguity.
+- "Anticipate" only shows on future installments (`t.date > item.date`) to prevent accidental back-dating.
+- `anticipateMutation` is separate from the edit mutation so clicking "Anticipate" does not toggle `isEditing` on the row.
+- `computedTotal` computed once before render; `installmentPlan` as `useMemo` since it depends on multiple state fields.
+
+### Files Created/Modified
+- `app/src/lib/ledger-parser/parser.ts`
+- `app/src/lib/ledger-parser/parser.test.ts`
+- `app/src/components/QuickEntryInput.tsx`
+- `app/src/components/LedgerTable.tsx`
+
+---
+
 ## 2026-03-08 - Initial Project Setup
 
 ### Tasks

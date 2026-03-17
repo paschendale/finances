@@ -11,7 +11,12 @@ describe('parseQuickEntry Specs', () => {
   const runTest = (input: string, expected: any, context = defaultContext) => {
     const result = parseQuickEntry(input, context);
     Object.keys(expected).forEach(key => {
-      expect(result[key as keyof typeof result]).toBe(expected[key]);
+      const val = expected[key];
+      if (typeof val === 'object') {
+        expect(result[key as keyof typeof result]).toEqual(val);
+      } else {
+        expect(result[key as keyof typeof result]).toBe(val);
+      }
     });
   };
 
@@ -287,6 +292,52 @@ describe('parseQuickEntry Specs', () => {
     it('28. uber 32.00', () => {
       runTest('uber 32.00', {
         amount: 32
+      });
+    });
+  });
+
+  describe('Installments', () => {
+    it('36. Compra (1 de 12) 120', () => {
+      runTest('Compra (1 de 12) 120', {
+        type: 'expense',
+        description: 'Compra',
+        amount: 120,
+        installments: { current: 1, total: 12 },
+      });
+    });
+
+    it('37. Compra (3 de 12) 120', () => {
+      runTest('Compra (3 de 12) 120', {
+        type: 'expense',
+        description: 'Compra',
+        amount: 120,
+        installments: { current: 3, total: 12 },
+      });
+    });
+
+    it('38. Compra 120x12', () => {
+      runTest('Compra 120x12', {
+        type: 'expense',
+        description: 'Compra',
+        amount: 120,
+        installments: { current: 1, total: 12 },
+      });
+    });
+
+    it('39. Compra (1 de 12) 120 BRL nubank', () => {
+      runTest('Compra (1 de 12) 120 BRL nubank', {
+        type: 'expense',
+        description: 'Compra',
+        amount: 120,
+        currency: 'BRL',
+        account: 'nubank',
+        installments: { current: 1, total: 12 },
+      });
+    });
+
+    it('40. padaria 18 has no installments', () => {
+      runTest('padaria 18', {
+        installments: undefined,
       });
     });
   });
