@@ -1,14 +1,15 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useMemo } from 'react';
 import {
-  fetchAccountsTree, fetchAliases, updateAccount, deleteAccount,
+  fetchAccountsTree, fetchAliases, updateAccount, deleteAccount, createAccount,
   createAlias, deleteAlias,
   type AccountNode,
 } from '@/lib/api';
 import { AccountIcon } from './AccountIcon';
 import { INSTITUTION_ICONS, CATEGORY_ICONS } from '@/lib/account-icons';
 import { cn } from '@/lib/utils';
-import { X, Check, Plus, Trash2, Loader2 } from 'lucide-react';
+import { X, Check, Plus, Trash2, Loader2, Eye, EyeOff } from 'lucide-react';
+import { SearchableSelect } from './SearchableSelect';
 
 const TYPE_TABS = ['asset', 'liability', 'expense', 'income', 'equity'] as const;
 type AccountType = typeof TYPE_TABS[number];
@@ -182,15 +183,33 @@ function AliasManager({ account }: { account: AccountNode }) {
   );
 }
 
-// ── Edit Modal ────────────────────────────────────────────────────────────────
+// ── Account Modal (create + edit) ─────────────────────────────────────────────
 
-function EditModal({ account, onClose }: { account: AccountNode; onClose: () => void }) {
-  const [icon, setIcon] = useState<string | null>(account.icon);
-  const [color, setColor] = useState<string | null>(account.color);
+function AccountModal({
+  account,
+  allAccounts,
+  onClose,
+}: { account: AccountNode | null; allAccounts: AccountNode[]; onClose: () => void }) {
+  const [name, setName] = useState(account?.name ?? '');
+  const [type, setType] = useState<AccountType>((account?.type as AccountType) ?? 'expense');
+  const [parentId, setParentId] = useState<string | null>(account?.parent_id ?? null);
+  const [icon, setIcon] = useState<string | null>(account?.icon ?? null);
+  const [color, setColor] = useState<string | null>(account?.color ?? null);
+  const [hidden, setHidden] = useState<boolean>(account?.hidden ?? false);
   const queryClient = useQueryClient();
 
-  const saveMut = useMutation({
-    mutationFn: () => updateAccount(account.id, { icon, color }),
+  const parentOptions = useMemo(() => {
+    const opts = allAccounts
+      .filter(a => a.type === type && a.id !== account?.id)
+      .map(a => ({ label: a.full_name, value: a.id }));
+    return [{ label: '— No parent', value: '' }, ...opts];
+  }, [allAccounts, type, account?.id]);
+
+  const saveMut = useMutation<void, Error, void>({
+    mutationFn: () =>
+      account
+        ? updateAccount(account.id, { name, type, parent_id: parentId, icon, color, hidden })
+        : createAccount({ name, type, parent_id: parentId, icon: icon ?? null, color: color ?? null, hidden }).then(() => undefined),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accountsTree'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
@@ -199,13 +218,17 @@ function EditModal({ account, onClose }: { account: AccountNode; onClose: () => 
   });
 
   const deleteMut = useMutation({
-    mutationFn: () => deleteAccount(account.id),
+    mutationFn: () => deleteAccount(account!.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accountsTree'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       onClose();
     },
   });
+
+  const displayName = name
+    ? name.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+    : 'New Account';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -216,12 +239,15 @@ function EditModal({ account, onClose }: { account: AccountNode; onClose: () => 
       >
         {/* Modal Header */}
         <div className="px-5 pt-5 pb-4 flex items-center gap-3 border-b border-white/[0.06]">
-          <AccountIcon accountName={account.full_name} icon={icon} color={color} size="lg" />
+          <AccountIcon accountName={account?.full_name ?? name} icon={icon} color={color} size="lg" />
           <div className="flex-1 min-w-0">
-            <p className="text-[15px] font-bold text-foreground truncate">
-              {account.name.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
-            </p>
-            <p className="text-[11px] text-muted-foreground/50 font-mono truncate">{account.full_name}</p>
+            <p className="text-[15px] font-bold text-foreground truncate">{displayName}</p>
+            {account && (
+              <p className="text-[11px] text-muted-foreground/50 font-mono truncate">{account.full_name}</p>
+            )}
+            {!account && (
+              <p className="text-[11px] text-muted-foreground/50 font-mono truncate">New Account</p>
+            )}
           </div>
           <button onClick={onClose} className="text-muted-foreground/40 hover:text-foreground transition-colors shrink-0">
             <X className="w-4 h-4" />
@@ -230,21 +256,81 @@ function EditModal({ account, onClose }: { account: AccountNode; onClose: () => 
 
         {/* Modal Body */}
         <div className="px-5 py-4 space-y-5">
-          <IconPicker accountType={account.type} current={icon} onChange={setIcon} />
+          {/* Name */}
+          <div className="space-y-2">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/60">Name</p>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="leaf name, e.g. grocery"
+              className="w-full bg-white/[0.03] border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-[13px] font-mono focus:outline-none focus:ring-1 focus:ring-primary/30 placeholder:text-muted-foreground/30"
+            />
+          </div>
+
+          {/* Type */}
+          <div className="space-y-2">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/60">Type</p>
+            <div className="flex rounded-xl border border-white/[0.08] bg-white/[0.02] p-0.5 w-fit">
+              {TYPE_TABS.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => { setType(t); setParentId(null); }}
+                  className={cn(
+                    "px-3 py-1 rounded-lg text-[12px] font-medium transition-colors",
+                    type === t
+                      ? "bg-white/10 text-foreground shadow-sm"
+                      : "text-muted-foreground/50 hover:text-foreground/70"
+                  )}
+                >
+                  {TYPE_LABELS[t]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Parent */}
+          <div className="space-y-2">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/60">Parent</p>
+            <SearchableSelect
+              options={parentOptions}
+              value={parentId ?? ''}
+              onChange={(v) => setParentId(v === '' ? null : v)}
+              placeholder="No parent"
+            />
+          </div>
+
+          <IconPicker accountType={type} current={icon} onChange={setIcon} />
           <ColorPicker current={color} onChange={setColor} />
-          <AliasManager account={account} />
+          {account && <AliasManager account={account} />}
         </div>
 
         {/* Modal Footer */}
         <div className="px-5 py-3 bg-white/[0.02] border-t border-white/[0.06] flex items-center justify-between">
-          <button
-            onClick={() => window.confirm(`Delete "${account.full_name}"?`) && deleteMut.mutate()}
-            disabled={deleteMut.isPending}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-destructive/50 hover:bg-destructive/10 hover:text-destructive/80 transition-all"
-          >
-            {deleteMut.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-            Delete
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setHidden(h => !h)}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-all",
+                hidden
+                  ? "text-muted-foreground/70 hover:bg-white/[0.05]"
+                  : "text-muted-foreground/30 hover:bg-white/[0.05] hover:text-muted-foreground/60"
+              )}
+              title={hidden ? "Hidden — click to show" : "Visible — click to hide"}
+            >
+              {hidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              {hidden ? 'Hidden' : 'Visible'}
+            </button>
+            {account && (
+              <button
+                onClick={() => window.confirm(`Delete "${account.full_name}"?`) && deleteMut.mutate()}
+                disabled={deleteMut.isPending}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-destructive/50 hover:bg-destructive/10 hover:text-destructive/80 transition-all"
+              >
+                {deleteMut.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                Delete
+              </button>
+            )}
+          </div>
           <div className="flex gap-2">
             <button
               onClick={onClose}
@@ -254,7 +340,7 @@ function EditModal({ account, onClose }: { account: AccountNode; onClose: () => 
             </button>
             <button
               onClick={() => saveMut.mutate()}
-              disabled={saveMut.isPending}
+              disabled={saveMut.isPending || !name.trim()}
               className="px-4 py-1.5 rounded-lg text-[12px] font-bold bg-white text-black hover:bg-white/90 transition-all flex items-center gap-1.5 disabled:opacity-50"
             >
               {saveMut.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
@@ -286,13 +372,19 @@ function AccountCard({ account, onClick }: { account: AccountNode; onClick: () =
   return (
     <button
       onClick={onClick}
-      className="group flex flex-col gap-2.5 p-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] hover:border-white/[0.12] transition-all text-left active:scale-[0.98]"
+      className={cn(
+        "group flex flex-col gap-2.5 p-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] hover:border-white/[0.12] transition-all text-left active:scale-[0.98]",
+        account.hidden && "opacity-50"
+      )}
     >
       {/* Top row: icon + name */}
       <div className="flex items-start gap-2.5">
         <AccountIcon accountName={account.full_name} icon={account.icon} color={account.color} size="md" />
         <div className="flex-1 min-w-0">
-          <p className="text-[13px] font-semibold text-foreground/90 truncate leading-tight">{leafName}</p>
+          <div className="flex items-center gap-1.5">
+            <p className="text-[13px] font-semibold text-foreground/90 truncate leading-tight">{leafName}</p>
+            {account.hidden && <EyeOff className="w-3 h-3 text-muted-foreground/30 shrink-0" />}
+          </div>
           {parentPath && (
             <p className="text-[10px] text-muted-foreground/40 font-mono truncate mt-0.5">{parentPath}</p>
           )}
@@ -321,7 +413,9 @@ function AccountCard({ account, onClick }: { account: AccountNode; onClick: () =
 export function AccountsPage() {
   const [activeTab, setActiveTab] = useState<AccountType>('asset');
   const [editingAccount, setEditingAccount] = useState<AccountNode | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
   const [search, setSearch] = useState('');
+  const [showHidden, setShowHidden] = useState(false);
 
   const { data: allAccounts = [], isLoading } = useQuery({
     queryKey: ['accountsTree'],
@@ -331,30 +425,51 @@ export function AccountsPage() {
   const filtered = useMemo(() =>
     allAccounts.filter(a =>
       a.type === activeTab &&
+      (showHidden || !a.hidden) &&
       (!search || a.full_name.toLowerCase().includes(search.toLowerCase()))
     ),
-  [allAccounts, activeTab, search]);
+  [allAccounts, activeTab, search, showHidden]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
-    for (const a of allAccounts) c[a.type] = (c[a.type] || 0) + 1;
+    for (const a of allAccounts) {
+      if (!a.hidden) c[a.type] = (c[a.type] || 0) + 1;
+    }
     return c;
   }, [allAccounts]);
 
   return (
     <div className="w-full space-y-5 pb-20">
       {/* Header */}
-      <div className="flex items-center gap-3 justify-between">
+      <div className="flex items-center gap-3 justify-between flex-wrap">
         <div>
           <h2 className="text-[20px] font-bold tracking-tight">Accounts</h2>
           <p className="text-[12px] text-muted-foreground/50 mt-0.5">{allAccounts.length} accounts</p>
         </div>
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search…"
-          className="w-44 bg-white/[0.03] border border-white/[0.08] rounded-xl px-3 py-1.5 text-[13px] focus:outline-none focus:ring-1 focus:ring-white/20 placeholder:text-muted-foreground/30"
-        />
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-[12px] text-muted-foreground/50 cursor-pointer hover:text-muted-foreground/70 transition-colors">
+            <input
+              type="checkbox"
+              checked={showHidden}
+              onChange={(e) => setShowHidden(e.target.checked)}
+              className="w-3.5 h-3.5 rounded accent-white/50"
+            />
+            Show hidden
+          </label>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search…"
+            className="w-44 bg-white/[0.03] border border-white/[0.08] rounded-xl px-3 py-1.5 text-[13px] focus:outline-none focus:ring-1 focus:ring-white/20 placeholder:text-muted-foreground/30"
+          />
+          <button
+            onClick={() => setIsCreating(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-[13px] font-semibold transition-all"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            New
+          </button>
+        </div>
       </div>
 
       {/* Type tabs */}
@@ -391,8 +506,12 @@ export function AccountsPage() {
         </div>
       )}
 
-      {editingAccount && (
-        <EditModal account={editingAccount} onClose={() => setEditingAccount(null)} />
+      {(editingAccount !== null || isCreating) && (
+        <AccountModal
+          account={editingAccount}
+          allAccounts={allAccounts}
+          onClose={() => { setEditingAccount(null); setIsCreating(false); }}
+        />
       )}
     </div>
   );

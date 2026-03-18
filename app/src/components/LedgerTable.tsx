@@ -95,19 +95,19 @@ function TransactionRow({
   });
 
   const allAccountOptions = useMemo(() =>
-    (accounts || []).map(a => ({ label: a.account_name, value: a.account_id, icon: a.icon, color: a.color })),
+    (accounts || []).filter(a => !a.hidden).map(a => ({ label: a.account_name, value: a.account_id, icon: a.icon, color: a.color })),
   [accounts]);
 
   const topCategoryOptions = useMemo(() =>
     (topCategories || []).map(c => {
       const acc = accounts?.find(a => a.account_name === c.category_name);
-      return { label: c.category_name, value: acc?.account_id || '', icon: acc?.icon ?? null, color: acc?.color ?? null };
-    }).filter(o => o.value !== ''),
+      return { label: c.category_name, value: acc?.account_id || '', icon: acc?.icon ?? null, color: acc?.color ?? null, hidden: acc?.hidden ?? false };
+    }).filter(o => o.value !== '' && !o.hidden),
   [topCategories, accounts]);
 
   const topAccountOptions = useMemo(() =>
     (accountUsage || [])
-      .filter(u => u.account_type === 'asset' || u.account_type === 'liability')
+      .filter(u => (u.account_type === 'asset' || u.account_type === 'liability') && !u.hidden)
       .slice(0, 10)
       .map(u => {
         const acc = accounts?.find(a => a.account_id === u.account_id);

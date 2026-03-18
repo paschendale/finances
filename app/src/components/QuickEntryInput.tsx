@@ -72,19 +72,19 @@ export function QuickEntryInput() {
 
   const accountOptions = useMemo(() =>
     (accounts || [])
-      .filter(a => a.account_type === 'asset' || a.account_type === 'liability' || a.account_type === 'equity')
+      .filter(a => !a.hidden && (a.account_type === 'asset' || a.account_type === 'liability' || a.account_type === 'equity'))
       .map(a => ({ label: a.account_name, value: a.account_name, icon: a.icon, color: a.color })),
   [accounts]);
 
   const allAccountOptions = useMemo(() =>
-    (accounts || []).map(a => ({ label: a.account_name, value: a.account_name, icon: a.icon, color: a.color })),
+    (accounts || []).filter(a => !a.hidden).map(a => ({ label: a.account_name, value: a.account_name, icon: a.icon, color: a.color })),
   [accounts]);
 
   const topCategoryOptions = useMemo(() =>
     (topCategories || []).map(c => {
       const acc = accounts?.find(a => a.account_name === c.category_name);
-      return { label: c.category_name, value: c.category_name, icon: acc?.icon ?? null, color: acc?.color ?? null };
-    }),
+      return { label: c.category_name, value: c.category_name, icon: acc?.icon ?? null, color: acc?.color ?? null, hidden: acc?.hidden ?? false };
+    }).filter(o => !o.hidden),
   [topCategories, accounts]);
 
   const lastUsedCurrency = useMemo(() => 

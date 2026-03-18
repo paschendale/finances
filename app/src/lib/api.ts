@@ -58,6 +58,7 @@ export interface Account {
   balance: number;
   icon: string | null;
   color: string | null;
+  hidden: boolean;
 }
 
 export interface AccountNode {
@@ -68,6 +69,7 @@ export interface AccountNode {
   parent_id: string | null;
   icon: string | null;
   color: string | null;
+  hidden: boolean;
 }
 
 export interface Entry {
@@ -356,6 +358,7 @@ export interface AccountUsage {
   account_name: string;
   account_type: string;
   usage_count: number;
+  hidden: boolean;
 }
 
 export async function fetchAccountUsage(): Promise<AccountUsage[]> {
@@ -380,7 +383,7 @@ export async function fetchAccountsTree(): Promise<AccountNode[]> {
   return response.json();
 }
 
-export async function updateAccount(id: string, patch: Partial<Pick<AccountNode, 'icon' | 'color' | 'name'>>): Promise<void> {
+export async function updateAccount(id: string, patch: Partial<Pick<AccountNode, 'icon' | 'color' | 'name' | 'type' | 'parent_id' | 'hidden'>>): Promise<void> {
   const response = await fetch(`${API_URL}/accounts?id=eq.${id}`, {
     method: 'PATCH',
     headers: getHeaders({ 'Prefer': 'return=minimal' }),
@@ -392,7 +395,7 @@ export async function updateAccount(id: string, patch: Partial<Pick<AccountNode,
   }
 }
 
-export async function createAccount(data: { name: string; type: string; parent_id?: string | null; icon?: string | null; color?: string | null }): Promise<AccountNode> {
+export async function createAccount(data: { name: string; type: string; parent_id?: string | null; icon?: string | null; color?: string | null; hidden?: boolean }): Promise<AccountNode> {
   const response = await fetch(`${API_URL}/accounts`, {
     method: 'POST',
     headers: getHeaders({ 'Prefer': 'return=representation' }),
