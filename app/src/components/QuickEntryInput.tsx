@@ -389,6 +389,13 @@ export function QuickEntryInput() {
     setPreview({ ...preview, entries: newEntries });
   };
 
+  const toggleAllSigns = () => {
+    if (!preview) return;
+    setIsEdited(true);
+    const newEntries = preview.entries.map(e => ({ ...e, amount: -e.amount }));
+    setPreview({ ...preview, entries: newEntries });
+  };
+
   const computedTotal = (installmentAmountMode === 'per' && parsedInstallments && preview)
     ? preview.entries[0].amount * (parsedInstallments.total - parsedInstallments.current + 1)
     : null;
@@ -490,31 +497,49 @@ export function QuickEntryInput() {
             <div className="space-y-2">
               {preview.entries.map((entry, i) => {
                 const isTransfer = parseQuickEntry(input).type === 'transfer';
-                const isPositive = entry.amount >= 0;
                 
-                let label = isPositive ? (preview.entries.filter(e => e.amount >= 0).length > 1 ? `Category Split ${preview.entries.filter((e, idx) => e.amount >= 0 && idx <= i).length}` : 'Category') : 'Source Account';
-                let Icon = isPositive ? Tag : Wallet;
+                // Refined Label/Icon logic:
+                // !isTransfer: i=0 is Category, i=1 is Account, i>1 are Category splits
+                // isTransfer: i=0 is Destination, i=1 is Source
+                let label = '';
+                let Icon = Tag;
 
                 if (isTransfer) {
-                  label = isPositive ? 'Destination Account' : 'Source Account';
-                  Icon = isPositive ? ArrowDownLeft : ArrowUpRight;
+                  label = i === 0 ? 'Destination Account' : 'Source Account';
+                  Icon = i === 0 ? ArrowDownLeft : ArrowUpRight;
+                } else {
+                  const isCategory = i === 0 || i > 1;
+                  label = isCategory ? (i > 1 ? `Category Split ${i - 1}` : 'Category') : 'Account';
+                  Icon = isCategory ? Tag : Wallet;
                 }
 
                 const entryAcc = accounts?.find(a => a.account_name === entry.account);
+                const isExpense = !isTransfer && preview.entries[0].amount > 0;
+                const isIncome = !isTransfer && preview.entries[0].amount < 0;
+                const colorClass = isExpense ? "text-red-500/80" : isIncome ? "text-green-500/80" : "text-foreground/70";
+
                 return (
                   <div key={i} className="flex gap-2 items-center bg-background/20 p-0.5 rounded-lg border border-border/10 relative" style={{ zIndex: 20 - i }}>
                     <div className="flex-1 min-w-0">
                       <div className="px-2.5 pb-0.5 text-[9px] font-black text-muted-foreground/40 uppercase tracking-widest flex items-center gap-2 h-4">
                         <span className="shrink-0">{label}</span>
-                        {isPositive && !isTransfer && matchInfo?.categoryType && (
+                        {!isTransfer && i === 0 && (
                           <span className={cn(
                             "px-1.5 py-0.5 rounded-[3px] text-[8px] font-black uppercase leading-none",
-                            matchInfo.categoryType === 'income' ? "bg-green-500/20 text-green-500" : "bg-red-500/20 text-red-500"
+                            isExpense ? "bg-red-500/20 text-red-500" : "bg-green-500/20 text-green-500"
                           )}>
-                            {matchInfo.categoryType}
+                            {isExpense ? 'expense' : 'income'}
                           </span>
                         )}
-                        {isPositive && preview.entries.length > 2 && (
+                        {!isTransfer && i === 0 && (
+                          <button 
+                            onClick={(e) => { e.preventDefault(); toggleAllSigns(); }}
+                            className="ml-auto text-[8px] font-black uppercase tracking-widest text-primary hover:underline"
+                          >
+                            Toggle Sign
+                          </button>
+                        )}
+                        {!isTransfer && i > 1 && (
                           <button 
                             onClick={() => removeSplit(i)}
                             className="ml-auto hover:text-destructive transition-colors"
@@ -525,7 +550,7 @@ export function QuickEntryInput() {
                       </div>
                       <SearchableSelect
                         options={allAccountOptions}
-                        topOptions={!isTransfer && isPositive ? topCategoryOptions : []}
+                        topOptions={!isTransfer && (i === 0 || i > 1) ? topCategoryOptions : []}
                         value={entry.account}
                         onChange={(val) => updateEntryField(i, 'account', val)}
                         placeholder="Select..."
@@ -541,10 +566,10 @@ export function QuickEntryInput() {
                           type="number"
                           step="0.01"
                           value={Math.abs(entry.amount) || ''}
-                          onChange={(e) => updateEntryField(i, 'amount', (isPositive ? 1 : -1) * parseFloat(e.target.value))}
+                          onChange={(e) => updateEntryField(i, 'amount', (entry.amount >= 0 ? 1 : -1) * parseFloat(e.target.value))}
                           className={cn(
                             "w-full bg-transparent border-none p-0 focus:ring-0 text-right font-mono text-[13px] font-bold",
-                            isPositive ? "text-green-500/80" : "text-destructive/70"
+                            colorClass
                           )}
                           placeholder="0.00"
                         />
