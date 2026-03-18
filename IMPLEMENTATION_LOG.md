@@ -1,5 +1,23 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-03-18 - Persist Last Manual Entry Date & Account
+
+### Tasks
+- [x] `app/src/components/QuickEntryInput.tsx` — `selectedDate` initialized via lazy `useState` that reads `quick_entry_last` from localStorage, falling back to today
+- [x] `app/src/components/QuickEntryInput.tsx` — Account defaulting `useEffect` checks localStorage first, validates saved account still exists and isn't hidden, then falls back to `lastUsedAccount` from global settings; added `accounts` as dependency
+- [x] `app/src/components/QuickEntryInput.tsx` — `confirmTransaction` detects transfers via `parseQuickEntry(input).type === 'transfer'` and saves `{ date, account }` to `quick_entry_last` only for non-transfers, in both the installments and single-tx branches
+
+### Decisions
+- Pure frontend localStorage solution — no migrations or RPC changes needed. This is a UI preference, not financial data.
+- Transfer detection is done client-side at point of confirmation so the logic stays simple.
+- Save happens synchronously before the mutation (or after `Promise.all` for installments) so the correct values are captured at confirmation time.
+- Fallback chain: localStorage saved account → global settings `last_used_account_id` → most recent transaction's asset account → first available asset/liability account.
+
+### Files Modified
+- `app/src/components/QuickEntryInput.tsx`
+
+---
+
 ## 2026-03-17 - Installment Feature + UI Improvements
 
 ### Tasks

@@ -37,7 +37,13 @@ function calcInstallmentDate(baseDate: string, current: number, n: number): stri
 // --- Main QuickEntryInput Component ---
 export function QuickEntryInput() {
   const [input, setInput] = useState('');
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(() => {
+    try {
+      const saved = localStorage.getItem('quick_entry_last');
+      if (saved) return JSON.parse(saved).date || new Date().toISOString().split('T')[0];
+    } catch {}
+    return new Date().toISOString().split('T')[0];
+  });
   const [selectedAccount, setSelectedAccount] = useState<string>('');
   const [preview, setPreview] = useState<TransactionPreview | null>(null);
   const [isEdited, setIsEdited] = useState(false);
@@ -144,12 +150,22 @@ export function QuickEntryInput() {
     return Array.from(new Set(transactions.map(t => t.description)));
   }, [transactions]);
 
-  // Sync default account from global settings
+  // Sync default account from localStorage, then global settings
   useEffect(() => {
-    if (lastUsedAccount && !selectedAccount) {
-      setSelectedAccount(lastUsedAccount);
+    if (!selectedAccount && (lastUsedAccount || accounts)) {
+      try {
+        const saved = localStorage.getItem('quick_entry_last');
+        if (saved) {
+          const { account } = JSON.parse(saved);
+          if (account && accounts?.some(a => a.account_name === account && !a.hidden)) {
+            setSelectedAccount(account);
+            return;
+          }
+        }
+      } catch {}
+      if (lastUsedAccount) setSelectedAccount(lastUsedAccount);
     }
-  }, [lastUsedAccount, selectedAccount]);
+  }, [lastUsedAccount, selectedAccount, accounts]);
 
   useEffect(() => {
     if (!input.trim()) {
@@ -283,6 +299,8 @@ export function QuickEntryInput() {
       }),
     });
 
+    const isTransfer = parseQuickEntry(input).type === 'transfer';
+
     try {
       if (createInstallments && parsedInstallments) {
         const txns = [];
@@ -292,6 +310,9 @@ export function QuickEntryInput() {
           txns.push(buildTx(date, desc));
         }
         await Promise.all(txns.map(createTransaction));
+        if (!isTransfer) {
+          localStorage.setItem('quick_entry_last', JSON.stringify({ date: preview.date, account: selectedAccount }));
+        }
         setInput('');
         setPreview(null);
         setIsEdited(false);
@@ -305,6 +326,9 @@ export function QuickEntryInput() {
         queryClient.invalidateQueries({ queryKey: ['globalSettings'] });
         if (inputRef.current) inputRef.current.focus();
       } else {
+        if (!isTransfer) {
+          localStorage.setItem('quick_entry_last', JSON.stringify({ date: preview.date, account: selectedAccount }));
+        }
         mutation.mutate(buildTx(preview.date, preview.description));
       }
     } catch (err: any) {
