@@ -1,5 +1,29 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-03-18 - Improved Account Visualization on Accounts Page
+
+### Tasks
+- [x] **Database View: account_balances** — Refactored to include hierarchical balances (rolling up sub-accounts), `own_balance` (account-only), `last_entry_date` (most recent transaction date in the hierarchy), and `parent_id`.
+- [x] **API Contract: Account & AccountNode** — Updated TypeScript interfaces to include the new fields.
+- [x] **AccountsPage: "All" Tab** — Added an "All" tab to view all accounts regardless of type, including a total count.
+- [x] **AccountsPage: Card Enhancements** — Updated account cards to display the hierarchical balance and the last transaction date.
+- [x] **AccountsPage: Layout** — Refined card layout to be more compact and include balance/date information in an Apple-style aesthetic.
+- [x] **Dashboard: Double-counting Fix** — Updated Dashboard calculations to use `own_balance` instead of hierarchical `balance` to ensure totals remain correct when parent and child accounts are filtered together.
+
+### Decisions
+- Chose to maintain both `balance` (hierarchical) and `own_balance` (non-hierarchical) to support different UI needs without extra complexity.
+- Flipped signs for Income and Liability accounts in the AccountsPage UI to present "positive" values for natural states (income earned, debt owed) while using color-coding to indicate financial impact.
+- Used `pt-BR` locale and `BRL` currency as the default for formatting on the account cards.
+
+### Files Created/Modified
+- `migrations/0032_account_balance_improvements.sql` (new)
+- `app/src/lib/api.ts`
+- `app/src/components/AccountsPage.tsx`
+- `app/src/components/Dashboard.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
 ## 2026-03-18 - Improved Income/Expense Detection and Modification
 
 ### Tasks

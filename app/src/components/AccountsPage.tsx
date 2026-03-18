@@ -11,10 +11,11 @@ import { cn } from '@/lib/utils';
 import { X, Check, Plus, Trash2, Loader2, Eye, EyeOff } from 'lucide-react';
 import { SearchableSelect } from './SearchableSelect';
 
-const TYPE_TABS = ['asset', 'liability', 'expense', 'income', 'equity'] as const;
+const TYPE_TABS = ['all', 'asset', 'liability', 'expense', 'income', 'equity'] as const;
 type AccountType = typeof TYPE_TABS[number];
 
 const TYPE_LABELS: Record<AccountType, string> = {
+  all: 'All',
   asset: 'Assets',
   liability: 'Liabilities',
   expense: 'Expenses',
@@ -369,41 +370,73 @@ function AccountCard({ account, onClick }: { account: AccountNode; onClick: () =
 
   const parentPath = account.full_name.split(':').slice(0, -1).join(' › ');
 
+  // Sign convention for display:
+  // Expenses and Assets are typically positive in the UI.
+  // Income and Liabilities are flipped to be positive if they follow their normal sign.
+  // In our ledger: 
+  // - Assets: + (positive is money)
+  // - Liabilities: - (negative is debt)
+  // - Expenses: + (positive is spend)
+  // - Income: - (negative is earn)
+  const displayBalance = (account.type === 'income' || account.type === 'liability') 
+    ? -account.balance 
+    : account.balance;
+
+  const balanceColor = displayBalance > 0
+    ? (account.type === 'expense' || account.type === 'liability' ? 'text-rose-500/90' : 'text-emerald-500/90')
+    : displayBalance < 0
+      ? (account.type === 'expense' || account.type === 'liability' ? 'text-emerald-500/90' : 'text-rose-500/90')
+      : 'text-muted-foreground/30';
+
+  const lastEntryDate = account.last_entry_date 
+    ? new Date(account.last_entry_date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })
+    : 'Never';
+
   return (
     <button
       onClick={onClick}
       className={cn(
-        "group flex flex-col gap-2.5 p-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] hover:border-white/[0.12] transition-all text-left active:scale-[0.98]",
+        "group flex flex-col justify-between gap-3 p-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] hover:border-white/[0.12] transition-all text-left active:scale-[0.98] min-h-[110px]",
         account.hidden && "opacity-50"
       )}
     >
-      {/* Top row: icon + name */}
-      <div className="flex items-start gap-2.5">
-        <AccountIcon accountName={account.full_name} icon={account.icon} color={account.color} size="md" />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            <p className="text-[13px] font-semibold text-foreground/90 truncate leading-tight">{leafName}</p>
-            {account.hidden && <EyeOff className="w-3 h-3 text-muted-foreground/30 shrink-0" />}
+      <div>
+        {/* Top row: icon + name */}
+        <div className="flex items-start gap-2.5">
+          <AccountIcon accountName={account.full_name} icon={account.icon} color={account.color} size="md" />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5">
+              <p className="text-[13px] font-semibold text-foreground/90 truncate leading-tight">{leafName}</p>
+              {account.hidden && <EyeOff className="w-3 h-3 text-muted-foreground/30 shrink-0" />}
+            </div>
+            {parentPath && (
+              <p className="text-[10px] text-muted-foreground/40 font-mono truncate mt-0.5">{parentPath}</p>
+            )}
           </div>
-          {parentPath && (
-            <p className="text-[10px] text-muted-foreground/40 font-mono truncate mt-0.5">{parentPath}</p>
-          )}
         </div>
+
+        {/* Aliases */}
+        {aliases.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-2">
+            {aliases.slice(0, 2).map(a => (
+              <span key={a.alias} className="px-1.5 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.06] text-[10px] font-mono text-muted-foreground/50 truncate max-w-[80px]">
+                {a.alias}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Aliases */}
-      {aliases.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {aliases.slice(0, 3).map(a => (
-            <span key={a.alias} className="px-1.5 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.06] text-[10px] font-mono text-muted-foreground/50 truncate max-w-[100px]">
-              {a.alias}
-            </span>
-          ))}
-          {aliases.length > 3 && (
-            <span className="px-1.5 py-0.5 text-[10px] text-muted-foreground/30">+{aliases.length - 3}</span>
-          )}
+      <div className="flex items-end justify-between mt-auto">
+        <div className="flex flex-col">
+          <p className={cn("text-[14px] font-bold tracking-tight", balanceColor)}>
+            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(displayBalance)}
+          </p>
+          <p className="text-[9px] uppercase tracking-wider font-bold text-muted-foreground/30">
+            {lastEntryDate}
+          </p>
         </div>
-      )}
+      </div>
     </button>
   );
 }
@@ -424,16 +457,19 @@ export function AccountsPage() {
 
   const filtered = useMemo(() =>
     allAccounts.filter(a =>
-      a.type === activeTab &&
+      (activeTab === 'all' || a.type === activeTab) &&
       (showHidden || !a.hidden) &&
       (!search || a.full_name.toLowerCase().includes(search.toLowerCase()))
     ),
   [allAccounts, activeTab, search, showHidden]);
 
   const counts = useMemo(() => {
-    const c: Record<string, number> = {};
+    const c: Record<string, number> = { all: 0 };
     for (const a of allAccounts) {
-      if (!a.hidden) c[a.type] = (c[a.type] || 0) + 1;
+      if (!a.hidden) {
+        c[a.type] = (c[a.type] || 0) + 1;
+        c.all++;
+      }
     }
     return c;
   }, [allAccounts]);

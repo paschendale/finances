@@ -56,6 +56,9 @@ export interface Account {
   account_name: string;
   account_type: string;
   balance: number;
+  own_balance: number;
+  last_entry_date: string | null;
+  parent_id: string | null;
   icon: string | null;
   color: string | null;
   hidden: boolean;
@@ -67,6 +70,9 @@ export interface AccountNode {
   full_name: string;
   type: string;
   parent_id: string | null;
+  balance: number;
+  own_balance: number;
+  last_entry_date: string | null;
   icon: string | null;
   color: string | null;
   hidden: boolean;
@@ -399,14 +405,27 @@ export async function fetchAccountUsage(): Promise<AccountUsage[]> {
 }
 
 export async function fetchAccountsTree(): Promise<AccountNode[]> {
-  const response = await fetch(`${API_URL}/account_names_hierarchical?order=full_name.asc`, {
+  const response = await fetch(`${API_URL}/account_balances?order=account_name.asc`, {
     headers: getHeaders(),
   });
   if (!response.ok) {
     if (response.status === 401) logout();
     throw new Error('Failed to fetch accounts tree');
   }
-  return response.json();
+  const data = await response.json();
+  return data.map((a: any) => ({
+    id: a.account_id,
+    name: a.leaf_name,
+    full_name: a.account_name,
+    type: a.account_type,
+    parent_id: a.parent_id,
+    balance: a.balance,
+    own_balance: a.own_balance,
+    last_entry_date: a.last_entry_date,
+    icon: a.icon,
+    color: a.color,
+    hidden: a.hidden
+  }));
 }
 
 export async function updateAccount(id: string, patch: Partial<Pick<AccountNode, 'icon' | 'color' | 'name' | 'type' | 'parent_id' | 'hidden'>>): Promise<void> {
