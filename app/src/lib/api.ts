@@ -104,11 +104,12 @@ export async function fetchAccounts(): Promise<Account[]> {
 }
 
 export async function fetchTransactions(
-  limit = 100, 
-  offset = 0, 
-  startDate?: string, 
-  endDate?: string, 
-  accountIds?: string[]
+  limit = 100,
+  offset = 0,
+  startDate?: string,
+  endDate?: string,
+  accountIds?: string[],
+  description?: string
 ): Promise<Transaction[]> {
   const params = new URLSearchParams();
   params.append('order', 'date.desc,created_at.desc');
@@ -120,6 +121,7 @@ export async function fetchTransactions(
   if (accountIds && accountIds.length > 0) {
     params.append('account_ids', `ov.{${accountIds.join(',')}}`);
   }
+  if (description) params.append('description', `ilike.*${description}*`);
 
   const response = await fetch(`${API_URL}/transactions_with_entries?${params.toString()}`, {
     headers: getHeaders(),

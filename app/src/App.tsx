@@ -31,7 +31,8 @@ function AppContent() {
     const startDate = params.get('start') || format(startOfYear(new Date()), 'yyyy-MM-dd');
     const endDate = params.get('end') || format(endOfMonth(new Date()), 'yyyy-MM-dd');
     const accountIds = params.get('accounts')?.split(',').filter(Boolean) || [];
-    return { startDate, endDate, accountIds };
+    const description = params.get('desc') || '';
+    return { startDate, endDate, accountIds, description };
   });
 
   const updateURL = useCallback((view: string, filters: LedgerFilters) => {
@@ -40,6 +41,7 @@ function AppContent() {
     if (filters.startDate) params.set('start', filters.startDate);
     if (filters.endDate) params.set('end', filters.endDate);
     if (filters.accountIds.length > 0) params.set('accounts', filters.accountIds.join(','));
+    if (filters.description) params.set('desc', filters.description);
     
     const newURL = `${window.location.pathname}?${params.toString()}`;
     window.history.replaceState({}, '', newURL);

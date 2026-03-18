@@ -2,12 +2,13 @@ import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchAccounts } from '@/lib/api';
 import { MultiSearchableSelect } from './MultiSearchableSelect';
-import { Calendar, Filter, X } from 'lucide-react';
+import { Calendar, Filter, Search, X } from 'lucide-react';
 
 export interface LedgerFilters {
   startDate: string;
   endDate: string;
   accountIds: string[];
+  description: string;
 }
 
 interface LedgerFilterBarProps {
@@ -37,11 +38,12 @@ export function LedgerFilterBar({ filters, onChange }: LedgerFilterBarProps) {
     onChange({
         startDate: '',
         endDate: '',
-        accountIds: []
+        accountIds: [],
+        description: '',
     });
   };
 
-  const hasActiveFilters = filters.startDate || filters.endDate || filters.accountIds.length > 0;
+  const hasActiveFilters = filters.startDate || filters.endDate || filters.accountIds.length > 0 || filters.description;
 
   return (
     <div className="w-full flex flex-col md:flex-row items-center gap-3 bg-white/[0.02] backdrop-blur-xl p-2 rounded-2xl border border-white/10 shadow-xl relative z-30">
@@ -58,6 +60,17 @@ export function LedgerFilterBar({ filters, onChange }: LedgerFilterBarProps) {
                 onChange={handleAccountChange}
                 placeholder="Filter accounts..."
                 className="[&>button]:py-1.5 [&>button]:rounded-xl"
+            />
+        </div>
+
+        <div className="flex items-center gap-2 bg-white/[0.03] border border-white/10 rounded-xl px-2.5 py-1 backdrop-blur-md">
+            <Search className="w-3 h-3 text-white/30" />
+            <input
+                type="text"
+                value={filters.description}
+                onChange={(e) => onChange({ ...filters, description: e.target.value })}
+                placeholder="Search description..."
+                className="bg-transparent border-none p-0 focus:ring-0 text-[11px] text-white/70 w-40 placeholder:text-white/20"
             />
         </div>
 

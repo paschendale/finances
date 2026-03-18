@@ -652,11 +652,12 @@ export function LedgerTable({ filters }: { filters: LedgerFilters }) {
   } = useInfiniteQuery({
     queryKey: ['transactions', filters],
     queryFn: ({ pageParam = 0 }) => fetchTransactions(
-        50, 
-        pageParam, 
-        filters.startDate, 
-        filters.endDate, 
-        filters.accountIds
+        50,
+        pageParam,
+        filters.startDate,
+        filters.endDate,
+        filters.accountIds,
+        filters.description
     ),
     initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) => {
@@ -807,7 +808,7 @@ export function LedgerTable({ filters }: { filters: LedgerFilters }) {
     return items;
   }, [data]);
 
-  const hasFilters = !!(filters.startDate || filters.endDate || filters.accountIds.length > 0);
+  const hasFilters = !!(filters.startDate || filters.endDate || filters.accountIds.length > 0 || filters.description);
 
   const toggleExpand = (id: string) => {
     setExpandedId(expandedId === id ? null : id);
