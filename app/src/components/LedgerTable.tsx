@@ -4,8 +4,9 @@ import { useMemo, useEffect, useRef, useState } from 'react';
 import { cn, formatHierarchicalName } from '@/lib/utils';
 import { SearchableSelect } from './SearchableSelect';
 import { AccountIcon } from './AccountIcon';
-import { Wallet, Tag, Trash2, Plus, Check, Loader2, X } from 'lucide-react';
+import { Wallet, Tag, Trash2, Plus, Check, Loader2, X, Download } from 'lucide-react';
 import { type LedgerFilters } from './LedgerFilterBar';
+import { ExportWizard } from './ExportWizard';
 
 interface TransactionItem {
   type: 'transaction';
@@ -641,6 +642,7 @@ function TransactionRow({
 export function LedgerTable({ filters }: { filters: LedgerFilters }) {
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [showExport, setShowExport] = useState(false);
 
   const {
     data,
@@ -840,6 +842,20 @@ export function LedgerTable({ filters }: { filters: LedgerFilters }) {
 
   return (
     <div className="w-full mt-4 mb-20">
+      {showExport && (
+        <ExportWizard
+          initialFilters={filters}
+          onClose={() => setShowExport(false)}
+        />
+      )}
+      <div className="flex justify-end mb-2">
+        <button
+          onClick={() => setShowExport(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold uppercase tracking-wider text-white/40 hover:text-white/70 hover:bg-white/[0.05] border border-white/[0.06] transition-all"
+        >
+          <Download className="w-3.5 h-3.5" /> Export
+        </button>
+      </div>
       <div className="w-full">
         {ledgerItems.map((item) => {
           if (item.type === 'date-header') {

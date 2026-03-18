@@ -133,6 +133,30 @@ export async function fetchTransactions(
   return response.json();
 }
 
+export async function fetchTransactionsForExport(
+  startDate?: string,
+  endDate?: string,
+  accountIds?: string[]
+): Promise<Transaction[]> {
+  const params = new URLSearchParams();
+  params.append('order', 'date.desc,created_at.desc');
+
+  if (startDate) params.append('date', `gte.${startDate}`);
+  if (endDate) params.append('date', `lte.${endDate}`);
+  if (accountIds && accountIds.length > 0) {
+    params.append('account_ids', `ov.{${accountIds.join(',')}}`);
+  }
+
+  const response = await fetch(`${API_URL}/transactions_with_entries?${params.toString()}`, {
+    headers: getHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to fetch transactions for export');
+  }
+  return response.json();
+}
+
 export interface CategoryUsage {
   category_name: string;
   category_type: string;
