@@ -732,11 +732,10 @@ export function LedgerTable({ filters }: { filters: LedgerFilters }) {
       
       const expenseSum = expenseEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
       const incomeSum = incomeEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
-      const assetSum = assetEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
 
       let amount = 0, currency = 'BRL';
       let primaryType: 'expense' | 'income' | 'transfer' = 'transfer';
-      
+
       if (Math.abs(expenseSum) > 0.01) {
         amount = Math.abs(expenseSum);
         currency = expenseEntries[0].currency;
@@ -746,8 +745,10 @@ export function LedgerTable({ filters }: { filters: LedgerFilters }) {
         currency = incomeEntries[0].currency;
         primaryType = incomeSum < 0 ? 'income' : 'expense';
       } else {
-        amount = Math.abs(assetSum);
-        if (assetEntries.length > 0) currency = assetEntries[0].currency;
+        const posAssetEntries = assetEntries.filter(e => (Number(e.amount_base) || 0) > 0);
+        amount = posAssetEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
+        if (posAssetEntries.length > 0) currency = posAssetEntries[0].currency;
+        else if (assetEntries.length > 0) currency = assetEntries[0].currency;
         primaryType = 'transfer';
       }
 
@@ -781,7 +782,6 @@ export function LedgerTable({ filters }: { filters: LedgerFilters }) {
         
         const expenseSum = expenseEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
         const incomeSum = incomeEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
-        const assetSum = assetEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
 
         let amount = 0;
         let currency = 'BRL';
@@ -796,8 +796,10 @@ export function LedgerTable({ filters }: { filters: LedgerFilters }) {
           currency = incomeEntries[0].currency;
           primaryType = incomeSum < 0 ? 'income' : 'expense';
         } else {
-          amount = Math.abs(assetSum);
-          if (assetEntries.length > 0) currency = assetEntries[0].currency;
+          const posAssetEntries = assetEntries.filter(e => (Number(e.amount_base) || 0) > 0);
+          amount = posAssetEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
+          if (posAssetEntries.length > 0) currency = posAssetEntries[0].currency;
+          else if (assetEntries.length > 0) currency = assetEntries[0].currency;
           primaryType = 'transfer';
         }
 
