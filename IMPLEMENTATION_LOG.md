@@ -18,6 +18,72 @@
 
 ---
 
+## 2026-03-17 - Export Wizard (CSV/XLSX Download)
+
+### Tasks
+- [x] `app/src/components/ExportWizard.tsx` — New modal with account filter, date range pickers, CSV/XLSX format toggle, and preview table (up to 50 entries with full `l1:l2:l3` hierarchy)
+- [x] `app/src/lib/api.ts` — `fetchTransactionsForExport` (no pagination, full result set)
+- [x] `app/src/components/LedgerTable.tsx` — Export button in toolbar pre-populates current ledger filters when opening the wizard
+- [x] Added `xlsx` dependency to `app/package.json`
+
+### Decisions
+- Filename includes the exported date range (`export_YYYY-MM-DD_YYYY-MM-DD.{ext}`) for easy filing.
+- Preview capped at 50 rows to keep the modal snappy; full export is unbounded.
+- Format toggle (CSV/XLSX) is in the wizard so the user can switch without reopening.
+
+### Files Created/Modified
+- `app/src/components/ExportWizard.tsx` (new)
+- `app/src/lib/api.ts`
+- `app/src/components/LedgerTable.tsx`
+- `app/package.json`
+
+---
+
+## 2026-03-17 - Description Search Filter in Ledger
+
+### Tasks
+- [x] `app/src/components/LedgerFilterBar.tsx` — Added text input for description substring search
+- [x] `app/src/lib/api.ts` — `fetchTransactions` now accepts `desc` param, passed as PostgREST `ilike` filter
+- [x] `app/src/App.tsx` — `desc` filter state threaded through to LedgerTable
+- [x] URL persistence — `?desc=` query param added alongside existing filters
+
+### Decisions
+- Used PostgREST `ilike` for case-insensitive server-side filtering rather than client-side filtering to keep large datasets performant.
+- State lives in the URL so filter is preserved on page reload and shareable.
+
+### Files Modified
+- `app/src/components/LedgerFilterBar.tsx`
+- `app/src/components/LedgerTable.tsx`
+- `app/src/lib/api.ts`
+- `app/src/App.tsx`
+
+---
+
+## 2026-03-17 - Account Create, Type/Parent Editing & Hidden Flag
+
+### Tasks
+- [x] `migrations/0031_account_hidden.sql` — `hidden BOOLEAN DEFAULT FALSE` column on `accounts`; rebuilt `account_names_hierarchical`, `account_balances`, `account_usage` views to expose the flag
+- [x] `app/src/components/AccountsPage.tsx` — `EditModal` refactored into `AccountModal` supporting both create and edit modes; new fields: name, type selector, parent picker (`SearchableSelect`); hidden toggle (`Eye`/`EyeOff`) in modal footer; hidden cards shown at 50% opacity; "New" button and "Show hidden" checkbox in page header
+- [x] `app/src/components/LedgerFilterBar.tsx` — hidden accounts filtered out of account picker
+- [x] `app/src/components/LedgerTable.tsx` — hidden accounts excluded from inline selectors
+- [x] `app/src/components/QuickEntryInput.tsx` — hidden accounts excluded from `accountOptions` and `allAccountOptions`
+- [x] `app/src/lib/api.ts` — `hidden` field added to `Account` interface; `createAccount`/`updateAccount` pass `hidden`
+
+### Decisions
+- Hidden accounts remain in the DB and show in `AccountsPage` (at 50% opacity) so they can be un-hidden; they are simply suppressed everywhere else in the UI.
+- `AccountModal` unifies create and edit into one component to avoid duplicating the complex field layout.
+- Parent picker uses `SearchableSelect` over all accounts so any account can be reparented.
+
+### Files Created/Modified
+- `migrations/0031_account_hidden.sql` (new)
+- `app/src/components/AccountsPage.tsx`
+- `app/src/components/LedgerFilterBar.tsx`
+- `app/src/components/LedgerTable.tsx`
+- `app/src/components/QuickEntryInput.tsx`
+- `app/src/lib/api.ts`
+
+---
+
 ## 2026-03-17 - Installment Feature + UI Improvements
 
 ### Tasks
