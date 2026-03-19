@@ -1,5 +1,31 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-03-18 - Improved Account Visualization on Accounts Page
+
+### Tasks
+- [x] **Database View: account_balances** — Refactored to include hierarchical balances (rolling up sub-accounts), `own_balance` (account-only), `last_entry_date` (most recent transaction date in the hierarchy), and `parent_id`.
+- [x] **API Contract: Account & AccountNode** — Updated TypeScript interfaces to include the new fields.
+- [x] **AccountsPage: "All" Tab** — Added an "All" tab to view all accounts regardless of type, including a total count.
+- [x] **AccountsPage: Card Enhancements** — Updated account cards to display the hierarchical balance and the last transaction date.
+- [x] **AccountsPage: Layout** — Refined card layout to be more compact and include balance/date information in an Apple-style aesthetic.
+- [x] **AccountsPage: Sort controls** — Added sort bar (Name / Balance / Last entry, asc/desc) between the type tabs and the card grid.
+- [x] **Dashboard: Double-counting Fix** — Updated Dashboard calculations to use `own_balance` instead of hierarchical `balance` to ensure totals remain correct when parent and child accounts are filtered together.
+
+### Decisions
+- Chose to maintain both `balance` (hierarchical) and `own_balance` (non-hierarchical) to support different UI needs without extra complexity.
+- Flipped signs for Income and Liability accounts in the AccountsPage UI to present "positive" values for natural states (income earned, debt owed) while using color-coding to indicate financial impact.
+- Used `pt-BR` locale and `BRL` currency as the default for formatting on the account cards.
+- Balance sort uses the same display-sign convention so the visual order matches what is shown on each card.
+
+### Files Created/Modified
+- `migrations/0032_account_balance_improvements.sql` (new)
+- `app/src/lib/api.ts`
+- `app/src/components/AccountsPage.tsx`
+- `app/src/components/Dashboard.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
 ## 2026-03-18 - Improved Income/Expense Detection and Modification
 
 ### Tasks
@@ -109,29 +135,45 @@
 ## 2026-03-17 - Installment Feature + UI Improvements
 
 ### Tasks
-- [x] `app/src/lib/ledger-parser/parser.ts` — Added `InstallmentInfo` interface (`current`, `total`); parser now detects two installment syntaxes: `(N de M)` inline tag and `AmountxM` shorthand (treated as `1 de M`); `installments` field added to `ParsedInput`
-- [x] `app/src/lib/ledger-parser/parser.test.ts` — Added 5 installment test cases (cases 36–40); fixed `runTest` helper to use `toEqual` for object comparisons
-- [x] `app/src/components/QuickEntryInput.tsx` — Installment state (`parsedInstallments`, `createInstallments`, `installmentAmountMode`); `calcInstallmentDate` helper; `confirmTransaction` fan-out creates one transaction per remaining installment dated to the 1st of successive months; amount is either divided across installments (total mode) or repeated (per-installment mode); Enter key disabled when multi-create is pending
-- [x] **UI: Toggle redesign** — Replaced flat row with a two-row card: "Amount mode" row with segmented `Total`/`Per installment` buttons (dark-mode contrast fixed, `bg-white/10` active state), and "Create all installments" row with helper text and emerald/subtle toggle
-- [x] **UI: Per-mode total display** — When `installmentAmountMode === 'per'`, computed total `= amount × remaining_count` shown inline next to the mode toggle
-- [x] **UI: Installment plan table** — When `createInstallments` is on, a scrollable table (`max-h-48`) renders each planned transaction with date, formatted description (`X de Y`), and amount
-- [x] **UI: Series always in order** — `allSeriesItems` (replaces `relatedInstallments`) includes the current item; sorted by installment number extracted from description via `getInstallmentNumber`
-- [x] **UI: Series total value** — Section header shows `(X/Y)` count and the sum of all visible installment amounts
-- [x] **UI: Filter warning** — When `allSeriesItems.length < expectedTotal`, a yellow warning banner explains whether installments are hidden by active filters or require scrolling
-- [x] **UI: Anticipate button** — Each future installment in the series list gets an "Anticipate" link; clicking it moves that transaction's date to the 1st of the currently expanded item's month via a separate `anticipateMutation`
+- [x] **Database View: account_balances** — Refactored to include hierarchical balances (rolling up sub-accounts), `own_balance` (account-only), `last_entry_date` (most recent transaction date in the hierarchy), and `parent_id`.
+- [x] **API Contract: Account & AccountNode** — Updated TypeScript interfaces to include the new fields.
+- [x] **AccountsPage: "All" Tab** — Added an "All" tab to view all accounts regardless of type, including a total count.
+- [x] **AccountsPage: Card Enhancements** — Updated account cards to display the hierarchical balance and the last transaction date.
+- [x] **AccountsPage: Layout** — Refined card layout to be more compact and include balance/date information in an Apple-style aesthetic.
+- [x] **Dashboard: Double-counting Fix** — Updated Dashboard calculations to use `own_balance` instead of hierarchical `balance` to ensure totals remain correct when parent and child accounts are filtered together.
 
 ### Decisions
-- Two installment syntaxes supported: `(N de M)` (mid-purchase, explicit current) and `NxM` shorthand (always starts at 1). The `(N de M)` form is also used as the stored description suffix so the series can be reconstructed from the ledger.
-- `calcInstallmentDate` always places installments on the 1st of month N (offset from current installment's month), except for the current installment which keeps its exact date. This avoids end-of-month ambiguity.
-- "Anticipate" only shows on future installments (`t.date > item.date`) to prevent accidental back-dating.
-- `anticipateMutation` is separate from the edit mutation so clicking "Anticipate" does not toggle `isEditing` on the row.
-- `computedTotal` computed once before render; `installmentPlan` as `useMemo` since it depends on multiple state fields.
+- Chose to maintain both `balance` (hierarchical) and `own_balance` (non-hierarchical) to support different UI needs without extra complexity.
+- Flipped signs for Income and Liability accounts in the AccountsPage UI to present "positive" values for natural states (income earned, debt owed) while using color-coding to indicate financial impact.
+- Used `pt-BR` locale and `BRL` currency as the default for formatting on the account cards.
 
 ### Files Created/Modified
-- `app/src/lib/ledger-parser/parser.ts`
-- `app/src/lib/ledger-parser/parser.test.ts`
+- `migrations/0032_account_balance_improvements.sql` (new)
+- `app/src/lib/api.ts`
+- `app/src/components/AccountsPage.tsx`
+- `app/src/components/Dashboard.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
+## 2026-03-18 - Improved Income/Expense Detection and Modification
+
+### Tasks
+- [x] **QuickEntryInput: Manual Overrides** — Added a `toggleAllSigns` function to flip all entry signs in the staging area, allowing users to manually switch between income and expense classification. Added a "Toggle Sign" button to the UI.
+- [x] **QuickEntryInput: Labeling Logic** — Refined the labeling and icon logic in the staging area to correctly identify 'Category' (Tag icon) and 'Account' (Wallet icon) based on their index and transaction type, regardless of the sign. This ensures refunds (negative expenses) are labeled correctly as 'Category' but with an 'income' badge.
+- [x] **QuickEntryInput: Visual Feedback** — Improved the color logic in the staging area to color both category and account entries based on the detected transaction type (Red for Expense, Green for Income, Neutral for Transfer).
+- [x] **LedgerTable: Correct Primary Type** — Updated the `primaryType` calculation in `allTransactionItems` and `ledgerItems` memos to correctly identify refunds (negative expenses) as income and reversals (positive income) as expenses. This ensures correct color and sign representation in the list view.
+- [x] **LedgerTable: Stable Edit Type** — Refined the `editType` derivation in `TransactionRow` to check the sign of the entries, not just the account type. This ensures the color correctly updates when signs are toggled or values are modified during editing.
+
+### Decisions
+- Re-centered the "source of truth" for income/expense classification on the Asset-flow direction rather than just the presence of a specific account type.
+- Used a uniform coloring scheme for entries within the editing view (entire transaction colored Red or Green) to provide high-signal feedback to the user about what kind of transaction they are creating/editing.
+- Chose to maintain the 'Category' label for any entry in an expense/income account, even if the amount is negative (refund), while adding a specific 'income' badge for clarity.
+
+### Files Modified
 - `app/src/components/QuickEntryInput.tsx`
 - `app/src/components/LedgerTable.tsx`
+- `IMPLEMENTATION_LOG.md`
 
 ---
 

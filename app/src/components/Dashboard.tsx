@@ -220,13 +220,13 @@ export function Dashboard({ filters, onFilterChange }: DashboardProps) {
     const investments = accounts.filter(a => a.account_name.startsWith('assets:investments:'));
     const creditCards = accounts.filter(a => a.account_name.startsWith('liabilities:credit-card:'));
 
-    const sum = (accs: Account[]) => accs.reduce((s, a) => s + a.balance, 0);
+    const sum = (accs: Account[]) => accs.reduce((s, a) => s + a.own_balance, 0);
 
     return {
-      checking: { label: 'Checking Accounts', accounts: checking.sort((a, b) => b.balance - a.balance), total: sum(checking) },
-      emergency: { label: 'Emergency Funds', accounts: emergency.sort((a, b) => b.balance - a.balance), total: sum(emergency) },
-      investments: { label: 'Investments', accounts: investments.sort((a, b) => b.balance - a.balance), total: sum(investments) },
-      creditCards: { label: 'Credit Cards', accounts: creditCards.sort((a, b) => a.balance - b.balance), total: sum(creditCards) },
+      checking: { label: 'Checking Accounts', accounts: checking.sort((a, b) => b.own_balance - a.own_balance), total: sum(checking) },
+      emergency: { label: 'Emergency Funds', accounts: emergency.sort((a, b) => b.own_balance - a.own_balance), total: sum(emergency) },
+      investments: { label: 'Investments', accounts: investments.sort((a, b) => b.own_balance - a.own_balance), total: sum(investments) },
+      creditCards: { label: 'Credit Cards', accounts: creditCards.sort((a, b) => a.own_balance - b.own_balance), total: sum(creditCards) },
     };
   }, [accounts]);
 
@@ -569,7 +569,7 @@ function BalanceCard({ title, amount, color, accounts = [] }: { title: string, a
             {accounts.map(acc => (
               <div key={acc.account_id} className="flex justify-between items-center text-[10px]">
                 <span className="text-white/60 truncate mr-2">{formatHierarchicalName(acc.account_name)}</span>
-                <span className="font-mono font-bold text-white">R$ {acc.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                <span className="font-mono font-bold text-white">R$ {acc.own_balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
               </div>
             ))}
           </div>

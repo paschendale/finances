@@ -8,13 +8,14 @@ import {
 import { AccountIcon } from './AccountIcon';
 import { INSTITUTION_ICONS, CATEGORY_ICONS } from '@/lib/account-icons';
 import { cn } from '@/lib/utils';
-import { X, Check, Plus, Trash2, Loader2, Eye, EyeOff } from 'lucide-react';
+import { X, Check, Plus, Trash2, Loader2, Eye, EyeOff, ArrowUp, ArrowDown } from 'lucide-react';
 import { SearchableSelect } from './SearchableSelect';
 
-const TYPE_TABS = ['asset', 'liability', 'expense', 'income', 'equity'] as const;
+const TYPE_TABS = ['all', 'asset', 'liability', 'expense', 'income', 'equity'] as const;
 type AccountType = typeof TYPE_TABS[number];
 
 const TYPE_LABELS: Record<AccountType, string> = {
+  all: 'All',
   asset: 'Assets',
   liability: 'Liabilities',
   expense: 'Expenses',
@@ -369,46 +370,81 @@ function AccountCard({ account, onClick }: { account: AccountNode; onClick: () =
 
   const parentPath = account.full_name.split(':').slice(0, -1).join(' › ');
 
+  // Sign convention for display:
+  // Expenses and Assets are typically positive in the UI.
+  // Income and Liabilities are flipped to be positive if they follow their normal sign.
+  // In our ledger: 
+  // - Assets: + (positive is money)
+  // - Liabilities: - (negative is debt)
+  // - Expenses: + (positive is spend)
+  // - Income: - (negative is earn)
+  const displayBalance = (account.type === 'income' || account.type === 'liability') 
+    ? -account.balance 
+    : account.balance;
+
+  const balanceColor = displayBalance > 0
+    ? (account.type === 'expense' || account.type === 'liability' ? 'text-rose-500/90' : 'text-emerald-500/90')
+    : displayBalance < 0
+      ? (account.type === 'expense' || account.type === 'liability' ? 'text-emerald-500/90' : 'text-rose-500/90')
+      : 'text-muted-foreground/30';
+
+  const lastEntryDate = account.last_entry_date 
+    ? new Date(account.last_entry_date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })
+    : 'Never';
+
   return (
     <button
       onClick={onClick}
       className={cn(
-        "group flex flex-col gap-2.5 p-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] hover:border-white/[0.12] transition-all text-left active:scale-[0.98]",
+        "group flex flex-col justify-between gap-3 p-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] hover:border-white/[0.12] transition-all text-left active:scale-[0.98] min-h-[110px]",
         account.hidden && "opacity-50"
       )}
     >
-      {/* Top row: icon + name */}
-      <div className="flex items-start gap-2.5">
-        <AccountIcon accountName={account.full_name} icon={account.icon} color={account.color} size="md" />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            <p className="text-[13px] font-semibold text-foreground/90 truncate leading-tight">{leafName}</p>
-            {account.hidden && <EyeOff className="w-3 h-3 text-muted-foreground/30 shrink-0" />}
+      <div>
+        {/* Top row: icon + name */}
+        <div className="flex items-start gap-2.5">
+          <AccountIcon accountName={account.full_name} icon={account.icon} color={account.color} size="md" />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5">
+              <p className="text-[13px] font-semibold text-foreground/90 truncate leading-tight">{leafName}</p>
+              {account.hidden && <EyeOff className="w-3 h-3 text-muted-foreground/30 shrink-0" />}
+            </div>
+            {parentPath && (
+              <p className="text-[10px] text-muted-foreground/40 font-mono truncate mt-0.5">{parentPath}</p>
+            )}
           </div>
-          {parentPath && (
-            <p className="text-[10px] text-muted-foreground/40 font-mono truncate mt-0.5">{parentPath}</p>
-          )}
         </div>
+
+        {/* Aliases */}
+        {aliases.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-2">
+            {aliases.slice(0, 2).map(a => (
+              <span key={a.alias} className="px-1.5 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.06] text-[10px] font-mono text-muted-foreground/50 truncate max-w-[80px]">
+                {a.alias}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Aliases */}
-      {aliases.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {aliases.slice(0, 3).map(a => (
-            <span key={a.alias} className="px-1.5 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.06] text-[10px] font-mono text-muted-foreground/50 truncate max-w-[100px]">
-              {a.alias}
-            </span>
-          ))}
-          {aliases.length > 3 && (
-            <span className="px-1.5 py-0.5 text-[10px] text-muted-foreground/30">+{aliases.length - 3}</span>
-          )}
+      <div className="flex items-end justify-between mt-auto">
+        <div className="flex flex-col">
+          <p className={cn("text-[14px] font-bold tracking-tight", balanceColor)}>
+            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(displayBalance)}
+          </p>
+          <p className="text-[9px] uppercase tracking-wider font-bold text-muted-foreground/30">
+            {lastEntryDate}
+          </p>
         </div>
-      )}
+      </div>
     </button>
   );
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
+
+type SortField = 'name' | 'balance' | 'last_entry';
+type SortDir = 'asc' | 'desc';
 
 export function AccountsPage() {
   const [activeTab, setActiveTab] = useState<AccountType>('asset');
@@ -416,6 +452,8 @@ export function AccountsPage() {
   const [isCreating, setIsCreating] = useState(false);
   const [search, setSearch] = useState('');
   const [showHidden, setShowHidden] = useState(false);
+  const [sortField, setSortField] = useState<SortField>('name');
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
 
   const { data: allAccounts = [], isLoading } = useQuery({
     queryKey: ['accountsTree'],
@@ -424,16 +462,35 @@ export function AccountsPage() {
 
   const filtered = useMemo(() =>
     allAccounts.filter(a =>
-      a.type === activeTab &&
+      (activeTab === 'all' || a.type === activeTab) &&
       (showHidden || !a.hidden) &&
       (!search || a.full_name.toLowerCase().includes(search.toLowerCase()))
     ),
   [allAccounts, activeTab, search, showHidden]);
 
+  const sorted = useMemo(() => {
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      if (sortField === 'name') return dir * a.full_name.localeCompare(b.full_name);
+      if (sortField === 'balance') {
+        const da = (a.type === 'income' || a.type === 'liability') ? -a.balance : a.balance;
+        const db = (b.type === 'income' || b.type === 'liability') ? -b.balance : b.balance;
+        return dir * (da - db);
+      }
+      // last_entry: null (never used) always sorts to the end
+      const da = a.last_entry_date ? new Date(a.last_entry_date).getTime() : (sortDir === 'asc' ? Infinity : -Infinity);
+      const db = b.last_entry_date ? new Date(b.last_entry_date).getTime() : (sortDir === 'asc' ? Infinity : -Infinity);
+      return dir * (da - db);
+    });
+  }, [filtered, sortField, sortDir]);
+
   const counts = useMemo(() => {
-    const c: Record<string, number> = {};
+    const c: Record<string, number> = { all: 0 };
     for (const a of allAccounts) {
-      if (!a.hidden) c[a.type] = (c[a.type] || 0) + 1;
+      if (!a.hidden) {
+        c[a.type] = (c[a.type] || 0) + 1;
+        c.all++;
+      }
     }
     return c;
   }, [allAccounts]);
@@ -491,16 +548,43 @@ export function AccountsPage() {
         ))}
       </nav>
 
+      {/* Sort controls */}
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/30 mr-1">Sort</span>
+        {([['name', 'Name'], ['balance', 'Balance'], ['last_entry', 'Last entry']] as [SortField, string][]).map(([field, label]) => {
+          const active = sortField === field;
+          const Icon = sortDir === 'asc' ? ArrowUp : ArrowDown;
+          return (
+            <button
+              key={field}
+              onClick={() => {
+                if (active) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+                else { setSortField(field); setSortDir('asc'); }
+              }}
+              className={cn(
+                "flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all border",
+                active
+                  ? "bg-white/[0.08] border-white/[0.15] text-foreground/80"
+                  : "border-transparent text-muted-foreground/40 hover:text-muted-foreground/70 hover:bg-white/[0.04]"
+              )}
+            >
+              {label}
+              {active && <Icon className="w-2.5 h-2.5" />}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Cards grid */}
       {isLoading ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 animate-pulse">
           {[...Array(12)].map((_, i) => <div key={i} className="h-[76px] bg-white/[0.03] rounded-2xl" />)}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : sorted.length === 0 ? (
         <div className="py-16 text-center text-muted-foreground/30 text-[13px]">No accounts found</div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-          {filtered.map((account) => (
+          {sorted.map((account) => (
             <AccountCard key={account.id} account={account} onClick={() => setEditingAccount(account)} />
           ))}
         </div>
