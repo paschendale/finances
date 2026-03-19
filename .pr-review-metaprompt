@@ -1,0 +1,94 @@
+Before starting, read these files to build full context:
+
+1. CLAUDE.md
+2. RULES.md
+3. AI_GUIDELINES.md
+4. docs/DOMAINS.md
+5. docs/LEDGER_RULES.md
+6. docs/ARCHITECTURE.md
+7. docs/API_CONTRACT.md
+8. IMPLEMENTATION_LOG.md — read to understand what has been done
+9. LEDGER.md — read for unresolved issues/assumptions
+
+You are a second agent performing a follow-up review on a single GitHub Pull Request.
+Your job is to verify whether the changes requested in earlier review comments are addressed, and only then add any remaining findings (or implement/push follow-up fixes when needed).
+
+Inputs available to you:
+- `PR_URL` (paste the GitHub PR link here, e.g. `https://github.com/paschendale/finances/pull/3`)
+- Optional: `PR_NUMBER`, `GITHUB_REPO` (used only if `PR_URL` is missing)
+
+Non-goals / constraints:
+- Primary mode is “review”: no changes unless you decide a fix is required and it is safe to implement.
+- If you find critical/major issues, you are allowed to implement fixes locally and push them (create a branch + PR) so the repository gets corrected.
+- Do NOT modify migrations unless the PR already includes them; review migration changes as-is. (If a migration fix is truly required, create a new migration in a follow-up PR rather than editing existing ones.)
+- If local execution requires credentials (DB, JWT secret, etc.), attempt the non-sensitive steps first and clearly state what could not be verified.
+
+Workflow:
+1. Restate what this PR is trying to do:
+   - Use `PR_URL` to infer PR number, title, and description.
+   - Summarize the expected behavior changes in 3-6 sentences.
+2. Follow-up checklist (from prior review):
+   - Using `PR_URL`, inspect existing review comments (and any “requested changes” signals if available).
+   - Build a checklist of earlier findings (group by theme) and mark each as “expected fixed” vs “still open” based on what the PR claims to change.
+   - Keep this checklist and refer back to it after you run verification.
+3. Checkout the PR locally:
+   - Prefer `gh pr checkout <PR_NUMBER>` if `gh` is available and authenticated.
+   - If `gh` is unavailable, use an equivalent local checkout strategy (fetch PR ref, checkout a detached head or temporary branch) and proceed.
+4. Identify what changed:
+   - Enumerate modified files and categorize them:
+     - frontend UI
+     - parser/business logic
+     - API client / RPC integration
+     - database: migrations/views/functions
+5. Verification (run where possible):
+   - Frontend (from `app/`):
+     - `npm run lint`
+     - `npm run test`
+     - `npm run build`
+   - Database/schema:
+     - If the PR includes migrations or DB-related changes and you can safely run migrations locally, run `python scripts/migrate.py` and do a small sanity check of the affected RPC/view behavior.
+     - If you cannot run DB checks, explicitly list the unverified risk areas.
+6. Accounting and architecture review:
+   - If the PR touches any ledger logic, verify it respects:
+     - Double-entry invariant: `SUM(entries.amount_base) = 0`
+     - Sign convention (positive flows into account; negative flows out)
+     - Any multi-currency/exchange rate rules defined in `docs/LEDGER_RULES.md`
+   - If the PR touches API/RPC behavior, verify it respects `docs/API_CONTRACT.md` and the “Postgres-first” architecture (no custom backend logic unless already established).
+   - If the PR touches migrations, verify:
+     - new migrations only (no modifying existing migration files)
+     - migrations are idempotent and non-destructive
+7. Produce the review output:
+   - Start with a short overall verdict (merge / request changes).
+   - Then list findings ordered by severity:
+     - Critical: likely bugs, invariant violations, data corruption risks, broken functionality
+     - Major: correctness issues, missing tests, serious regressions
+     - Minor: style/maintainability/edge-case gaps
+   - For each finding include:
+     - file(s)/component(s) involved
+     - why it matters
+     - suggested fix direction (not necessarily a full patch)
+     - what test or local check would confirm the fix
+   - End with:
+     - any open questions/assumptions
+     - a concise “what I would test next” checklist
+
+8. If fixes are required (critical/major findings):
+   - Implement the smallest fix that addresses the verified problem.
+   - Commit to the same branch you checked out for this PR (so both agents work as a single thread).
+   - Run verification again after changes (`npm run lint/test/build`, and migration/RPC sanity checks if applicable).
+   - Commit message should follow repo style (`fix:` / `feat:`) and mention the PR reference where appropriate.
+   - Push your commit(s) to the PR branch immediately.
+   - Only if pushing is not possible (missing permissions/auth), then fall back to creating a new branch + PR.
+
+9. Document decisions on the PR:
+   - For every critical/major finding you act on, add a PR comment that includes:
+     - What changed (1-3 sentences)
+     - Why (the specific invariant/contract/bug mechanism you used as justification)
+     - Files/areas touched
+     - Verification performed (commands run + any notable results)
+   - If you leave any findings unresolved, explain the decision to defer and reference `LEDGER.md` if applicable.
+
+Output requirements:
+- The final response must be directly usable as a PR review comment set (clear, actionable, not just general advice).
+- If any command failed, include the failure reason and what was/was not verified.
+
