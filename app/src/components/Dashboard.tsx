@@ -164,7 +164,7 @@ export function Dashboard({ filters, onFilterChange }: DashboardProps) {
 
     // Asset History with Dynamic Granularity
     const daysDiff = differenceInDays(dateRange.end, dateRange.start);
-    const targetTypes = ['checking', 'emergency', 'investments', 'credit-card'];
+    const targetTypes = ['checking', 'emergency', 'investments', 'liabilities'];
     const filteredDaily = dailyBalances
       .filter(db => targetTypes.includes(db.account_type))
       .filter(db => {
@@ -215,10 +215,10 @@ export function Dashboard({ filters, onFilterChange }: DashboardProps) {
     return { expensesL1, expensesL2, expensesL3, incomePie, assetHistory };
   }, [filteredEntries, dailyBalances, dateRange]);
   const accountGroups = useMemo(() => {
-    const checking = accounts.filter(a => a.account_name.startsWith('assets:checking:'));
-    const emergency = accounts.filter(a => a.account_name.startsWith('assets:emergency:'));
-    const investments = accounts.filter(a => a.account_name.startsWith('assets:investments:'));
-    const creditCards = accounts.filter(a => a.account_name.startsWith('liabilities:credit-card:'));
+    const checking = accounts.filter(a => a.subtype === 'checking');
+    const emergency = accounts.filter(a => a.subtype === 'emergency');
+    const investments = accounts.filter(a => a.subtype === 'investments');
+    const liabilities = accounts.filter(a => a.subtype === 'liabilities');
 
     const sum = (accs: Account[]) => accs.reduce((s, a) => s + a.own_balance, 0);
 
@@ -226,11 +226,11 @@ export function Dashboard({ filters, onFilterChange }: DashboardProps) {
       checking: { label: 'Checking Accounts', accounts: checking.sort((a, b) => b.own_balance - a.own_balance), total: sum(checking) },
       emergency: { label: 'Emergency Funds', accounts: emergency.sort((a, b) => b.own_balance - a.own_balance), total: sum(emergency) },
       investments: { label: 'Investments', accounts: investments.sort((a, b) => b.own_balance - a.own_balance), total: sum(investments) },
-      creditCards: { label: 'Credit Cards', accounts: creditCards.sort((a, b) => a.own_balance - b.own_balance), total: sum(creditCards) },
+      liabilities: { label: 'Liabilities', accounts: liabilities.sort((a, b) => a.own_balance - b.own_balance), total: sum(liabilities) },
     };
   }, [accounts]);
 
-  const netWorth = accountGroups.checking.total + accountGroups.emergency.total + accountGroups.investments.total + accountGroups.creditCards.total;
+  const netWorth = accountGroups.checking.total + accountGroups.emergency.total + accountGroups.investments.total + accountGroups.liabilities.total;
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -297,7 +297,7 @@ export function Dashboard({ filters, onFilterChange }: DashboardProps) {
         <BalanceCard title="Checking" amount={accountGroups.checking.total} accounts={accountGroups.checking.accounts} color="text-white" />
         <BalanceCard title="Emergency" amount={accountGroups.emergency.total} accounts={accountGroups.emergency.accounts} color="text-[#3B82F6]" />
         <BalanceCard title="Investments" amount={accountGroups.investments.total} accounts={accountGroups.investments.accounts} color="text-[#10B981]" />
-        <BalanceCard title="Credit Cards" amount={accountGroups.creditCards.total} accounts={accountGroups.creditCards.accounts} color="text-[#EF4444]" />
+        <BalanceCard title="Liabilities" amount={accountGroups.liabilities.total} accounts={accountGroups.liabilities.accounts} color="text-[#EF4444]" />
       </div>
 
       <div className="flex justify-center">

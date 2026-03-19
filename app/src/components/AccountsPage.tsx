@@ -193,6 +193,7 @@ function AccountModal({
 }: { account: AccountNode | null; allAccounts: AccountNode[]; onClose: () => void }) {
   const [name, setName] = useState(account?.name ?? '');
   const [type, setType] = useState<AccountType>((account?.type as AccountType) ?? 'expense');
+  const [subtype, setSubtype] = useState<string | null>(account?.subtype ?? null);
   const [parentId, setParentId] = useState<string | null>(account?.parent_id ?? null);
   const [icon, setIcon] = useState<string | null>(account?.icon ?? null);
   const [color, setColor] = useState<string | null>(account?.color ?? null);
@@ -209,8 +210,8 @@ function AccountModal({
   const saveMut = useMutation<void, Error, void>({
     mutationFn: () =>
       account
-        ? updateAccount(account.id, { name, type, parent_id: parentId, icon, color, hidden })
-        : createAccount({ name, type, parent_id: parentId, icon: icon ?? null, color: color ?? null, hidden }).then(() => undefined),
+        ? updateAccount(account.id, { name, type, subtype, parent_id: parentId, icon, color, hidden })
+        : createAccount({ name, type, subtype, parent_id: parentId, icon: icon ?? null, color: color ?? null, hidden }).then(() => undefined),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accountsTree'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
@@ -275,7 +276,14 @@ function AccountModal({
               {TYPE_TABS.map((t) => (
                 <button
                   key={t}
-                  onClick={() => { setType(t); setParentId(null); }}
+                  onClick={() => {
+                    setType(t);
+                    setParentId(null);
+                    if (t === 'liability') setSubtype('liabilities');
+                    else if (t === 'expense' || t === 'income') setSubtype('category');
+                    else if (t === 'equity') setSubtype(null);
+                    // asset: leave subtype unchanged so user can pick it
+                  }}
                   className={cn(
                     "px-3 py-1 rounded-lg text-[12px] font-medium transition-colors",
                     type === t
@@ -288,6 +296,29 @@ function AccountModal({
               ))}
             </div>
           </div>
+
+          {/* Subtype — only for asset accounts */}
+          {type === 'asset' && (
+            <div className="space-y-2">
+              <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/60">Subtype</p>
+              <div className="flex rounded-xl border border-white/[0.08] bg-white/[0.02] p-0.5 w-fit">
+                {([null, 'checking', 'emergency', 'investments'] as const).map((s) => (
+                  <button
+                    key={s ?? 'none'}
+                    onClick={() => setSubtype(s)}
+                    className={cn(
+                      "px-3 py-1 rounded-lg text-[12px] font-medium transition-colors",
+                      subtype === s
+                        ? "bg-white/10 text-foreground shadow-sm"
+                        : "text-muted-foreground/50 hover:text-foreground/70"
+                    )}
+                  >
+                    {s === null ? '—' : s.charAt(0).toUpperCase() + s.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Parent */}
           <div className="space-y-2">

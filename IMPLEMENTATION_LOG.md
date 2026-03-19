@@ -1,5 +1,31 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-03-19 - Account Subtype Column + Flatten Remaining Containers
+
+### Tasks
+- [x] **Migration 0035** — Added `subtype` column to `accounts` (`checking`, `emergency`, `investments`, `liabilities`, `category`). Backfilled subtypes from parent account names, promoted all children of the 4 container accounts to root, deleted container accounts (`checking`, `emergency`, `investments`, `credit-card`). Account count: 133 → 129.
+- [x] **View: account_balances** — Rebuilt to expose `subtype` column via a JOIN on `accounts`.
+- [x] **View: daily_balances** — Replaced path-pattern CASE expressions with direct `a.subtype` column reference. `'credit-card'` category renamed to `'liabilities'`.
+- [x] **API: Account / AccountNode** — Added `subtype: string | null` to both interfaces. `fetchAccountsTree`, `updateAccount`, `createAccount` updated to pass subtype.
+- [x] **Dashboard: accountGroups** — Now filters by `a.subtype` instead of hardcoded path prefixes (was broken after migration 0034). Balance cards now show correct non-zero values.
+- [x] **Dashboard: targetTypes / netWorth** — Updated `'credit-card'` → `'liabilities'` throughout. BalanceCard renamed "Credit Cards" → "Liabilities".
+- [x] **AccountsPage: AccountModal** — Added subtype picker row (visible only for `type === 'asset'`). Auto-sets subtype when switching type. Subtype included in create/update payloads.
+
+### Decisions
+- Subtype is metadata on leaf accounts, not a hierarchy level — containers were pure structure with no accounting value.
+- `liabilities` is the canonical subtype name for liability accounts (replaces `credit-card` which was a container name leaking into the view layer).
+- The subtype picker for assets shows `[ — ] [ Checking ] [ Emergency ] [ Investments ]`; for other types it is hidden and set automatically.
+
+### Files Created/Modified
+- `migrations/0035_account_subtype.sql` (new)
+- `db/views/daily_balances.sql`
+- `app/src/lib/api.ts`
+- `app/src/components/Dashboard.tsx`
+- `app/src/components/AccountsPage.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
 ## 2026-03-18 - Improved Account Visualization on Accounts Page
 
 ### Tasks
