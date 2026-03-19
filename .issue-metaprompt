@@ -1,0 +1,65 @@
+Before starting, read these files to build full context:
+
+1. CLAUDE.md
+2. RULES.md
+3. AI_GUIDELINES.md
+4. docs/DOMAINS.md
+5. docs/LEDGER_RULES.md
+6. docs/ARCHITECTURE.md
+7. docs/API_CONTRACT.md
+8. IMPLEMENTATION_LOG.md — append an entry when done
+
+You are solving a specific GitHub issue by making local changes in this repository and opening a PR.
+
+Inputs available to you:
+
+- `ISSUE_URL` (paste the GitHub issue link here, e.g. `https://github.com/<org>/<repo>/issues/123`)
+- Derive `ISSUE_NUMBER` and `ISSUE_TITLE` from `ISSUE_URL` (if the URL is provided).
+- Optional (only if available): `ISSUE_BODY` (repro steps, expected behavior, acceptance criteria), links to related issues/PRs, screenshots, error logs
+
+Workflow (do not skip):
+
+1. Restate the issue in your own words and list the acceptance criteria you will use to verify completion.
+2. Plan a minimal, repo-aligned fix:
+   - Prefer the simplest working solution consistent with the existing architecture.
+   - If the issue touches accounting/business rules, follow `docs/LEDGER_RULES.md` sign conventions and invariants.
+   - If the issue touches schema/API behavior, follow `docs/API_CONTRACT.md` and the Postgres-first design (views/functions; no custom backend).
+3. Reproduce/validate when possible:
+   - If the issue includes repro steps, try to follow them locally.
+   - Otherwise, run the appropriate linters/tests/builds and ensure the change is covered by tests when feasible.
+4. Create a branch:
+   - Branch naming: `issue/<ISSUE_NUMBER>-<short-kebab-slug>`
+   - Slug from the issue title; lowercase; replace non-alphanumerics with `-`.
+5. Make code changes locally:
+   - Implement the fix.
+   - Add/adjust tests for any logic-heavy behavior (use Vitest for frontend unit tests).
+   - If database changes are required:
+     - Use a NEW migration file under `migrations/` (never modify existing migrations).
+     - Ensure migrations are idempotent and non-destructive (no DROP unless explicitly required by the issue).
+6. Verify:
+   - Frontend (from `app/`): `npm run test`, `npm run lint`, `npm run build`
+   - If you added migrations and can connect to the DB: run `python scripts/migrate.py` and sanity-check the relevant RPC/view behavior.
+7. Update logs:
+   - Append a new entry to `IMPLEMENTATION_LOG.md` describing what you implemented, key decisions, and files modified.
+   - If anything remains ambiguous or unresolved, record it in `LEDGER.md`.
+8. Commit:
+   - Ensure the branch contains only the changes needed for this issue.
+   - Commit message must follow the repo style (e.g. `fix: ...`, `feat: ...`) and must explain the why.
+   - Include the issue reference in the commit message where appropriate (e.g. `(#123)`).
+9. Open the PR:
+   - Push the branch to the remote.
+   - Open a PR that solves the issue:
+     - PR title: start from `ISSUE_TITLE` (optionally prefixed with `Fix:` or similar).
+     - PR body must include:
+       - `Fixes #<ISSUE_NUMBER>`
+       - A short summary of the change
+       - Testing performed (`npm run test`, `npm run lint`, `npm run build`, and any migration sanity checks)
+       - Any follow-ups or risk notes
+   - If the PR cannot be opened automatically (missing auth, missing `gh` config), stop and ask for the minimum missing info.
+
+Output requirements for your final message to the user:
+
+- Branch name created
+- Commit SHA (or “commit created” if SHA is not available)
+- PR URL (or the exact command to run to create it if automation fails)
+- A brief test verification recap
