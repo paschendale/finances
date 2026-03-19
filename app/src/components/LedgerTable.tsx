@@ -732,11 +732,10 @@ export function LedgerTable({ filters }: { filters: LedgerFilters }) {
       
       const expenseSum = expenseEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
       const incomeSum = incomeEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
-      const assetSum = assetEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
 
       let amount = 0, currency = 'BRL';
       let primaryType: 'expense' | 'income' | 'transfer' = 'transfer';
-      
+
       if (Math.abs(expenseSum) > 0.01) {
         amount = Math.abs(expenseSum);
         currency = expenseEntries[0].currency;
@@ -746,7 +745,9 @@ export function LedgerTable({ filters }: { filters: LedgerFilters }) {
         currency = incomeEntries[0].currency;
         primaryType = incomeSum < 0 ? 'income' : 'expense';
       } else {
-        amount = Math.abs(assetSum);
+        // For transfers, assetSum nets to 0 (e.g. +500 / -500). Use the positive side instead.
+        const positiveAssetEntries = assetEntries.filter(e => Number(e.amount_base) > 0);
+        amount = positiveAssetEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
         if (assetEntries.length > 0) currency = assetEntries[0].currency;
         primaryType = 'transfer';
       }
@@ -781,7 +782,6 @@ export function LedgerTable({ filters }: { filters: LedgerFilters }) {
         
         const expenseSum = expenseEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
         const incomeSum = incomeEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
-        const assetSum = assetEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
 
         let amount = 0;
         let currency = 'BRL';
@@ -796,7 +796,9 @@ export function LedgerTable({ filters }: { filters: LedgerFilters }) {
           currency = incomeEntries[0].currency;
           primaryType = incomeSum < 0 ? 'income' : 'expense';
         } else {
-          amount = Math.abs(assetSum);
+          // For transfers, assetSum nets to 0 (e.g. +500 / -500). Use the positive side instead.
+          const positiveAssetEntries = assetEntries.filter(e => Number(e.amount_base) > 0);
+          amount = positiveAssetEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
           if (assetEntries.length > 0) currency = assetEntries[0].currency;
           primaryType = 'transfer';
         }

@@ -25,21 +25,22 @@ SELECT
     d_data.own_balance AS own_balance,
     (
         -- Sum own_balance of self and all descendants
-        SELECT SUM(d.own_balance)
+        SELECT SUM(desc_data.own_balance)
         FROM account_names_hierarchical d
-        JOIN account_own_data d_data ON d.id = d_data.id
-        WHERE d.full_name = h.full_name 
+        JOIN account_own_data desc_data ON d.id = desc_data.id
+        WHERE d.full_name = h.full_name
            OR d.full_name LIKE h.full_name || ':%'
     ) AS balance,
     (
         -- Get max last_entry_date of self and all descendants
-        SELECT MAX(d_data.own_last_entry_date)
+        SELECT MAX(desc_data.own_last_entry_date)
         FROM account_names_hierarchical d
-        JOIN account_own_data d_data ON d.id = d_data.id
-        WHERE d.full_name = h.full_name 
+        JOIN account_own_data desc_data ON d.id = desc_data.id
+        WHERE d.full_name = h.full_name
            OR d.full_name LIKE h.full_name || ':%'
     ) AS last_entry_date,
     h.icon,
     h.color,
     h.hidden
-FROM account_names_hierarchical h;
+FROM account_names_hierarchical h
+LEFT JOIN account_own_data d_data ON h.id = d_data.id;
