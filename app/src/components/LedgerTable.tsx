@@ -126,10 +126,18 @@ function TransactionRow({
   // Detect current transaction type from edit state
   const editType = useMemo(() => {
     if (!editState) return 'transfer';
-    const hasExpense = editState.entries.some(e => e.account_type === 'expense');
-    const hasIncome = editState.entries.some(e => e.account_type === 'income');
-    if (hasExpense) return 'expense';
-    if (hasIncome) return 'income';
+    const expenseEntry = editState.entries.find(e => e.account_type === 'expense');
+    if (expenseEntry) {
+      // Positive amount in expense account = you spent money (expense)
+      // Negative amount in expense account = refund (income)
+      return expenseEntry.amount > 0 ? 'expense' : 'income';
+    }
+    const incomeEntry = editState.entries.find(e => e.account_type === 'income');
+    if (incomeEntry) {
+      // Negative amount in income account = you earned money (income)
+      // Positive amount in income account = reversal (expense)
+      return incomeEntry.amount < 0 ? 'income' : 'expense';
+    }
     return 'transfer';
   }, [editState]);
 
@@ -718,25 +726,35 @@ export function LedgerTable({ filters }: { filters: LedgerFilters }) {
   const allTransactionItems = useMemo<TransactionItem[]>(() => {
     if (!data) return [];
     return data.pages.flatMap(page => page.flatMap(t => {
-      const categories = t.entries.filter(e => e.account_type === 'expense' || e.account_type === 'income').map(e => e.account_name);
-      const accounts = t.entries.filter(e => e.account_type === 'asset' || e.account_type === 'liability' || e.account_type === 'equity').map(e => e.account_name);
       const expenseEntries = t.entries.filter(e => e.account_type === 'expense');
       const incomeEntries = t.entries.filter(e => e.account_type === 'income');
+      const assetEntries = t.entries.filter(e => ['asset', 'liability', 'equity'].includes(e.account_type));
+      
+      const expenseSum = expenseEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
+      const incomeSum = incomeEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
+
       let amount = 0, currency = 'BRL';
       let primaryType: 'expense' | 'income' | 'transfer' = 'transfer';
-      if (expenseEntries.length > 0) {
-        amount = Math.abs(expenseEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0));
+
+      if (Math.abs(expenseSum) > 0.01) {
+        amount = Math.abs(expenseSum);
         currency = expenseEntries[0].currency;
-        primaryType = 'expense';
-      } else if (incomeEntries.length > 0) {
-        amount = Math.abs(incomeEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0));
+        primaryType = expenseSum > 0 ? 'expense' : 'income';
+      } else if (Math.abs(incomeSum) > 0.01) {
+        amount = Math.abs(incomeSum);
         currency = incomeEntries[0].currency;
-        primaryType = 'income';
+        primaryType = incomeSum < 0 ? 'income' : 'expense';
       } else {
-        const pos = t.entries.filter(e => (e.account_type === 'asset' || e.account_type === 'liability' || e.account_type === 'equity') && e.amount_base > 0);
-        amount = Math.abs(pos.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0));
-        if (pos.length > 0) currency = pos[0].currency;
+        const posAssetEntries = assetEntries.filter(e => (Number(e.amount_base) || 0) > 0);
+        amount = posAssetEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
+        if (posAssetEntries.length > 0) currency = posAssetEntries[0].currency;
+        else if (assetEntries.length > 0) currency = assetEntries[0].currency;
+        primaryType = 'transfer';
       }
+
+      const categories = expenseEntries.concat(incomeEntries).map(e => e.account_name);
+      const accounts = assetEntries.map(e => e.account_name);
+
       return [{ type: 'transaction' as const, id: t.id, date: t.date, description: t.description, accounts, categories, amount, currency, entries: t.entries, primaryType }];
     }));
   }, [data]);
@@ -758,39 +776,35 @@ export function LedgerTable({ filters }: { filters: LedgerFilters }) {
           lastDate = t.date;
         }
 
-        const categories = t.entries
-          .filter((e) => e.account_type === 'expense' || e.account_type === 'income')
-          .map((e) => e.account_name);
-
-        const accounts = t.entries
-          .filter((e) => e.account_type === 'asset' || e.account_type === 'liability' || e.account_type === 'equity')
-          .map((e) => e.account_name);
+        const expenseEntries = t.entries.filter(e => e.account_type === 'expense');
+        const incomeEntries = t.entries.filter(e => e.account_type === 'income');
+        const assetEntries = t.entries.filter(e => ['asset', 'liability', 'equity'].includes(e.account_type));
+        
+        const expenseSum = expenseEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
+        const incomeSum = incomeEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
 
         let amount = 0;
         let currency = 'BRL';
         let primaryType: 'expense' | 'income' | 'transfer' = 'transfer';
 
-        const expenseEntries = t.entries.filter((e) => e.account_type === 'expense');
-        const incomeEntries = t.entries.filter((e) => e.account_type === 'income');
-
-        if (expenseEntries.length > 0) {
-          amount = Math.abs(expenseEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0));
+        if (Math.abs(expenseSum) > 0.01) {
+          amount = Math.abs(expenseSum);
           currency = expenseEntries[0].currency;
-          primaryType = 'expense';
-        } else if (incomeEntries.length > 0) {
-          amount = Math.abs(incomeEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0));
+          primaryType = expenseSum > 0 ? 'expense' : 'income';
+        } else if (Math.abs(incomeSum) > 0.01) {
+          amount = Math.abs(incomeSum);
           currency = incomeEntries[0].currency;
-          primaryType = 'income';
+          primaryType = incomeSum < 0 ? 'income' : 'expense';
         } else {
-          const positiveAssetEntries = t.entries.filter(
-            (e) => (e.account_type === 'asset' || e.account_type === 'liability' || e.account_type === 'equity') && e.amount_base > 0
-          );
-          amount = Math.abs(positiveAssetEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0));
-          if (positiveAssetEntries.length > 0) {
-            currency = positiveAssetEntries[0].currency;
-          }
+          const posAssetEntries = assetEntries.filter(e => (Number(e.amount_base) || 0) > 0);
+          amount = posAssetEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
+          if (posAssetEntries.length > 0) currency = posAssetEntries[0].currency;
+          else if (assetEntries.length > 0) currency = assetEntries[0].currency;
           primaryType = 'transfer';
         }
+
+        const categories = expenseEntries.concat(incomeEntries).map(e => e.account_name);
+        const accounts = assetEntries.map(e => e.account_name);
 
         items.push({
           type: 'transaction',

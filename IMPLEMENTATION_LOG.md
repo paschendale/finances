@@ -1,5 +1,27 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-03-18 - Improved Income/Expense Detection and Modification
+
+### Tasks
+- [x] **QuickEntryInput: Manual Overrides** — Added a `toggleAllSigns` function to flip all entry signs in the staging area, allowing users to manually switch between income and expense classification. Added a "Toggle Sign" button to the UI.
+- [x] **QuickEntryInput: Labeling Logic** — Refined the labeling and icon logic in the staging area to correctly identify 'Category' (Tag icon) and 'Account' (Wallet icon) based on their index and transaction type, regardless of the sign. This ensures refunds (negative expenses) are labeled correctly as 'Category' but with an 'income' badge.
+- [x] **QuickEntryInput: Visual Feedback** — Improved the color logic in the staging area to color both category and account entries based on the detected transaction type (Red for Expense, Green for Income, Neutral for Transfer).
+- [x] **LedgerTable: Correct Primary Type** — Updated the `primaryType` calculation in `allTransactionItems` and `ledgerItems` memos to correctly identify refunds (negative expenses) as income and reversals (positive income) as expenses. This ensures correct color and sign representation in the list view.
+- [x] **LedgerTable: Stable Edit Type** — Refined the `editType` derivation in `TransactionRow` to check the sign of the entries, not just the account type. This ensures the color correctly updates when signs are toggled or values are modified during editing.
+- [x] **LedgerTable: Transfer amount fix** — Restored positive-only asset entry summation for transfer display amount; `Math.abs(assetSum)` was always 0 for balanced transfers.
+
+### Decisions
+- Re-centered the "source of truth" for income/expense classification on the Asset-flow direction rather than just the presence of a specific account type.
+- Used a uniform coloring scheme for entries within the editing view (entire transaction colored Red or Green) to provide high-signal feedback to the user about what kind of transaction they are creating/editing.
+- Chose to maintain the 'Category' label for any entry in an expense/income account, even if the amount is negative (refund), while adding a specific 'income' badge for clarity.
+
+### Files Modified
+- `app/src/components/QuickEntryInput.tsx`
+- `app/src/components/LedgerTable.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
 ## 2026-03-18 - Persist Last Manual Entry Date & Account
 
 ### Tasks
