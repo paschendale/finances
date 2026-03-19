@@ -8,7 +8,7 @@ import {
 import { AccountIcon } from './AccountIcon';
 import { INSTITUTION_ICONS, CATEGORY_ICONS } from '@/lib/account-icons';
 import { cn } from '@/lib/utils';
-import { X, Check, Plus, Trash2, Loader2, Eye, EyeOff, ArrowUp, ArrowDown } from 'lucide-react';
+import { X, Check, Plus, Trash2, Loader2, Eye, EyeOff, ArrowUp, ArrowDown, Clock } from 'lucide-react';
 import { SearchableSelect } from './SearchableSelect';
 
 const TYPE_TABS = ['all', 'asset', 'liability', 'expense', 'income', 'equity'] as const;
@@ -436,6 +436,16 @@ function AccountCard({ account, onClick }: { account: AccountNode; onClick: () =
             {lastEntryDate}
           </p>
         </div>
+        {account.future_balance !== 0 && (
+          <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20" title="Has future-dated entries (installments)">
+            <Clock className="w-2.5 h-2.5 text-amber-500/70 shrink-0" />
+            <span className="text-[9px] font-bold text-amber-500/70 tabular-nums">
+              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+                (account.type === 'income' || account.type === 'liability') ? -account.future_balance : account.future_balance
+              )}
+            </span>
+          </div>
+        )}
       </div>
     </button>
   );

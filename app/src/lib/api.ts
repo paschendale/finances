@@ -57,6 +57,7 @@ export interface Account {
   account_type: string;
   balance: number;
   own_balance: number;
+  future_balance: number;
   last_entry_date: string | null;
   parent_id: string | null;
   icon: string | null;
@@ -72,6 +73,7 @@ export interface AccountNode {
   parent_id: string | null;
   balance: number;
   own_balance: number;
+  future_balance: number;
   last_entry_date: string | null;
   icon: string | null;
   color: string | null;
@@ -421,6 +423,7 @@ export async function fetchAccountsTree(): Promise<AccountNode[]> {
     parent_id: a.parent_id,
     balance: a.balance,
     own_balance: a.own_balance,
+    future_balance: a.future_balance ?? 0,
     last_entry_date: a.last_entry_date,
     icon: a.icon,
     color: a.color,
