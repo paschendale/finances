@@ -8,7 +8,7 @@ import {
 import { AccountIcon } from './AccountIcon';
 import { INSTITUTION_ICONS, CATEGORY_ICONS } from '@/lib/account-icons';
 import { cn } from '@/lib/utils';
-import { X, Check, Plus, Trash2, Loader2, Eye, EyeOff } from 'lucide-react';
+import { X, Check, Plus, Trash2, Loader2, Eye, EyeOff, ArrowUp, ArrowDown } from 'lucide-react';
 import { SearchableSelect } from './SearchableSelect';
 
 const TYPE_TABS = ['all', 'asset', 'liability', 'expense', 'income', 'equity'] as const;
@@ -443,12 +443,17 @@ function AccountCard({ account, onClick }: { account: AccountNode; onClick: () =
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
+type SortField = 'name' | 'balance' | 'last_entry';
+type SortDir = 'asc' | 'desc';
+
 export function AccountsPage() {
   const [activeTab, setActiveTab] = useState<AccountType>('asset');
   const [editingAccount, setEditingAccount] = useState<AccountNode | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [search, setSearch] = useState('');
   const [showHidden, setShowHidden] = useState(false);
+  const [sortField, setSortField] = useState<SortField>('name');
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
 
   const { data: allAccounts = [], isLoading } = useQuery({
     queryKey: ['accountsTree'],
@@ -462,6 +467,22 @@ export function AccountsPage() {
       (!search || a.full_name.toLowerCase().includes(search.toLowerCase()))
     ),
   [allAccounts, activeTab, search, showHidden]);
+
+  const sorted = useMemo(() => {
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      if (sortField === 'name') return dir * a.full_name.localeCompare(b.full_name);
+      if (sortField === 'balance') {
+        const da = (a.type === 'income' || a.type === 'liability') ? -a.balance : a.balance;
+        const db = (b.type === 'income' || b.type === 'liability') ? -b.balance : b.balance;
+        return dir * (da - db);
+      }
+      // last_entry: null (never used) always sorts to the end
+      const da = a.last_entry_date ? new Date(a.last_entry_date).getTime() : (sortDir === 'asc' ? Infinity : -Infinity);
+      const db = b.last_entry_date ? new Date(b.last_entry_date).getTime() : (sortDir === 'asc' ? Infinity : -Infinity);
+      return dir * (da - db);
+    });
+  }, [filtered, sortField, sortDir]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: 0 };
@@ -527,16 +548,43 @@ export function AccountsPage() {
         ))}
       </nav>
 
+      {/* Sort controls */}
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/30 mr-1">Sort</span>
+        {([['name', 'Name'], ['balance', 'Balance'], ['last_entry', 'Last entry']] as [SortField, string][]).map(([field, label]) => {
+          const active = sortField === field;
+          const Icon = sortDir === 'asc' ? ArrowUp : ArrowDown;
+          return (
+            <button
+              key={field}
+              onClick={() => {
+                if (active) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+                else { setSortField(field); setSortDir('asc'); }
+              }}
+              className={cn(
+                "flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all border",
+                active
+                  ? "bg-white/[0.08] border-white/[0.15] text-foreground/80"
+                  : "border-transparent text-muted-foreground/40 hover:text-muted-foreground/70 hover:bg-white/[0.04]"
+              )}
+            >
+              {label}
+              {active && <Icon className="w-2.5 h-2.5" />}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Cards grid */}
       {isLoading ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 animate-pulse">
           {[...Array(12)].map((_, i) => <div key={i} className="h-[76px] bg-white/[0.03] rounded-2xl" />)}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : sorted.length === 0 ? (
         <div className="py-16 text-center text-muted-foreground/30 text-[13px]">No accounts found</div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-          {filtered.map((account) => (
+          {sorted.map((account) => (
             <AccountCard key={account.id} account={account} onClick={() => setEditingAccount(account)} />
           ))}
         </div>
