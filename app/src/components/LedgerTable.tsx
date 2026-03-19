@@ -745,10 +745,10 @@ export function LedgerTable({ filters }: { filters: LedgerFilters }) {
         currency = incomeEntries[0].currency;
         primaryType = incomeSum < 0 ? 'income' : 'expense';
       } else {
-        // For transfers, assetSum nets to 0 (e.g. +500 / -500). Use the positive side instead.
-        const positiveAssetEntries = assetEntries.filter(e => Number(e.amount_base) > 0);
-        amount = positiveAssetEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
-        if (assetEntries.length > 0) currency = assetEntries[0].currency;
+        const posAssetEntries = assetEntries.filter(e => (Number(e.amount_base) || 0) > 0);
+        amount = posAssetEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
+        if (posAssetEntries.length > 0) currency = posAssetEntries[0].currency;
+        else if (assetEntries.length > 0) currency = assetEntries[0].currency;
         primaryType = 'transfer';
       }
 
@@ -796,10 +796,10 @@ export function LedgerTable({ filters }: { filters: LedgerFilters }) {
           currency = incomeEntries[0].currency;
           primaryType = incomeSum < 0 ? 'income' : 'expense';
         } else {
-          // For transfers, assetSum nets to 0 (e.g. +500 / -500). Use the positive side instead.
-          const positiveAssetEntries = assetEntries.filter(e => Number(e.amount_base) > 0);
-          amount = positiveAssetEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
-          if (assetEntries.length > 0) currency = assetEntries[0].currency;
+          const posAssetEntries = assetEntries.filter(e => (Number(e.amount_base) || 0) > 0);
+          amount = posAssetEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
+          if (posAssetEntries.length > 0) currency = posAssetEntries[0].currency;
+          else if (assetEntries.length > 0) currency = assetEntries[0].currency;
           primaryType = 'transfer';
         }
 

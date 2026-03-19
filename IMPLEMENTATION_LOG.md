@@ -3,84 +3,48 @@
 ## 2026-03-18 - Improved Account Visualization on Accounts Page
 
 ### Tasks
-- [x] `app/src/components/QuickEntryInput.tsx` — `selectedDate` initialized via lazy `useState` that reads `quick_entry_last` from localStorage, falling back to today
-- [x] `app/src/components/QuickEntryInput.tsx` — Account defaulting `useEffect` checks localStorage first, validates saved account still exists and isn't hidden, then falls back to `lastUsedAccount` from global settings; added `accounts` as dependency
-- [x] `app/src/components/QuickEntryInput.tsx` — `confirmTransaction` detects transfers via `parseQuickEntry(input).type === 'transfer'` and saves `{ date, account }` to `quick_entry_last` only for non-transfers, in both the installments and single-tx branches
+- [x] **Database View: account_balances** — Refactored to include hierarchical balances (rolling up sub-accounts), `own_balance` (account-only), `last_entry_date` (most recent transaction date in the hierarchy), and `parent_id`.
+- [x] **API Contract: Account & AccountNode** — Updated TypeScript interfaces to include the new fields.
+- [x] **AccountsPage: "All" Tab** — Added an "All" tab to view all accounts regardless of type, including a total count.
+- [x] **AccountsPage: Card Enhancements** — Updated account cards to display the hierarchical balance and the last transaction date.
+- [x] **AccountsPage: Layout** — Refined card layout to be more compact and include balance/date information in an Apple-style aesthetic.
+- [x] **AccountsPage: Sort controls** — Added sort bar (Name / Balance / Last entry, asc/desc) between the type tabs and the card grid.
+- [x] **Dashboard: Double-counting Fix** — Updated Dashboard calculations to use `own_balance` instead of hierarchical `balance` to ensure totals remain correct when parent and child accounts are filtered together.
 
 ### Decisions
-- Pure frontend localStorage solution — no migrations or RPC changes needed. This is a UI preference, not financial data.
-- Transfer detection is done client-side at point of confirmation so the logic stays simple.
-- Save happens synchronously before the mutation (or after `Promise.all` for installments) so the correct values are captured at confirmation time.
-- Fallback chain: localStorage saved account → global settings `last_used_account_id` → most recent transaction's asset account → first available asset/liability account.
-
-### Files Modified
-- `app/src/components/QuickEntryInput.tsx`
-
----
-
-## 2026-03-17 - Export Wizard (CSV/XLSX Download)
-
-### Tasks
-- [x] `app/src/components/ExportWizard.tsx` — New modal with account filter, date range pickers, CSV/XLSX format toggle, and preview table (up to 50 entries with full `l1:l2:l3` hierarchy)
-- [x] `app/src/lib/api.ts` — `fetchTransactionsForExport` (no pagination, full result set)
-- [x] `app/src/components/LedgerTable.tsx` — Export button in toolbar pre-populates current ledger filters when opening the wizard
-- [x] Added `xlsx` dependency to `app/package.json`
-
-### Decisions
-- Filename includes the exported date range (`export_YYYY-MM-DD_YYYY-MM-DD.{ext}`) for easy filing.
-- Preview capped at 50 rows to keep the modal snappy; full export is unbounded.
-- Format toggle (CSV/XLSX) is in the wizard so the user can switch without reopening.
+- Chose to maintain both `balance` (hierarchical) and `own_balance` (non-hierarchical) to support different UI needs without extra complexity.
+- Flipped signs for Income and Liability accounts in the AccountsPage UI to present "positive" values for natural states (income earned, debt owed) while using color-coding to indicate financial impact.
+- Used `pt-BR` locale and `BRL` currency as the default for formatting on the account cards.
+- Balance sort uses the same display-sign convention so the visual order matches what is shown on each card.
 
 ### Files Created/Modified
-- `app/src/components/ExportWizard.tsx` (new)
+- `migrations/0032_account_balance_improvements.sql` (new)
 - `app/src/lib/api.ts`
-- `app/src/components/LedgerTable.tsx`
-- `app/package.json`
-
----
-
-## 2026-03-17 - Description Search Filter in Ledger
-
-### Tasks
-- [x] `app/src/components/LedgerFilterBar.tsx` — Added text input for description substring search
-- [x] `app/src/lib/api.ts` — `fetchTransactions` now accepts `desc` param, passed as PostgREST `ilike` filter
-- [x] `app/src/App.tsx` — `desc` filter state threaded through to LedgerTable
-- [x] URL persistence — `?desc=` query param added alongside existing filters
-
-### Decisions
-- Used PostgREST `ilike` for case-insensitive server-side filtering rather than client-side filtering to keep large datasets performant.
-- State lives in the URL so filter is preserved on page reload and shareable.
-
-### Files Modified
-- `app/src/components/LedgerFilterBar.tsx`
-- `app/src/components/LedgerTable.tsx`
-- `app/src/lib/api.ts`
-- `app/src/App.tsx`
-
----
-
-## 2026-03-17 - Account Create, Type/Parent Editing & Hidden Flag
-
-### Tasks
-- [x] `migrations/0031_account_hidden.sql` — `hidden BOOLEAN DEFAULT FALSE` column on `accounts`; rebuilt `account_names_hierarchical`, `account_balances`, `account_usage` views to expose the flag
-- [x] `app/src/components/AccountsPage.tsx` — `EditModal` refactored into `AccountModal` supporting both create and edit modes; new fields: name, type selector, parent picker (`SearchableSelect`); hidden toggle (`Eye`/`EyeOff`) in modal footer; hidden cards shown at 50% opacity; "New" button and "Show hidden" checkbox in page header
-- [x] `app/src/components/LedgerFilterBar.tsx` — hidden accounts filtered out of account picker
-- [x] `app/src/components/LedgerTable.tsx` — hidden accounts excluded from inline selectors
-- [x] `app/src/components/QuickEntryInput.tsx` — hidden accounts excluded from `accountOptions` and `allAccountOptions`
-- [x] `app/src/lib/api.ts` — `hidden` field added to `Account` interface; `createAccount`/`updateAccount` pass `hidden`
-
-### Decisions
-- Hidden accounts remain in the DB and show in `AccountsPage` (at 50% opacity) so they can be un-hidden; they are simply suppressed everywhere else in the UI.
-- `AccountModal` unifies create and edit into one component to avoid duplicating the complex field layout.
-- Parent picker uses `SearchableSelect` over all accounts so any account can be reparented.
-
-### Files Created/Modified
-- `migrations/0031_account_hidden.sql` (new)
 - `app/src/components/AccountsPage.tsx`
-- `app/src/components/LedgerFilterBar.tsx`
-- `app/src/components/LedgerTable.tsx`
+- `app/src/components/Dashboard.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
+## 2026-03-18 - Improved Income/Expense Detection and Modification
+
+### Tasks
+- [x] **QuickEntryInput: Manual Overrides** — Added a `toggleAllSigns` function to flip all entry signs in the staging area, allowing users to manually switch between income and expense classification. Added a "Toggle Sign" button to the UI.
+- [x] **QuickEntryInput: Labeling Logic** — Refined the labeling and icon logic in the staging area to correctly identify 'Category' (Tag icon) and 'Account' (Wallet icon) based on their index and transaction type, regardless of the sign. This ensures refunds (negative expenses) are labeled correctly as 'Category' but with an 'income' badge.
+- [x] **QuickEntryInput: Visual Feedback** — Improved the color logic in the staging area to color both category and account entries based on the detected transaction type (Red for Expense, Green for Income, Neutral for Transfer).
+- [x] **LedgerTable: Correct Primary Type** — Updated the `primaryType` calculation in `allTransactionItems` and `ledgerItems` memos to correctly identify refunds (negative expenses) as income and reversals (positive income) as expenses. This ensures correct color and sign representation in the list view.
+- [x] **LedgerTable: Stable Edit Type** — Refined the `editType` derivation in `TransactionRow` to check the sign of the entries, not just the account type. This ensures the color correctly updates when signs are toggled or values are modified during editing.
+- [x] **LedgerTable: Transfer amount fix** — Restored positive-only asset entry summation for transfer display amount; `Math.abs(assetSum)` was always 0 for balanced transfers.
+
+### Decisions
+- Re-centered the "source of truth" for income/expense classification on the Asset-flow direction rather than just the presence of a specific account type.
+- Used a uniform coloring scheme for entries within the editing view (entire transaction colored Red or Green) to provide high-signal feedback to the user about what kind of transaction they are creating/editing.
+- Chose to maintain the 'Category' label for any entry in an expense/income account, even if the amount is negative (refund), while adding a specific 'income' badge for clarity.
+
+### Files Modified
 - `app/src/components/QuickEntryInput.tsx`
-- `app/src/lib/api.ts`
+- `app/src/components/LedgerTable.tsx`
+- `IMPLEMENTATION_LOG.md`
 
 ---
 
