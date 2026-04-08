@@ -184,7 +184,7 @@ export function QuickEntryInput() {
       setParsedInstallments(null);
       setCreateInstallments(true);
       setInstallmentAmountMode('total');
-      setParsedCurrency(lastUsedCurrency);
+      setParsedCurrency(baseCurrency);
       setExchangeRate(null);
       setIsFetchingRate(false);
       return;
@@ -193,7 +193,7 @@ export function QuickEntryInput() {
     const parsed = parseQuickEntry(input, {
       selectedAccount,
       selectedDate,
-      defaultCurrency: lastUsedCurrency,
+      defaultCurrency: baseCurrency,
     });
     
     // Description Autocomplete

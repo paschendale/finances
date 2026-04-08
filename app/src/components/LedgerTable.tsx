@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchTransactions, updateTransaction, deleteTransaction, fetchAccounts, fetchCategoryUsage, fetchAccountUsage, fetchDailyAccountBalances, fetchDailyBalances, type Transaction, type Entry } from '@/lib/api';
+import { fetchTransactions, updateTransaction, deleteTransaction, fetchAccounts, fetchCategoryUsage, fetchAccountUsage, fetchDailyAccountBalances, fetchDailyBalances, fetchGlobalSettings, fetchExchangeRate, type Transaction, type Entry } from '@/lib/api';
 import { useMemo, useEffect, useRef, useState } from 'react';
 import { cn, formatHierarchicalName } from '@/lib/utils';
 import { SearchableSelect } from './SearchableSelect';
@@ -69,6 +69,44 @@ function TransactionRow({
     queryKey: ['accountUsage'],
     queryFn: fetchAccountUsage,
   });
+
+  const { data: globalSettings } = useQuery({
+    queryKey: ['globalSettings'],
+    queryFn: fetchGlobalSettings,
+  });
+
+  const baseCurrency = globalSettings?.find(s => s.key === 'base_currency')?.value || 'BRL';
+
+  const [fetchingRateIdx, setFetchingRateIdx] = useState<number | null>(null);
+
+  const updateEntryCurrency = async (index: number, rawValue: string) => {
+    if (!editState) return;
+    const normalized = rawValue.toUpperCase().trim();
+    if (!/^[A-Z]{3}$/.test(normalized)) return;
+    if (normalized === editState.entries[index].currency) return;
+
+    let rate = 1.0;
+    if (normalized !== baseCurrency) {
+      setFetchingRateIdx(index);
+      try {
+        rate = await fetchExchangeRate(editState.date, normalized, baseCurrency);
+      } catch {
+        alert(`Could not fetch exchange rate for ${normalized}`);
+        setFetchingRateIdx(null);
+        return;
+      }
+      setFetchingRateIdx(null);
+    }
+
+    const newEntries = editState.entries.map(e => ({
+      ...e,
+      currency: normalized,
+      exchange_rate: rate,
+      amount_base: e.amount * rate,
+    }));
+
+    setEditState({ ...editState, entries: newEntries });
+  };
 
   const mutation = useMutation({
     mutationFn: updateTransaction,
@@ -440,35 +478,53 @@ function TransactionRow({
                             className="bg-transparent border-none"
                          />
                       </div>
-                      <div className="w-40 flex items-center bg-background/40 rounded px-2 py-1 border border-border/20">
+                      <div className="w-44 flex flex-col bg-background/40 rounded px-2 py-1 border border-border/20">
                         {isSimple && !isFirst ? (
-                            <div className={cn("w-full text-right font-mono text-[13px] font-bold px-1 py-1 opacity-40", colorClass)}>
-                                {new Intl.NumberFormat('en-US', { signDisplay: 'always' }).format(entry.amount)}
+                          <>
+                            <div className="text-[9px] font-bold text-muted-foreground/30 uppercase tracking-widest text-right">{entry.currency}</div>
+                            <div className={cn("w-full text-right font-mono text-[13px] font-bold opacity-40", colorClass)}>
+                              {new Intl.NumberFormat('en-US', { signDisplay: 'always' }).format(entry.amount)}
                             </div>
+                          </>
                         ) : (
-                            <>
-                                <button 
-                                    onClick={() => toggleSign(idx)}
-                                    className={cn(
-                                        "w-6 h-6 flex items-center justify-center rounded text-[10px] font-bold mr-1 transition-colors",
-                                        entry.amount < 0 ? "bg-destructive/10 text-destructive" : "bg-green-500/10 text-green-500",
-                                        editType === 'transfer' && "bg-muted text-foreground/50"
-                                    )}
-                                >
-                                    {entry.amount < 0 ? '-' : '+'}
-                                </button>
-                                <input 
-                                    type="number"
-                                    step="0.01"
-                                    value={Math.abs(entry.amount) || ''}
-                                    onChange={(e) => updateEntry(idx, 'amount', e.target.value)}
-                                    className={cn(
-                                        "w-full bg-transparent border-none p-0 focus:ring-0 text-right font-mono text-[13px] font-bold",
-                                        colorClass
-                                    )}
-                                    placeholder="0.00"
-                                />
-                            </>
+                          <>
+                            <div className="flex items-center justify-end gap-1">
+                              <input
+                                key={entry.currency}
+                                type="text"
+                                maxLength={3}
+                                defaultValue={entry.currency}
+                                onBlur={(e) => updateEntryCurrency(idx, e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                                className="w-10 bg-transparent border-none p-0 focus:ring-0 text-[9px] font-bold text-muted-foreground/50 uppercase tracking-widest text-right focus:text-primary transition-colors"
+                                placeholder="BRL"
+                              />
+                              {fetchingRateIdx === idx && <Loader2 className="w-2.5 h-2.5 animate-spin text-muted-foreground/40 shrink-0" />}
+                            </div>
+                            <div className="flex items-center">
+                              <button
+                                onClick={() => toggleSign(idx)}
+                                className={cn(
+                                  "w-6 h-6 flex items-center justify-center rounded text-[10px] font-bold mr-1 transition-colors",
+                                  entry.amount < 0 ? "bg-destructive/10 text-destructive" : "bg-green-500/10 text-green-500",
+                                  editType === 'transfer' && "bg-muted text-foreground/50"
+                                )}
+                              >
+                                {entry.amount < 0 ? '-' : '+'}
+                              </button>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={Math.abs(entry.amount) || ''}
+                                onChange={(e) => updateEntry(idx, 'amount', e.target.value)}
+                                className={cn(
+                                  "w-full bg-transparent border-none p-0 focus:ring-0 text-right font-mono text-[13px] font-bold",
+                                  colorClass
+                                )}
+                                placeholder="0.00"
+                              />
+                            </div>
+                          </>
                         )}
                       </div>
                       {!isSimple && (
