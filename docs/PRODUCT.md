@@ -182,24 +182,38 @@ The system assumes the **last used currency** when inserting values.
 
 Transactions can be entered using a single-line command input.
 
-Example:
+Format:
+
+```
+description amount [CURRENCY] [ACCOUNT]
+```
+
+Examples:
 
 ```
 padaria 18
 uber 32
 salario 8500 itau
+passeios no mexico 470 USD
+cafe 12 usd nubank
 ```
+
+Currency codes are **case-insensitive** (`usd`, `USD`, `UsD` are all accepted) and normalized to uppercase.
 
 While typing, the system shows a **preview of the resulting ledger transaction**.
 
-Example preview:
+Example preview for a foreign-currency transaction:
 
 ```
-Padaria
+Passeios no Mexico
 
-expenses:food     18
-assets:nubank    -18
+expenses:travel     470 USD  ≈ R$2,413.87
+assets:nubank      -470 USD  ≈ R$2,413.87
+
+1 USD = 5.1359 BRL
 ```
+
+The exchange rate is fetched automatically from Frankfurter for the transaction date and displayed in the preview before the user confirms.
 
 Users may edit the preview before confirming.
 
@@ -367,17 +381,19 @@ balance on 2025-12-31
 
 The system supports transactions in multiple currencies.
 
-Each transaction can specify a currency.
+Each entry stores the original `amount` and `currency` alongside `exchange_rate` and `amount_base` (always in the base currency, BRL).
 
-Exchange rates are retrieved from:
+The **base currency** is configured in `global_settings` under the key `base_currency` (default: `BRL`). All balances and reports are derived from `amount_base`.
+
+Exchange rates are retrieved automatically from:
 
 ```
-https://api.frankfurter.dev
+https://api.frankfurter.dev/v2/rates?date=YYYY-MM-DD&base=USD&quotes=BRL
 ```
 
-The exchange rate used is the **rate for the transaction date**.
+The rate used is the **rate for the transaction date**. For foreign-currency entries, the preview shows the live rate and converted value before the user confirms.
 
-The last used currency becomes the **default currency**.
+The last used currency becomes the **default currency** for subsequent entries.
 
 ---
 

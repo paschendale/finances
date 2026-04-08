@@ -552,15 +552,25 @@ function TransactionRow({
                       <span className="text-[10px] text-muted-foreground/60 uppercase font-bold tracking-tighter">{entry.account_type}</span>
                     </div>
                   </div>
-                  <span className={cn(
-                    "font-mono font-medium",
-                    entry.amount_base < 0 ? "text-destructive/70" : "text-green-500/70"
-                  )}>
-                    {new Intl.NumberFormat('en-US', {
-                      style: 'currency',
-                      currency: entry.currency || 'BRL',
-                    }).format(entry.amount)}
-                  </span>
+                  <div className="text-right">
+                    <div className={cn(
+                      "font-mono font-medium",
+                      entry.amount_base < 0 ? "text-destructive/70" : "text-green-500/70"
+                    )}>
+                      {new Intl.NumberFormat('en-US', {
+                        style: 'currency',
+                        currency: entry.currency || 'BRL',
+                      }).format(entry.amount)}
+                    </div>
+                    {entry.currency && entry.currency !== 'BRL' && (
+                      <div className="text-[10px] text-muted-foreground/50 font-mono">
+                        ≈ {new Intl.NumberFormat('en-US', {
+                          style: 'currency',
+                          currency: 'BRL',
+                        }).format(entry.amount_base)}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 );
               })}
@@ -738,17 +748,16 @@ export function LedgerTable({ filters }: { filters: LedgerFilters }) {
 
       if (Math.abs(expenseSum) > 0.01) {
         amount = Math.abs(expenseSum);
-        currency = expenseEntries[0].currency;
+        // amount is derived from amount_base (always in base currency BRL)
         primaryType = expenseSum > 0 ? 'expense' : 'income';
       } else if (Math.abs(incomeSum) > 0.01) {
         amount = Math.abs(incomeSum);
-        currency = incomeEntries[0].currency;
+        // amount is derived from amount_base (always in base currency BRL)
         primaryType = incomeSum < 0 ? 'income' : 'expense';
       } else {
         const posAssetEntries = assetEntries.filter(e => (Number(e.amount_base) || 0) > 0);
         amount = posAssetEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
-        if (posAssetEntries.length > 0) currency = posAssetEntries[0].currency;
-        else if (assetEntries.length > 0) currency = assetEntries[0].currency;
+        // amount is derived from amount_base (always in base currency BRL)
         primaryType = 'transfer';
       }
 
@@ -789,17 +798,16 @@ export function LedgerTable({ filters }: { filters: LedgerFilters }) {
 
         if (Math.abs(expenseSum) > 0.01) {
           amount = Math.abs(expenseSum);
-          currency = expenseEntries[0].currency;
+          // amount is derived from amount_base (always in base currency BRL)
           primaryType = expenseSum > 0 ? 'expense' : 'income';
         } else if (Math.abs(incomeSum) > 0.01) {
           amount = Math.abs(incomeSum);
-          currency = incomeEntries[0].currency;
+          // amount is derived from amount_base (always in base currency BRL)
           primaryType = incomeSum < 0 ? 'income' : 'expense';
         } else {
           const posAssetEntries = assetEntries.filter(e => (Number(e.amount_base) || 0) > 0);
           amount = posAssetEntries.reduce((sum, e) => sum + (Number(e.amount_base) || 0), 0);
-          if (posAssetEntries.length > 0) currency = posAssetEntries[0].currency;
-          else if (assetEntries.length > 0) currency = assetEntries[0].currency;
+          // amount is derived from amount_base (always in base currency BRL)
           primaryType = 'transfer';
         }
 

@@ -63,13 +63,13 @@ export function parseQuickEntry(input: string, context: ParserContext = {}): Par
   if (trimmed.includes('>')) {
     // Regex for transfer: from > to amount [CURRENCY]
     // Allowing no spaces around >
-    const transferMatch = trimmed.match(/^(.+?)\s*>\s*(.+?)\s+([\d.,]+)(?:\s+([A-Z]{3}))?$/);
+    const transferMatch = trimmed.match(/^(.+?)\s*>\s*(.+?)\s+([\d.,]+)(?:\s+([A-Za-z]{3}))?$/);
     if (transferMatch) {
       const from = transferMatch[1].trim();
       const to = transferMatch[2].trim();
       const amountStr = transferMatch[3].replace(',', '.');
       const amount = parseFloat(amountStr);
-      const currency = transferMatch[4] || defaultCurrency;
+      const currency = transferMatch[4] ? transferMatch[4].toUpperCase() : defaultCurrency;
 
       return {
         type: 'transfer',
@@ -137,9 +137,9 @@ export function parseQuickEntry(input: string, context: ParserContext = {}): Par
   let account = defaultAccount;
 
   if (remainingTokens.length > 0) {
-    // Check if first remaining token is a currency (3 letters uppercase)
-    if (/^[A-Z]{3}$/.test(remainingTokens[0])) {
-      currency = remainingTokens[0];
+    // Check if first remaining token is a currency (3 letters, any case)
+    if (/^[A-Za-z]{3}$/.test(remainingTokens[0])) {
+      currency = remainingTokens[0].toUpperCase();
       if (remainingTokens.length > 1) {
         account = remainingTokens[1];
       }

@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { parseQuickEntry, type TransactionPreview, type InstallmentInfo } from '@/lib/ledger-parser/parser';
-import { 
-  fetchAccounts, 
-  fetchTransactions, 
-  createTransaction, 
-  fetchCategoryUsage, 
-  fetchGlobalSettings, 
-  matchDescriptionMemory, 
-  matchAccount 
+import {
+  fetchAccounts,
+  fetchTransactions,
+  createTransaction,
+  fetchCategoryUsage,
+  fetchGlobalSettings,
+  fetchExchangeRate,
+  matchDescriptionMemory,
+  matchAccount
 } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Check, Loader2, AlertCircle, Calendar, Wallet, Tag, Info, ArrowUpRight, ArrowDownLeft, Plus, Trash2, Zap } from 'lucide-react';
@@ -52,6 +53,9 @@ export function QuickEntryInput() {
   const [parsedInstallments, setParsedInstallments] = useState<InstallmentInfo | null>(null);
   const [createInstallments, setCreateInstallments] = useState(true);
   const [installmentAmountMode, setInstallmentAmountMode] = useState<'total' | 'per'>('total');
+  const [parsedCurrency, setParsedCurrency] = useState('BRL');
+  const [exchangeRate, setExchangeRate] = useState<number | null>(null);
+  const [isFetchingRate, setIsFetchingRate] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
@@ -93,8 +97,12 @@ export function QuickEntryInput() {
     }).filter(o => !o.hidden),
   [topCategories, accounts]);
 
-  const lastUsedCurrency = useMemo(() => 
+  const lastUsedCurrency = useMemo(() =>
     globalSettings?.find(s => s.key === 'last_used_currency')?.value || 'BRL',
+  [globalSettings]);
+
+  const baseCurrency = useMemo(() =>
+    globalSettings?.find(s => s.key === 'base_currency')?.value || 'BRL',
   [globalSettings]);
 
   const lastUsedAccountId = useMemo(() => 
@@ -176,6 +184,9 @@ export function QuickEntryInput() {
       setParsedInstallments(null);
       setCreateInstallments(true);
       setInstallmentAmountMode('total');
+      setParsedCurrency(lastUsedCurrency);
+      setExchangeRate(null);
+      setIsFetchingRate(false);
       return;
     }
 
@@ -201,6 +212,8 @@ export function QuickEntryInput() {
         return;
       }
 
+      let cancelled = false;
+
       const updatePreview = async () => {
         const remainingCount = parsed.installments
           ? parsed.installments.total - parsed.installments.current + 1
@@ -213,6 +226,7 @@ export function QuickEntryInput() {
           : (parsed.amount || 0);
 
         setParsedInstallments(parsed.installments || null);
+        setParsedCurrency(parsed.currency);
 
         if (parsed.type === 'transfer') {
           // Resolve accounts for transfer
@@ -224,15 +238,17 @@ export function QuickEntryInput() {
           const fromAccount = fromRes?.full_name || `assets:checking:${parsed.from}`;
           const toAccount = toRes?.full_name || `assets:checking:${parsed.to}`;
 
-          setPreview({
-            date: parsed.date!,
-            description: parsed.description,
-            entries: [
-              { account: toAccount, amount: perInstallmentAmount },
-              { account: fromAccount, amount: -perInstallmentAmount },
-            ],
-          });
-          setMatchInfo({ similarity: 1 });
+          if (!cancelled) {
+            setPreview({
+              date: parsed.date!,
+              description: parsed.description,
+              entries: [
+                { account: toAccount, amount: perInstallmentAmount },
+                { account: fromAccount, amount: -perInstallmentAmount },
+              ],
+            });
+            setMatchInfo({ similarity: 1 });
+          }
         } else {
           // Resolve memory and account for expense
           const [matches, accMatch] = await Promise.all([
@@ -246,24 +262,54 @@ export function QuickEntryInput() {
           const finalAccount = accMatch?.full_name || bestMatch?.account_name || selectedAccount;
           const finalCategory = bestMatch?.category_name || categoryFallback;
 
-          setPreview({
-            date: parsed.date!,
-            description: parsed.description,
-            entries: [
-              { account: finalCategory, amount: perInstallmentAmount },
-              { account: finalAccount, amount: -perInstallmentAmount },
-            ],
-          });
-          setMatchInfo({
-            similarity: bestMatch ? bestMatch.similarity : 0,
-            categoryType: bestMatch?.category_type || (finalCategory.startsWith('income:') ? 'income' : 'expense')
-          });
+          if (!cancelled) {
+            setPreview({
+              date: parsed.date!,
+              description: parsed.description,
+              entries: [
+                { account: finalCategory, amount: perInstallmentAmount },
+                { account: finalAccount, amount: -perInstallmentAmount },
+              ],
+            });
+            setMatchInfo({
+              similarity: bestMatch ? bestMatch.similarity : 0,
+              categoryType: bestMatch?.category_type || (finalCategory.startsWith('income:') ? 'income' : 'expense')
+            });
+          }
+        }
+
+        // Fetch exchange rate when currency differs from base
+        if (parsed.currency !== baseCurrency) {
+          if (!cancelled) {
+            setIsFetchingRate(true);
+            setExchangeRate(null);
+          }
+          try {
+            const rate = await fetchExchangeRate(parsed.date!, parsed.currency, baseCurrency);
+            if (!cancelled) {
+              setExchangeRate(rate);
+              setIsFetchingRate(false);
+            }
+          } catch {
+            if (!cancelled) {
+              setExchangeRate(null);
+              setIsFetchingRate(false);
+            }
+          }
+        } else {
+          if (!cancelled) {
+            setExchangeRate(1.0);
+            setIsFetchingRate(false);
+          }
         }
       };
 
       // Simple debounce-like behavior
       const timeoutId = setTimeout(updatePreview, 50);
-      return () => clearTimeout(timeoutId);
+      return () => {
+        cancelled = true;
+        clearTimeout(timeoutId);
+      };
     }
   }, [input, historyDescriptions, isEdited, selectedAccount, selectedDate, topCategoryOptions, allAccountOptions, lastUsedCurrency, accountOptions, installmentAmountMode]);
 
@@ -283,6 +329,11 @@ export function QuickEntryInput() {
   const confirmTransaction = async () => {
     if (!preview || !accounts) return;
 
+    const currency = parsedCurrency;
+    const rate = exchangeRate ?? (parsedCurrency !== baseCurrency
+      ? await fetchExchangeRate(preview.date, parsedCurrency, baseCurrency)
+      : 1.0);
+
     const buildTx = (date: string, description: string) => ({
       date,
       description,
@@ -292,9 +343,9 @@ export function QuickEntryInput() {
         return {
           account_id: account.account_id,
           amount: e.amount,
-          currency: lastUsedCurrency,
-          exchange_rate: 1.0,
-          amount_base: e.amount,
+          currency,
+          exchange_rate: rate,
+          amount_base: e.amount * rate,
         };
       }),
     });
@@ -558,10 +609,12 @@ export function QuickEntryInput() {
                         className="border-none bg-transparent shadow-none"
                       />
                     </div>
-                    <div className="w-28 flex flex-col items-end bg-background/40 rounded-md border border-border/20 px-2 py-1">
+                    <div className="w-36 flex flex-col items-end bg-background/40 rounded-md border border-border/20 px-2 py-1">
                       <div className="text-[9px] font-bold text-muted-foreground/40 uppercase tracking-wider mb-0.5">Amount</div>
                       <div className="flex items-center w-full">
-                        <span className="text-muted-foreground/40 mr-1 text-[12px] font-bold">$</span>
+                        <span className="text-muted-foreground/40 mr-1 text-[12px] font-bold">
+                          {parsedCurrency}
+                        </span>
                         <input
                           type="number"
                           step="0.01"
@@ -574,10 +627,30 @@ export function QuickEntryInput() {
                           placeholder="0.00"
                         />
                       </div>
+                      {parsedCurrency !== baseCurrency && entry.amount !== 0 && (
+                        <div className="text-[10px] font-mono text-muted-foreground/50 mt-0.5 w-full text-right">
+                          {isFetchingRate
+                            ? <span className="animate-pulse">converting…</span>
+                            : exchangeRate
+                              ? `≈ ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: baseCurrency }).format(Math.abs(entry.amount) * exchangeRate)}`
+                              : null
+                          }
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
               })}
+
+              {parsedCurrency !== baseCurrency && (
+                <div className="flex items-center gap-1.5 px-1 text-[10px] text-muted-foreground/50 font-mono">
+                  {isFetchingRate ? (
+                    <><Loader2 className="w-2.5 h-2.5 animate-spin" /> Fetching rate…</>
+                  ) : exchangeRate ? (
+                    <>1 {parsedCurrency} = {exchangeRate.toFixed(4)} {baseCurrency}</>
+                  ) : null}
+                </div>
+              )}
 
               {parsedInstallments && (
                 <div className="rounded-lg bg-muted/10 border border-border/20 mt-2 overflow-hidden">

@@ -509,3 +509,23 @@ export async function deleteAlias(alias: string): Promise<void> {
     throw new Error('Failed to delete alias');
   }
 }
+
+/**
+ * Fetches the exchange rate from Frankfurter.
+ * Returns how many units of baseCurrency equal 1 unit of fromCurrency.
+ * e.g. fetchExchangeRate('2025-03-25', 'USD', 'BRL') → 5.2  (1 USD = 5.2 BRL)
+ */
+export async function fetchExchangeRate(
+  date: string,
+  fromCurrency: string,
+  baseCurrency: string
+): Promise<number> {
+  if (fromCurrency === baseCurrency) return 1.0;
+  const url = `https://api.frankfurter.dev/v2/rates?date=${date}&base=${fromCurrency}&quotes=${baseCurrency}`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch exchange rate for ${fromCurrency}/${baseCurrency}`);
+  const data = await response.json();
+  const rate = Array.isArray(data) ? data[0]?.rate : data.rates?.[baseCurrency];
+  if (!rate) throw new Error(`Exchange rate not found for ${fromCurrency}/${baseCurrency} on ${date}`);
+  return rate;
+}

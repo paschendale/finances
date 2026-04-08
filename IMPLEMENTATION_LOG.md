@@ -1,5 +1,46 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-04-08 - Multi-Currency Handling Improvements
+
+### Tasks
+- [x] **Migration 0036** — Seeded `base_currency = 'BRL'` in `global_settings`.
+- [x] **API** — Added `fetchExchangeRate(date, fromCurrency, baseCurrency)` in `app/src/lib/api.ts`. Calls Frankfurter API (`https://api.frankfurter.dev/v2/rates`) with `base={fromCurrency}&quotes={baseCurrency}` and returns the rate (e.g., 5.72 for USD→BRL).
+- [x] **QuickEntryInput** — Added `baseCurrency` derived from `global_settings`. Made `buildTx` async: when `parsedCurrency !== baseCurrency`, fetches the real exchange rate from Frankfurter and stores `exchange_rate` and correct `amount_base = amount * rate`. Fixed `currency` on entries to use the parsed currency from input (not hardcoded `lastUsedCurrency`). Fixed preview amount prefix from hardcoded `$` to actual currency code from parsed input.
+- [x] **LedgerTable** — Fixed display bug: main row `amount` was computed from `amount_base` (BRL) but formatted with `entry.currency` (e.g., USD), showing wrong currency symbol. Now `currency` in `TransactionItem` is always `'BRL'` since `amount` is always derived from `amount_base`. Entry detail view now shows both original (e.g., `470 USD`) and base equivalent (`≈ R$2,688`) when currencies differ.
+
+### Decisions
+- Exchange rate is fetched at submit time (not at preview time) to avoid redundant API calls while the user is still typing.
+- The Frankfurter API response for v2 is `[{ date, base, quote, rate }]` (array), not the v1 `{ rates: { BRL: ... } }` object — parsing adjusted accordingly.
+- The Frankfurter API is called with `base={foreignCurrency}&quotes={baseCurrency}` to get the direct exchange rate without needing inversion.
+- `amount_base` always stores the value in base currency; `amount` stores the value in the original currency. Both are now correctly stored for multi-currency entries.
+- Base currency is `'BRL'` by default, stored in `global_settings` and can be changed via DB if needed.
+
+### Files Modified
+- `migrations/0036_base_currency.sql` (new)
+- `app/src/lib/api.ts`
+- `app/src/components/QuickEntryInput.tsx`
+- `app/src/components/LedgerTable.tsx`
+
+---
+
+## 2026-04-08 - Multi-Currency UX: Live Rate Preview + Case-Insensitive Currency
+
+### Tasks
+- [x] **Parser** — Currency detection is now case-insensitive (`usd`, `USD`, `UsD` all work). Both expense and transfer patterns updated; detected currency is always normalized to uppercase.
+- [x] **QuickEntryInput: live rate fetch** — Exchange rate is now fetched during `updatePreview` (not just at submit). New state: `parsedCurrency`, `exchangeRate`, `isFetchingRate`. A `cancelled` flag prevents stale state updates when input changes rapidly.
+- [x] **QuickEntryInput: preview display** — Amount box shows `≈ R$X.XX` (converted value) below the input while typing; shows `converting…` while the rate is in flight. A `1 USD = 5.1359 BRL` info line appears below the entries whenever the parsed currency differs from base.
+- [x] **QuickEntryInput: buildTx** — Now synchronous again; uses cached `exchangeRate` from state, falling back to a fresh fetch only if state is null (edge case).
+
+### Decisions
+- Rate is fetched in `updatePreview` (debounced 50ms) rather than on every keystroke. This keeps the UX responsive while minimizing API calls.
+- `parsedCurrency` is stored in state so both the preview UI and `buildTx` share the same resolved value without re-parsing the input.
+
+### Files Modified
+- `app/src/lib/ledger-parser/parser.ts`
+- `app/src/components/QuickEntryInput.tsx`
+
+---
+
 ## 2026-03-19 - Account Subtype Column + Flatten Remaining Containers
 
 ### Tasks

@@ -458,7 +458,7 @@ normalized_description   → trigram-indexed form for fuzzy matching
 
 ## global_settings
 
-Key-value store for app-wide defaults. Currently tracks `last_used_account_id` and `last_used_currency`, updated on every transaction mutation.
+Key-value store for app-wide defaults. Updated on every transaction mutation.
 
 Fields:
 
@@ -467,6 +467,16 @@ key
 value
 updated_at
 ```
+
+Known keys:
+
+```
+last_used_account_id   → UUID of the last asset/liability account used
+last_used_currency     → ISO code of the last currency used (e.g. "USD")
+base_currency          → ISO code of the system base currency (default: "BRL")
+```
+
+`base_currency` is the currency in which `amount_base` is always expressed. All balances and reports use `amount_base`.
 
 ---
 
