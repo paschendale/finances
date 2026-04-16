@@ -118,7 +118,7 @@ function AppContent() {
       <main className="w-full max-w-5xl flex-1">
         {view === "ledger" ? (
           <div className="w-full space-y-6 pb-20">
-            <QuickEntryInput />
+            <QuickEntryInput filters={filters} />
             <div className="w-full space-y-4">
               <LedgerFilterBar filters={filters} onChange={setFilters} />
               <LedgerTable filters={filters} />

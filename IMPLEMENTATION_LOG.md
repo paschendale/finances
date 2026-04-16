@@ -1,5 +1,26 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-04-15 - Account Mismatch Warning in QuickEntryInput
+
+### Tasks
+- [x] **App.tsx** — Pass `filters` prop to `<QuickEntryInput />` so it can see the active ledger account filter.
+- [x] **QuickEntryInput** — Added `filters?: LedgerFilters` prop; import `type LedgerFilters` from `LedgerFilterBar`.
+- [x] **Mismatch detection** — `isMismatch` is true when `filters.accountIds` is non-empty and `selectedAccount`'s ID is not in that list. Tracked via a stable key `${selectedAccountId}|${sortedFilterIds}`.
+- [x] **One-time confirmation** — `confirmTransaction` gates on `isMismatch && !isAcknowledged`; shows an inline amber confirmation panel in the preview footer instead of submitting. "Proceed anyway" records the acknowledged key and calls `executeTransaction()` directly.
+- [x] **Persistent banner** — After acknowledgement, an amber strip above the input reads "Entering into [account] — not shown in current filter".
+- [x] **Auto-reset** — A `useEffect` on `currentMismatchKey` hides the confirm panel whenever the filter or selected account changes, causing the dialog to reappear on the next submit attempt.
+
+### Decisions
+- Split `confirmTransaction` into `executeTransaction` (raw submission) + `confirmTransaction` (mismatch gate) + `handleMismatchConfirm` (acknowledge + execute) to avoid async state race conditions.
+- Used a string key rather than separate boolean flags so acknowledgement is automatically scoped to the exact (account × filter-set) combination.
+- Banner and dialog are purely frontend — no migrations or API changes needed.
+
+### Files Modified
+- `app/src/App.tsx`
+- `app/src/components/QuickEntryInput.tsx`
+
+---
+
 ## 2026-04-08 - Multi-Currency Handling Improvements
 
 ### Tasks

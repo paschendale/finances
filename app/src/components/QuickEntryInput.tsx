@@ -12,8 +12,9 @@ import {
   matchAccount
 } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { Check, Loader2, AlertCircle, Calendar, Wallet, Tag, Info, ArrowUpRight, ArrowDownLeft, Plus, Trash2, Zap } from 'lucide-react';
+import { Check, Loader2, AlertCircle, AlertTriangle, Calendar, Wallet, Tag, Info, ArrowUpRight, ArrowDownLeft, Plus, Trash2, Zap } from 'lucide-react';
 import { SearchableSelect } from './SearchableSelect';
+import { type LedgerFilters } from './LedgerFilterBar';
 
 // --- Helper for normalization ---
 function normalizeString(str: string): string {
@@ -36,7 +37,7 @@ function calcInstallmentDate(baseDate: string, current: number, n: number): stri
 }
 
 // --- Main QuickEntryInput Component ---
-export function QuickEntryInput() {
+export function QuickEntryInput({ filters }: { filters?: LedgerFilters }) {
   const [input, setInput] = useState('');
   const [selectedDate, setSelectedDate] = useState(() => {
     try {
@@ -56,6 +57,8 @@ export function QuickEntryInput() {
   const [parsedCurrency, setParsedCurrency] = useState('BRL');
   const [exchangeRate, setExchangeRate] = useState<number | null>(null);
   const [isFetchingRate, setIsFetchingRate] = useState(false);
+  const [acknowledgedMismatchKey, setAcknowledgedMismatchKey] = useState<string | null>(null);
+  const [showMismatchConfirm, setShowMismatchConfirm] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
@@ -136,6 +139,34 @@ export function QuickEntryInput() {
     }
     return results;
   }, [parsedInstallments, preview, createInstallments]);
+
+  // --- Mismatch detection ---
+  const selectedAccountObj = useMemo(() =>
+    accounts?.find(a => a.account_name === selectedAccount),
+  [accounts, selectedAccount]);
+
+  const isMismatch = useMemo(() =>
+    (filters?.accountIds.length ?? 0) > 0 &&
+    !!selectedAccountObj &&
+    !filters!.accountIds.includes(selectedAccountObj.account_id),
+  [filters?.accountIds, selectedAccountObj]);
+
+  const currentMismatchKey = useMemo(() =>
+    isMismatch && selectedAccountObj
+      ? `${selectedAccountObj.account_id}|${[...filters!.accountIds].sort().join(',')}`
+      : null,
+  [isMismatch, selectedAccountObj, filters?.accountIds]);
+
+  const isAcknowledged = isMismatch && acknowledgedMismatchKey === currentMismatchKey;
+
+  const filterAccountNames = useMemo(() =>
+    (filters?.accountIds ?? []).map(id => accounts?.find(a => a.account_id === id)?.account_name ?? id),
+  [filters?.accountIds, accounts]);
+
+  // Reset confirm panel whenever the mismatch combo changes
+  useEffect(() => {
+    setShowMismatchConfirm(false);
+  }, [currentMismatchKey]);
 
   const mutation = useMutation({
     mutationFn: createTransaction,
@@ -326,7 +357,7 @@ export function QuickEntryInput() {
     }
   };
 
-  const confirmTransaction = async () => {
+  const executeTransaction = async () => {
     if (!preview || !accounts) return;
 
     const currency = parsedCurrency;
@@ -385,6 +416,21 @@ export function QuickEntryInput() {
     } catch (err: any) {
       alert(err.message);
     }
+  };
+
+  const confirmTransaction = async () => {
+    if (!preview || !accounts) return;
+    if (isMismatch && !isAcknowledged) {
+      setShowMismatchConfirm(true);
+      return;
+    }
+    await executeTransaction();
+  };
+
+  const handleMismatchConfirm = async () => {
+    setAcknowledgedMismatchKey(currentMismatchKey);
+    setShowMismatchConfirm(false);
+    await executeTransaction();
   };
 
   const updateEntryField = (index: number, field: string, value: any) => {
@@ -489,6 +535,15 @@ export function QuickEntryInput() {
           </div>
         </div>
       </div>
+
+      {/* Account mismatch banner (shown after acknowledgement) */}
+      {isMismatch && isAcknowledged && (
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 rounded-lg text-[10px] font-semibold text-amber-400/80">
+          <AlertTriangle className="w-3 h-3 shrink-0" />
+          <span>Entering into <strong>{selectedAccount}</strong></span>
+          <span className="text-amber-400/50">— not shown in current filter</span>
+        </div>
+      )}
 
       {/* Main Input - Medium Z-Index relative to sibling sections */}
       <div className="relative group z-20">
@@ -742,26 +797,56 @@ export function QuickEntryInput() {
             </div>
           </div>
 
-          <div className="px-4 py-2.5 bg-muted/5 border-t border-border/20 flex justify-between items-center">
-            <div className="text-[10px] font-bold text-muted-foreground/30 flex gap-4 uppercase tracking-tighter">
-              <span><kbd className="opacity-40 font-sans">TAB</kbd> Jump</span>
-              {!isEdited && <span><kbd className="opacity-40 font-sans">ENTER</kbd> Quick Submit</span>}
+          {showMismatchConfirm ? (
+            <div className="px-4 py-3 bg-amber-500/10 border-t border-amber-500/20 space-y-2.5">
+              <div className="flex items-start gap-2 text-[11px] text-amber-400/90">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">Account mismatch</p>
+                  <p className="text-amber-400/60 mt-0.5">
+                    You're entering into <strong>{selectedAccount}</strong>, but your ledger is filtered to show{' '}
+                    <strong>{filterAccountNames.join(', ')}</strong>.
+                  </p>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setShowMismatchConfirm(false)}
+                  className="px-3 py-1.5 rounded-lg text-[11px] font-bold text-muted-foreground/60 hover:text-foreground hover:bg-white/5 transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleMismatchConfirm}
+                  className="px-3 py-1.5 rounded-lg text-[11px] font-bold bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-all flex items-center gap-1.5"
+                >
+                  <Check className="w-3 h-3" />
+                  Proceed anyway
+                </button>
+              </div>
             </div>
-            
-            <button
-              onClick={confirmTransaction}
-              disabled={mutation.isPending || (preview.entries[0].amount === 0)}
-              className={cn(
-                "px-4 py-1.5 rounded-lg text-[12px] font-bold transition-all flex items-center gap-1.5",
-                (isEdited || !input) && !mutation.isPending
-                  ? "bg-primary text-primary-foreground shadow-md hover:brightness-105 active:scale-95"
-                  : "bg-muted/50 text-muted-foreground/50"
-              )}
-            >
-              {mutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-              {isEdited ? 'Done' : 'Confirm'}
-            </button>
-          </div>
+          ) : (
+            <div className="px-4 py-2.5 bg-muted/5 border-t border-border/20 flex justify-between items-center">
+              <div className="text-[10px] font-bold text-muted-foreground/30 flex gap-4 uppercase tracking-tighter">
+                <span><kbd className="opacity-40 font-sans">TAB</kbd> Jump</span>
+                {!isEdited && <span><kbd className="opacity-40 font-sans">ENTER</kbd> Quick Submit</span>}
+              </div>
+
+              <button
+                onClick={confirmTransaction}
+                disabled={mutation.isPending || (preview.entries[0].amount === 0)}
+                className={cn(
+                  "px-4 py-1.5 rounded-lg text-[12px] font-bold transition-all flex items-center gap-1.5",
+                  (isEdited || !input) && !mutation.isPending
+                    ? "bg-primary text-primary-foreground shadow-md hover:brightness-105 active:scale-95"
+                    : "bg-muted/50 text-muted-foreground/50"
+                )}
+              >
+                {mutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                {isEdited ? 'Done' : 'Confirm'}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
