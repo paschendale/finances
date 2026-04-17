@@ -111,6 +111,11 @@ export function Dashboard({ filters, onFilterChange }: DashboardProps) {
     const incomeMap: Record<string, number> = {};
     const monthlyData: Record<string, { month: string, income: number, expense: number }> = {};
 
+    const maxIncomeDepth = filteredEntries.reduce((max, e) => {
+      if (e.account_type !== 'income') return max;
+      return Math.max(max, e.account_name.split(':').length);
+    }, 1);
+
     filteredEntries.forEach(entry => {
       const amount = Math.abs(entry.amount_base);
       const date = parseISO(entry.date);
@@ -142,8 +147,8 @@ export function Dashboard({ filters, onFilterChange }: DashboardProps) {
         monthlyData[monthKey].expense += amount;
       } else if (entry.account_type === 'income') {
         const parts = entry.account_name.split(':');
-        const levelName = parts[0];
-        incomeMap[levelName] = (incomeMap[levelName] || 0) + amount;
+        const key = parts.length >= maxIncomeDepth ? entry.account_name : 'Others';
+        incomeMap[key] = (incomeMap[key] || 0) + amount;
         monthlyData[monthKey].income += amount;
       }
     });
