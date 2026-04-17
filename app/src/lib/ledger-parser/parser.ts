@@ -102,7 +102,7 @@ export function parseQuickEntry(input: string, context: ParserContext = {}): Par
         description: `Transfer from ${from} to ${to}`,
         from,
         to,
-        amount: isNaN(amount) ? null : amount,
+        amount: amount == null || isNaN(amount) ? null : amount,
         currency,
         date,
       };

@@ -60,6 +60,7 @@ export interface Account {
   own_balance: number;
   future_balance: number;
   last_entry_date: string | null;
+  last_checked: string | null;
   parent_id: string | null;
   icon: string | null;
   color: string | null;
@@ -77,6 +78,7 @@ export interface AccountNode {
   own_balance: number;
   future_balance: number;
   last_entry_date: string | null;
+  last_checked: string | null;
   icon: string | null;
   color: string | null;
   hidden: boolean;
@@ -110,7 +112,12 @@ export async function fetchAccounts(): Promise<Account[]> {
     if (response.status === 401) logout();
     throw new Error('Failed to fetch accounts');
   }
-  return response.json();
+  const data: Account[] = await response.json();
+  return data.map((a) => ({
+    ...a,
+    last_checked: a.last_checked ?? null,
+    future_balance: a.future_balance ?? 0,
+  }));
 }
 
 export async function fetchTransactions(
@@ -428,13 +435,14 @@ export async function fetchAccountsTree(): Promise<AccountNode[]> {
     own_balance: a.own_balance,
     future_balance: a.future_balance ?? 0,
     last_entry_date: a.last_entry_date,
+    last_checked: a.last_checked ?? null,
     icon: a.icon,
     color: a.color,
     hidden: a.hidden
   }));
 }
 
-export async function updateAccount(id: string, patch: Partial<Pick<AccountNode, 'icon' | 'color' | 'name' | 'type' | 'subtype' | 'parent_id' | 'hidden'>>): Promise<void> {
+export async function updateAccount(id: string, patch: Partial<Pick<AccountNode, 'icon' | 'color' | 'name' | 'type' | 'subtype' | 'parent_id' | 'hidden' | 'last_checked'>>): Promise<void> {
   const response = await fetch(`${API_URL}/accounts?id=eq.${id}`, {
     method: 'PATCH',
     headers: getHeaders({ 'Prefer': 'return=minimal' }),
@@ -444,6 +452,10 @@ export async function updateAccount(id: string, patch: Partial<Pick<AccountNode,
     if (response.status === 401) logout();
     throw new Error('Failed to update account');
   }
+}
+
+export async function markAccountChecked(id: string): Promise<void> {
+  await updateAccount(id, { last_checked: new Date().toISOString() });
 }
 
 export async function createAccount(data: { name: string; type: string; subtype?: string | null; parent_id?: string | null; icon?: string | null; color?: string | null; hidden?: boolean }): Promise<AccountNode> {

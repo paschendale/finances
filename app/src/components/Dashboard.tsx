@@ -1,14 +1,16 @@
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { type Account, fetchAccounts, fetchDashboardData, fetchDailyBalances } from '@/lib/api';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { type Account, fetchAccounts, fetchDashboardData, fetchDailyBalances, markAccountChecked } from '@/lib/api';
+import { isBalanceCheckStale } from '@/lib/balanceCheckStale';
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, 
   AreaChart, Area, XAxis, YAxis, CartesianGrid 
 } from 'recharts';
-import { format, startOfMonth, endOfMonth, subMonths, startOfYear, endOfYear, subYears, parseISO, isWithinInterval, differenceInDays, startOfWeek } from 'date-fns';
+import { format, startOfMonth, endOfMonth, subMonths, startOfYear, endOfYear, subYears, parseISO, isWithinInterval, differenceInDays, startOfWeek, formatDistanceToNow } from 'date-fns';
 import { Calendar } from 'lucide-react';
 import { cn, formatHierarchicalName } from '@/lib/utils';
 import { type LedgerFilters } from './LedgerFilterBar';
+import { AccountIcon } from './AccountIcon';
 
 // Rich, darker muted colors for dark mode comfort
 const COLORS = [
@@ -42,7 +44,31 @@ interface DashboardProps {
 }
 
 export function Dashboard({ filters, onFilterChange }: DashboardProps) {
+  const queryClient = useQueryClient();
   const [showCustom, setShowCustom] = useState(false);
+
+  const markCheckedMutation = useMutation({
+    mutationFn: markAccountChecked,
+    onMutate: async (accountId: string) => {
+      await queryClient.cancelQueries({ queryKey: ['accounts'] });
+      const previous = queryClient.getQueryData<Account[]>(['accounts']);
+      const now = new Date().toISOString();
+      queryClient.setQueryData<Account[]>(['accounts'], (old) =>
+        (old ?? []).map((a) =>
+          a.account_id === accountId ? { ...a, last_checked: now } : a
+        )
+      );
+      return { previous };
+    },
+    onError: (_err, _accountId, context) => {
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData(['accounts'], context.previous);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+    },
+  });
 
   // Derived date range from filters
   const dateRange = useMemo<DateRange>(() => {
@@ -241,6 +267,26 @@ export function Dashboard({ filters, onFilterChange }: DashboardProps) {
 
   const netWorth = accountGroups.checking.total + accountGroups.emergency.total + accountGroups.investments.total + accountGroups.liabilities.total;
 
+  const staleCheckInAccounts = useMemo(() => {
+    return accounts
+      .filter(
+        (a) =>
+          !a.hidden &&
+          (a.account_type === 'asset' || a.account_type === 'liability') &&
+          isBalanceCheckStale(a.last_checked)
+      )
+      .sort((x, y) => {
+        if (x.last_checked == null && y.last_checked != null) return -1;
+        if (x.last_checked != null && y.last_checked == null) return 1;
+        if (x.last_checked == null && y.last_checked == null) {
+          return x.account_name.localeCompare(y.account_name);
+        }
+        const lx = x.last_checked as string;
+        const ly = y.last_checked as string;
+        return parseISO(lx).getTime() - parseISO(ly).getTime();
+      });
+  }, [accounts]);
+
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
       {/* Date Filters */}
@@ -315,6 +361,12 @@ export function Dashboard({ filters, onFilterChange }: DashboardProps) {
            <span className="text-xl font-bold tracking-tight">R$ {netWorth.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
         </div>
       </div>
+
+      <BalanceCheckInPanel
+        accounts={staleCheckInAccounts}
+        disabled={markCheckedMutation.isPending}
+        onMarkChecked={(id) => markCheckedMutation.mutate(id)}
+      />
 
       {/* Main Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -587,6 +639,69 @@ function ExpenseBreakdownChart({
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function BalanceCheckInPanel({
+  accounts,
+  disabled,
+  onMarkChecked,
+}: {
+  accounts: Account[];
+  disabled: boolean;
+  onMarkChecked: (accountId: string) => void;
+}) {
+  return (
+    <div className="rounded-[2rem] border border-white/5 bg-white/[0.03] p-6 shadow-sm backdrop-blur-3xl sm:p-8">
+      <h3 className="mb-4 text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">
+        Balance check-in
+      </h3>
+      {accounts.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          All asset and liability accounts verified in the last 7 days.
+        </p>
+      ) : (
+        <ul className="grid gap-2 sm:gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(min(100%,12.5rem),1fr))] md:[grid-template-columns:repeat(auto-fill,minmax(min(100%,13.5rem),1fr))]">
+          {accounts.map((acc) => (
+            <li key={acc.account_id}>
+              <label
+                className={cn(
+                  'flex cursor-pointer gap-2 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-2.5 transition-colors hover:border-white/15 hover:bg-white/[0.04]',
+                  disabled && 'pointer-events-none opacity-50'
+                )}
+              >
+                <input
+                  type="checkbox"
+                  disabled={disabled}
+                  className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-white/20 bg-white/5 accent-white"
+                  onChange={() => onMarkChecked(acc.account_id)}
+                />
+                <AccountIcon
+                  accountName={acc.account_name}
+                  icon={acc.icon}
+                  color={acc.color}
+                  size="sm"
+                  className="mt-0.5"
+                />
+                <div className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-medium text-primary/80">
+                    {formatHierarchicalName(acc.account_name)}
+                  </span>
+                  <span className="mt-0.5 block text-[9px] font-bold uppercase tracking-tighter text-muted-foreground/70">
+                    {acc.account_type}
+                  </span>
+                  <span className="mt-1 block font-mono text-[10px] leading-tight text-muted-foreground/90">
+                    {acc.last_checked == null
+                      ? 'Never checked'
+                      : formatDistanceToNow(parseISO(acc.last_checked), { addSuffix: true })}
+                  </span>
+                </div>
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

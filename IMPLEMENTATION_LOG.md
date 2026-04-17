@@ -1,5 +1,35 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-04-17 - Balance check-in UI: asset/liability filter, icons, multi-column grid
+
+- Stale list now includes any **non-hidden `asset` or `liability`** account (removed subtype-only filter).
+- Rows use **`AccountIcon`** + ledger-style **name** (`text-primary/80`) and **account type** subtitle.
+- **Responsive `auto-fill` grid** (`minmax(12.5rem→13.5rem, 1fr)`) for dense columns; compact bordered cells.
+- Files: `app/src/components/Dashboard.tsx`, `IMPLEMENTATION_LOG.md`
+
+---
+
+## 2026-04-17 - Dashboard balance check-in (stale account checklist)
+
+### Feature
+- **`last_checked` on `accounts`**: nullable `TIMESTAMPTZ`, exposed on `account_balances` for the dashboard.
+- **Balance check-in panel** on [`Dashboard.tsx`](app/src/components/Dashboard.tsx): lists bucket accounts (`checking`, `emergency`, `investments`, `liabilities`) that are **stale** — `last_checked` is null (“Never checked”) or older than 7 days — **excluding hidden** accounts. Placed **after** net worth, **before** main charts.
+- **Checkbox** per row calls `markAccountChecked` → `PATCH /accounts` with ISO timestamp; invalidates `['accounts']` on success.
+- **Helper** [`isBalanceCheckStale`](app/src/lib/balanceCheckStale.ts) + Vitest coverage.
+
+### Incidental
+- [`parser.ts`](app/src/lib/ledger-parser/parser.ts): transfer branch now guards `amount == null` before `isNaN(amount)` so `tsc` accepts `number | null` from `parseLocalizedAmountToken`.
+
+### Files
+- `migrations/0038_account_last_checked.sql`
+- `app/src/lib/api.ts` — `Account` / `AccountNode.last_checked`, `fetchAccounts` defaults, `markAccountChecked`, `updateAccount` pick
+- `app/src/lib/balanceCheckStale.ts`, `app/src/lib/balanceCheckStale.test.ts`
+- `app/src/components/Dashboard.tsx`
+- `app/src/lib/ledger-parser/parser.ts`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
 ## 2026-04-17 - Localized Amount Parsing: Thousand Separators + Last Decimal Separator
 
 ### Problem
