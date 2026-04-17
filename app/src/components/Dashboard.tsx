@@ -691,7 +691,13 @@ function BalanceCheckInPanel({
                   <span className="mt-0.5 block text-[9px] font-bold uppercase tracking-tighter text-muted-foreground/70">
                     {acc.account_type}
                   </span>
-                  <span className="mt-1 block font-mono text-[10px] leading-tight text-muted-foreground/90">
+                  <span className="mt-1 block font-mono text-[11px] font-semibold tabular-nums text-white/90">
+                    {`${acc.balance < 0 ? '-' : ''}R$ ${Math.abs(acc.balance).toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}`}
+                  </span>
+                  <span className="mt-0.5 block font-mono text-[10px] leading-tight text-muted-foreground/90">
                     {acc.last_checked == null
                       ? 'Never checked'
                       : formatDistanceToNow(parseISO(acc.last_checked), { addSuffix: true })}
