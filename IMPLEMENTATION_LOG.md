@@ -1,5 +1,27 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-04-16 - Fix Territorial Account Classifications
+
+### Problem
+In `finances-territorial`, two accounts were miscategorized:
+- `nu-caixinha` was type `equity` with no subtype — dashboard balance cards and asset history graph only track accounts with subtypes `checking`/`emergency`/`investments`/`liabilities`, so it was invisible
+- `nu-conta` was type `asset` with no subtype — same issue
+
+Result: Checking/Emergency/Investments all showed R$0.00 even though R$5,000 sat in `nu-caixinha`.
+
+### Fix
+Migration `0037_fix_territorial_account_types.sql`:
+- `nu-caixinha`: type `equity` → `asset`, subtype → `checking`
+- `nu-conta`: subtype → `checking`
+
+Migration is name-based and safe to run on both databases (0 rows affected where accounts don't exist).
+
+### Files Created/Modified
+- `migrations/0037_fix_territorial_account_types.sql` (new)
+- `IMPLEMENTATION_LOG.md`
+
+---
+
 ## 2026-04-16 - Fix Expense Breakdown Chart for Shallow Account Hierarchies
 
 ### Problem
