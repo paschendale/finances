@@ -122,23 +122,27 @@ export function Dashboard({ filters, onFilterChange }: DashboardProps) {
 
       if (entry.account_type === 'expense') {
         const parts = entry.account_name.split(':');
-        
-        // Level 1: expenses:Category
-        const l1 = parts.slice(0, 2).join(':');
-        if (parts.length >= 2) l1Map[l1] = (l1Map[l1] || 0) + amount;
-        
-        // Level 2: expenses:Category:Sub
-        const l2 = parts.slice(0, 3).join(':');
-        if (parts.length >= 3) l2Map[l2] = (l2Map[l2] || 0) + amount;
-        
-        // Level 3: expenses:Category:Sub:Detail
-        const l3 = parts.slice(0, 4).join(':');
-        if (parts.length >= 4) l3Map[l3] = (l3Map[l3] || 0) + amount;
+
+        // L1: first segment (always present)
+        const l1 = parts[0];
+        l1Map[l1] = (l1Map[l1] || 0) + amount;
+
+        // L2: first two segments (if depth >= 2)
+        if (parts.length >= 2) {
+          const l2 = parts.slice(0, 2).join(':');
+          l2Map[l2] = (l2Map[l2] || 0) + amount;
+        }
+
+        // L3: first three segments (if depth >= 3)
+        if (parts.length >= 3) {
+          const l3 = parts.slice(0, 3).join(':');
+          l3Map[l3] = (l3Map[l3] || 0) + amount;
+        }
 
         monthlyData[monthKey].expense += amount;
       } else if (entry.account_type === 'income') {
         const parts = entry.account_name.split(':');
-        const levelName = parts.slice(0, 2).join(':');
+        const levelName = parts[0];
         incomeMap[levelName] = (incomeMap[levelName] || 0) + amount;
         monthlyData[monthKey].income += amount;
       }
@@ -310,106 +314,14 @@ export function Dashboard({ filters, onFilterChange }: DashboardProps) {
       {/* Main Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Expenses Nested Pie - Bigger */}
-        <ChartCard title="Expense Breakdown (L1 → L3)" className="lg:col-span-2 min-h-[500px]">
-          <div className="flex flex-col lg:flex-row h-full gap-8">
-             <div className="flex-1 min-h-[400px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    {/* Level 1 - Inner */}
-                    <Pie
-                      data={stats.expensesL1}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={0}
-                      outerRadius={60}
-                      dataKey="value"
-                      stroke="rgba(0,0,0,0.5)"
-                      strokeWidth={2}
-                    >
-                      {stats.expensesL1.map((entry, index) => (
-                        <Cell 
-                          key={`l1-${index}`} 
-                          fill={COLORS[index % COLORS.length]} 
-                          className="hover:opacity-80 transition-opacity cursor-pointer" 
-                          onClick={() => setCategoryFilter(categoryFilter === entry.fullName ? null : entry.fullName)} 
-                        />
-                      ))}
-                    </Pie>
-                    {/* Level 2 - Middle */}
-                    <Pie
-                      data={stats.expensesL2}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={70}
-                      outerRadius={110}
-                      dataKey="value"
-                      stroke="rgba(0,0,0,0.5)"
-                      strokeWidth={2}
-                    >
-                      {stats.expensesL2.map((entry, index) => {
-                        const l1Name = entry.fullName.split(':').slice(0, 2).join(':');
-                        const l1Index = stats.expensesL1.findIndex(x => x.fullName === l1Name);
-                        return <Cell 
-                          key={`l2-${index}`} 
-                          fill={COLORS[l1Index % COLORS.length]} 
-                          opacity={0.7}
-                          className="hover:opacity-100 transition-opacity cursor-pointer" 
-                          onClick={() => setCategoryFilter(categoryFilter === entry.fullName ? null : entry.fullName)}
-                        />
-                      })}
-                    </Pie>
-                    {/* Level 3 - Outer */}
-                    <Pie
-                      data={stats.expensesL3}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={120}
-                      outerRadius={150}
-                      dataKey="value"
-                      stroke="rgba(0,0,0,0.5)"
-                      strokeWidth={2}
-                    >
-                      {stats.expensesL3.map((entry, index) => {
-                        const l1Name = entry.fullName.split(':').slice(0, 2).join(':');
-                        const l1Index = stats.expensesL1.findIndex(x => x.fullName === l1Name);
-                        return <Cell 
-                          key={`l3-${index}`} 
-                          fill={COLORS[l1Index % COLORS.length]} 
-                          opacity={0.4}
-                          className="hover:opacity-100 transition-opacity cursor-pointer"
-                        />
-                      })}
-                    </Pie>
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: 'rgba(0,0,0,0.9)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(20px)' }}
-                      formatter={(value: any) => `R$ ${Number(value).toLocaleString()}`}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-             </div>
-             {/* Custom Scrollable Legend ordered by DESC value */}
-             <div className="w-full lg:w-64 overflow-y-auto max-h-[400px] pr-4 space-y-2 custom-scrollbar">
-                <h4 className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold mb-4">Top Categories</h4>
-                {stats.expensesL1.map((entry, index) => (
-                  <div 
-                    key={entry.fullName} 
-                    className={cn(
-                        "flex items-center justify-between group cursor-pointer p-2 rounded-xl transition-all",
-                        categoryFilter === entry.fullName ? "bg-white/10" : "hover:bg-white/5"
-                    )}
-                    onClick={() => setCategoryFilter(categoryFilter === entry.fullName ? null : entry.fullName)}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
-                      <span className="text-xs font-medium truncate w-24 text-white/80">{entry.name}</span>
-                    </div>
-                    <span className="text-[10px] font-mono text-muted-foreground group-hover:text-white transition-colors">
-                      R$ {entry.value.toLocaleString()}
-                    </span>
-                  </div>
-                ))}
-             </div>
-          </div>
+        <ChartCard title="Expense Breakdown" className="lg:col-span-2 min-h-[500px]">
+          <ExpenseBreakdownChart
+            expensesL1={stats.expensesL1}
+            expensesL2={stats.expensesL2}
+            expensesL3={stats.expensesL3}
+            categoryFilter={categoryFilter}
+            setCategoryFilter={setCategoryFilter}
+          />
         </ChartCard>
 
         {/* Income Pie */}
@@ -548,6 +460,128 @@ export function Dashboard({ filters, onFilterChange }: DashboardProps) {
             </button>
         </div>
       )}
+    </div>
+  );
+}
+
+interface PieEntry { name: string; fullName: string; value: number; }
+
+function ExpenseBreakdownChart({
+  expensesL1, expensesL2, expensesL3, categoryFilter, setCategoryFilter
+}: {
+  expensesL1: PieEntry[];
+  expensesL2: PieEntry[];
+  expensesL3: PieEntry[];
+  categoryFilter: string | null;
+  setCategoryFilter: (v: string | null) => void;
+}) {
+  const hasL2 = expensesL2.length > 0;
+  const hasL3 = expensesL3.length > 0;
+  const levels = hasL3 ? 3 : hasL2 ? 2 : 1;
+
+  // Adaptive radii based on how many levels exist
+  const radii = {
+    1: [{ inner: 0, outer: 100 }],
+    2: [{ inner: 0, outer: 60 }, { inner: 70, outer: 110 }],
+    3: [{ inner: 0, outer: 60 }, { inner: 70, outer: 110 }, { inner: 120, outer: 150 }],
+  }[levels]!;
+
+  const getL1Index = (fullName: string) =>
+    expensesL1.findIndex(x => x.fullName === fullName.split(':')[0]);
+
+  return (
+    <div className="flex flex-col lg:flex-row h-full gap-8">
+      <div className="flex-1 min-h-[400px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={expensesL1}
+              cx="50%" cy="50%"
+              innerRadius={radii[0].inner} outerRadius={radii[0].outer}
+              dataKey="value"
+              stroke="rgba(0,0,0,0.5)" strokeWidth={2}
+            >
+              {expensesL1.map((entry, index) => (
+                <Cell
+                  key={`l1-${index}`}
+                  fill={COLORS[index % COLORS.length]}
+                  className="hover:opacity-80 transition-opacity cursor-pointer"
+                  onClick={() => setCategoryFilter(categoryFilter === entry.fullName ? null : entry.fullName)}
+                />
+              ))}
+            </Pie>
+            {levels >= 2 && (
+              <Pie
+                data={expensesL2}
+                cx="50%" cy="50%"
+                innerRadius={radii[1].inner} outerRadius={radii[1].outer}
+                dataKey="value"
+                stroke="rgba(0,0,0,0.5)" strokeWidth={2}
+              >
+                {expensesL2.map((entry, index) => {
+                  const l1Idx = getL1Index(entry.fullName);
+                  return (
+                    <Cell
+                      key={`l2-${index}`}
+                      fill={COLORS[l1Idx >= 0 ? l1Idx % COLORS.length : index % COLORS.length]}
+                      opacity={0.7}
+                      className="hover:opacity-100 transition-opacity cursor-pointer"
+                      onClick={() => setCategoryFilter(categoryFilter === entry.fullName ? null : entry.fullName)}
+                    />
+                  );
+                })}
+              </Pie>
+            )}
+            {levels >= 3 && (
+              <Pie
+                data={expensesL3}
+                cx="50%" cy="50%"
+                innerRadius={radii[2].inner} outerRadius={radii[2].outer}
+                dataKey="value"
+                stroke="rgba(0,0,0,0.5)" strokeWidth={2}
+              >
+                {expensesL3.map((entry, index) => {
+                  const l1Idx = getL1Index(entry.fullName);
+                  return (
+                    <Cell
+                      key={`l3-${index}`}
+                      fill={COLORS[l1Idx >= 0 ? l1Idx % COLORS.length : index % COLORS.length]}
+                      opacity={0.4}
+                      className="hover:opacity-100 transition-opacity cursor-pointer"
+                      onClick={() => setCategoryFilter(categoryFilter === entry.fullName ? null : entry.fullName)}
+                    />
+                  );
+                })}
+              </Pie>
+            )}
+            <Tooltip
+              contentStyle={{ backgroundColor: 'rgba(0,0,0,0.9)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(20px)' }}
+              formatter={(value: any) => `R$ ${Number(value).toLocaleString()}`}
+            />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="w-full lg:w-64 overflow-y-auto max-h-[400px] pr-4 space-y-2 custom-scrollbar">
+        <h4 className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold mb-4">Top Categories</h4>
+        {expensesL1.map((entry, index) => (
+          <div
+            key={entry.fullName}
+            className={cn(
+              "flex items-center justify-between group cursor-pointer p-2 rounded-xl transition-all",
+              categoryFilter === entry.fullName ? "bg-white/10" : "hover:bg-white/5"
+            )}
+            onClick={() => setCategoryFilter(categoryFilter === entry.fullName ? null : entry.fullName)}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
+              <span className="text-xs font-medium truncate w-24 text-white/80">{entry.name}</span>
+            </div>
+            <span className="text-[10px] font-mono text-muted-foreground group-hover:text-white transition-colors">
+              R$ {entry.value.toLocaleString()}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

@@ -1,5 +1,22 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-04-16 - Fix Expense Breakdown Chart for Shallow Account Hierarchies
+
+### Problem
+The "Expense Breakdown" pie chart was empty or partially empty when expense accounts had fewer than the expected depth levels. The code assumed account names had an `expenses:` root prefix (e.g., `expenses:food:grocery`), requiring `parts.length >= 2` before adding to L1. But `account_names_hierarchical` returns names without the type prefix (e.g., just `alimentacao` or `alimentacao:basica`), so single-segment names never appeared in any ring, and two-segment names appeared only in L1.
+
+This caused `finances-territorial` (all depth-1 expense accounts) to show a completely empty chart, and `finances` (depth 1–2) to show only the L1 ring.
+
+### Fix
+- **Level logic**: Corrected to treat depth-1 as L1, depth-2 as L2, depth-3 as L3. Single-segment names now always appear in L1.
+- **Income**: Same fix applied — was using `parts.slice(0,2).join(':')` (requiring depth 2), now uses `parts[0]`.
+- **Adaptive rings**: Extracted `ExpenseBreakdownChart` component that detects how many levels have data and renders 1, 2, or 3 rings accordingly, with adjusted radii so single-level data fills the chart nicely.
+- **Legend**: Moved into the new component; still shows L1 top categories.
+
+### Files Modified
+- `app/src/components/Dashboard.tsx`
+- `IMPLEMENTATION_LOG.md`
+
 ## 2026-04-15 - Account Mismatch Warning in QuickEntryInput
 
 ### Tasks
