@@ -1,0 +1,12 @@
+.git
+.github
+**/__pycache__
+*.pyc
+.env
+.metaprompt
+.cursor
+.planning
+node_modules
+app/node_modules
+app/dist
+*.md

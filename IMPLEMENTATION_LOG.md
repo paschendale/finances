@@ -1,5 +1,14 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-04-17 - Docker Compose (Postgres, PostgREST, nginx SPA)
+
+- Root `Dockerfile` (Node build → Python + nginx): runs `migrate.py` and `set_jwt_secret.py` on container start, then serves Vite `dist`.
+- `compose.yaml`: `db`, `app` (build), `postgrest`; PostgREST waits on app health so migrations finish before the API starts; CORS via `APP_ORIGIN`.
+- Supporting: `docker/entrypoint.sh`, `docker/nginx.conf`, `.dockerignore`.
+- Optional `FINANCES_BOOTSTRAP_TOKEN`: `ensure_bootstrap_token.py` in entrypoint registers that plaintext token idempotently after migrations.
+- `compose.yaml` banner documents all compose-time env vars with local defaults; `compose.env.example` is an optional `.env` template for overrides.
+- Docker UI build uses `COMPOSE_VITE_APP_API_URL` (not `VITE_APP_API_URL`) so repo `.env` for `npm run dev` does not override the baked API URL.
+
 ## 2026-04-17 - Balance check-in UI: asset/liability filter, icons, multi-column grid
 
 - Stale list now includes any **non-hidden `asset` or `liability`** account (removed subtype-only filter).

@@ -8,6 +8,26 @@ Personal Ledger System (Postgres-first architecture)
 - **API:** PostgREST
 - **Database:** PostgreSQL
 
+## Docker
+
+Everything is configured in **`compose.yaml`** with safe local defaults (no `.env` required). Optional overrides: copy **`compose.env.example`** to **`.env`** in the repo root.
+
+```bash
+docker compose up --build
+```
+
+- **UI:** `http://localhost:8080` (default login token: `local-dev-login`)
+- **API:** `http://localhost:3000`
+
+See the banner at the top of `compose.yaml` for the full variable list. The Docker UI build uses **`COMPOSE_VITE_APP_API_URL`** (default `http://localhost:3000`), not `VITE_APP_API_URL` from `.env`, so a dev API URL does not leak into the container image. If you change that URL or ports, rebuild the app (`docker compose build --no-cache app`).
+
+Extra login tokens:
+
+```bash
+docker compose run --rm --entrypoint python3 app \
+  /opt/finances/scripts/generate_token.py "Description"
+```
+
 ## Setup
 
 1.  Clone the repository.

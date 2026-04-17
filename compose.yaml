@@ -1,0 +1,92 @@
+# =============================================================================
+#  Finances — local Docker stack
+#  PostgreSQL · PostgREST · static UI (nginx + migrations on startup)
+# =============================================================================
+#
+#  Quick start
+#  -----------
+#    docker compose up --build
+#
+#    UI  → http://localhost:8080
+#    API → http://localhost:3000
+#    Login with the plaintext token (default): local-dev-login
+#
+#  Optional: copy compose.env.example → .env to override ports or secrets.
+#  Changing COMPOSE_VITE_APP_API_URL or APP_ORIGIN requires rebuilding the app.
+#
+#  Note: your repo `.env` may define VITE_APP_API_URL for `npm run dev`. Docker
+#  ignores that for the image build and uses COMPOSE_VITE_APP_API_URL instead
+#  (default http://localhost:3000) so local PostgREST is always targeted.
+#
+# -----------------------------------------------------------------------------
+#  Environment variables (all optional; defaults are for local use only)
+# -----------------------------------------------------------------------------
+#
+#  POSTGRES_PASSWORD              Postgres superuser password
+#  JWT_SECRET                     Same value for DB (set_jwt_secret) + PostgREST
+#  FINANCES_BOOTSTRAP_TOKEN       Plaintext token registered on each app start
+#  APP_HTTP_PORT                  Published port for the UI
+#  POSTGREST_PORT                 Published port for the API
+#  COMPOSE_VITE_APP_API_URL       Baked into the Docker UI build (browser → API)
+#  APP_ORIGIN                     PostgREST CORS allowlist (comma-separated)
+#
+# =============================================================================
+
+name: finances
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: finances
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d finances"]
+      interval: 3s
+      timeout: 5s
+      retries: 15
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_APP_API_URL: ${COMPOSE_VITE_APP_API_URL:-http://localhost:3000}
+    ports:
+      - "${APP_HTTP_PORT:-8080}:80"
+    environment:
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/finances
+      JWT_SECRET: ${JWT_SECRET:-local-docker-jwt-not-for-production}
+      FINANCES_BOOTSTRAP_TOKEN: ${FINANCES_BOOTSTRAP_TOKEN:-local-dev-login}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+      start_period: 180s
+
+  postgrest:
+    image: postgrest/postgrest:v12.2.12
+    ports:
+      - "${POSTGREST_PORT:-3000}:3000"
+    environment:
+      PGRST_DB_URI: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/finances
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET:-local-docker-jwt-not-for-production}
+      PGRST_SERVER_PORT: "3000"
+      PGRST_SERVER_CORS_ALLOWED_ORIGINS: ${APP_ORIGIN:-http://localhost:8080,http://127.0.0.1:8080}
+    depends_on:
+      db:
+        condition: service_healthy
+      app:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
