@@ -297,12 +297,15 @@ function AccountModal({
             </div>
           </div>
 
-          {/* Subtype — only for asset accounts */}
-          {type === 'asset' && (
+          {/* Subtype — for asset and liability accounts */}
+          {(type === 'asset' || type === 'liability') && (
             <div className="space-y-2">
               <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/60">Subtype</p>
               <div className="flex rounded-xl border border-white/[0.08] bg-white/[0.02] p-0.5 w-fit">
-                {([null, 'checking', 'emergency', 'investments'] as const).map((s) => (
+                {(type === 'asset'
+                  ? [null, 'checking', 'emergency', 'investments'] as const
+                  : [null, 'liabilities'] as const
+                ).map((s) => (
                   <button
                     key={s ?? 'none'}
                     onClick={() => setSubtype(s)}
