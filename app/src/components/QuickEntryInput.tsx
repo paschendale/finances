@@ -293,18 +293,21 @@ export function QuickEntryInput({ filters }: { filters?: LedgerFilters }) {
           const finalAccount = accMatch?.full_name || bestMatch?.account_name || selectedAccount;
           const finalCategory = bestMatch?.category_name || categoryFallback;
 
+          const detectedCategoryType = bestMatch?.category_type || (finalCategory.startsWith('income:') ? 'income' : 'expense');
+          const isIncomeTx = detectedCategoryType === 'income';
+
           if (!cancelled) {
             setPreview({
               date: parsed.date!,
               description: parsed.description,
               entries: [
-                { account: finalCategory, amount: perInstallmentAmount },
-                { account: finalAccount, amount: -perInstallmentAmount },
+                { account: finalCategory, amount: isIncomeTx ? -perInstallmentAmount : perInstallmentAmount },
+                { account: finalAccount, amount: isIncomeTx ? perInstallmentAmount : -perInstallmentAmount },
               ],
             });
             setMatchInfo({
               similarity: bestMatch ? bestMatch.similarity : 0,
-              categoryType: bestMatch?.category_type || (finalCategory.startsWith('income:') ? 'income' : 'expense')
+              categoryType: detectedCategoryType,
             });
           }
         }
@@ -638,12 +641,22 @@ export function QuickEntryInput({ filters }: { filters?: LedgerFilters }) {
                           </span>
                         )}
                         {!isTransfer && i === 0 && (
-                          <button 
-                            onClick={(e) => { e.preventDefault(); toggleAllSigns(); }}
-                            className="ml-auto text-[8px] font-black uppercase tracking-widest text-primary hover:underline"
-                          >
-                            Toggle Sign
-                          </button>
+                          <div className="ml-auto flex items-center gap-0.5 bg-background/40 rounded-[4px] p-0.5 border border-border/20">
+                            <button
+                              onClick={(e) => { e.preventDefault(); if (!isExpense) toggleAllSigns(); }}
+                              className={cn(
+                                "px-2 py-0.5 rounded-[3px] text-[8px] font-black uppercase tracking-widest transition-all",
+                                isExpense ? "bg-destructive/20 text-destructive" : "text-muted-foreground/40 hover:text-muted-foreground"
+                              )}
+                            >Expense</button>
+                            <button
+                              onClick={(e) => { e.preventDefault(); if (!isIncome) toggleAllSigns(); }}
+                              className={cn(
+                                "px-2 py-0.5 rounded-[3px] text-[8px] font-black uppercase tracking-widest transition-all",
+                                isIncome ? "bg-green-500/20 text-green-500" : "text-muted-foreground/40 hover:text-muted-foreground"
+                              )}
+                            >Income</button>
+                          </div>
                         )}
                         {!isTransfer && i > 1 && (
                           <button 

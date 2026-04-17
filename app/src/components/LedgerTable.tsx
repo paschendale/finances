@@ -236,19 +236,16 @@ function TransactionRow({
     setEditState({ ...editState, entries: newEntries });
   };
 
-  const toggleSign = (index: number) => {
+  const toggleAllSigns = () => {
     if (!editState) return;
-    const newEntries = [...editState.entries];
-    newEntries[index].amount = -newEntries[index].amount;
-    newEntries[index].amount_base = -newEntries[index].amount_base;
-    
-    if (newEntries.length === 2) {
-      const otherIdx = index === 0 ? 1 : 0;
-      newEntries[otherIdx].amount_base = -newEntries[index].amount_base;
-      newEntries[otherIdx].amount = newEntries[otherIdx].amount_base / (newEntries[otherIdx].exchange_rate || 1.0);
-    }
-    
-    setEditState({ ...editState, entries: newEntries });
+    setEditState({
+      ...editState,
+      entries: editState.entries.map(e => ({
+        ...e,
+        amount: -e.amount,
+        amount_base: -e.amount_base,
+      })),
+    });
   };
 
   const addEntry = () => {
@@ -437,18 +434,36 @@ function TransactionRow({
           {isEditing && editState ? (
             <div className="space-y-4">
               <div className="flex justify-between items-center gap-4">
-                <input 
+                <input
                   value={editState.description}
                   onChange={(e) => setEditState({...editState, description: e.target.value})}
                   className="bg-background/50 border border-border/40 rounded px-2 py-1 text-[14px] font-bold w-full focus:ring-1 focus:ring-primary/30 outline-none"
                   placeholder="Description"
                 />
-                <input 
+                <input
                   type="date"
                   value={editState.date}
                   onChange={(e) => setEditState({...editState, date: e.target.value})}
                   className="bg-background/50 border border-border/40 rounded px-2 py-1 text-[12px] font-mono focus:ring-1 focus:ring-primary/30 outline-none"
                 />
+                {editType !== 'transfer' && (
+                  <div className="flex items-center gap-0.5 bg-background/40 rounded-md p-0.5 border border-border/20 shrink-0">
+                    <button
+                      onClick={() => { if (editType !== 'expense') toggleAllSigns(); }}
+                      className={cn(
+                        "px-2 py-1 rounded text-[9px] font-bold uppercase tracking-wider transition-all",
+                        editType === 'expense' ? "bg-destructive/20 text-destructive" : "text-muted-foreground/40 hover:text-muted-foreground"
+                      )}
+                    >Expense</button>
+                    <button
+                      onClick={() => { if (editType !== 'income') toggleAllSigns(); }}
+                      className={cn(
+                        "px-2 py-1 rounded text-[9px] font-bold uppercase tracking-wider transition-all",
+                        editType === 'income' ? "bg-green-500/20 text-green-500" : "text-muted-foreground/40 hover:text-muted-foreground"
+                      )}
+                    >Income</button>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -502,16 +517,6 @@ function TransactionRow({
                               {fetchingRateIdx === idx && <Loader2 className="w-2.5 h-2.5 animate-spin text-muted-foreground/40 shrink-0" />}
                             </div>
                             <div className="flex items-center">
-                              <button
-                                onClick={() => toggleSign(idx)}
-                                className={cn(
-                                  "w-6 h-6 flex items-center justify-center rounded text-[10px] font-bold mr-1 transition-colors",
-                                  entry.amount < 0 ? "bg-destructive/10 text-destructive" : "bg-green-500/10 text-green-500",
-                                  editType === 'transfer' && "bg-muted text-foreground/50"
-                                )}
-                              >
-                                {entry.amount < 0 ? '-' : '+'}
-                              </button>
                               <input
                                 type="number"
                                 step="0.01"

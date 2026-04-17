@@ -1,5 +1,23 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-04-17 - Auto-detect Income from Matched Category + Expense/Income Toggle UI
+
+### Problem
+1. **Bug**: When `QuickEntryInput` matched a description memory whose category was type `income` (e.g. `recebimentos`), the preview always defaulted to expense direction. The `category_type` field from `matchDescriptionMemory` was fetched but never used to flip entry signs.
+2. **UI inconsistency**: Switching between expense and income was exposed as raw sign math in two different ways — "TOGGLE SIGN" text button in QuickEntryInput and a per-entry `+/-` sign button in LedgerTable edit mode.
+
+### Fix
+- **QuickEntryInput `updatePreview`**: After resolving `finalCategory` and `bestMatch`, derive `detectedCategoryType` from `bestMatch.category_type` (or by checking if category name starts with `income:`). If income, build entries with negated signs from the start (category negative, asset positive).
+- **QuickEntryInput UI**: Replaced "TOGGLE SIGN" text button with a compact "Expense / Income" segmented pill. Active option highlighted in its respective color (red/green). Clicking the inactive option calls `toggleAllSigns()` unchanged.
+- **LedgerTable `TransactionRow`**: Replaced the `toggleSign(index)` per-entry function with `toggleAllSigns()` which inverts all entries at once. Removed the `+/-` sign buttons from entry rows. Added a single "Expense / Income" segmented pill to the edit header (hidden for transfers), derived from `editType`.
+
+### Files Modified
+- `app/src/components/QuickEntryInput.tsx`
+- `app/src/components/LedgerTable.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
 ## 2026-04-16 - Fix Territorial Account Classifications
 
 ### Problem
