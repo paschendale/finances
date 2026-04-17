@@ -24,6 +24,33 @@ export interface ParserContext {
   defaultCurrency?: string;
 }
 
+function parseLocalizedAmountToken(token: string): number | null {
+  const trimmed = token.trim();
+  if (!trimmed || !/^-?[\d.,]+$/.test(trimmed)) return null;
+
+  const sign = trimmed.startsWith('-') ? -1 : 1;
+  const unsigned = trimmed.replace(/^-/, '');
+  if (!/\d/.test(unsigned)) return null;
+
+  const lastDot = unsigned.lastIndexOf('.');
+  const lastComma = unsigned.lastIndexOf(',');
+  const decimalIndex = Math.max(lastDot, lastComma);
+
+  let normalized = '';
+  if (decimalIndex === -1) {
+    normalized = unsigned.replace(/[.,]/g, '');
+  } else {
+    const integerPart = unsigned.slice(0, decimalIndex).replace(/[.,]/g, '');
+    const fractionalPart = unsigned.slice(decimalIndex + 1).replace(/[.,]/g, '');
+    if (!fractionalPart) return null;
+    normalized = `${integerPart || '0'}.${fractionalPart}`;
+  }
+
+  if (!normalized || !/^\d+(\.\d+)?$/.test(normalized)) return null;
+  const parsed = parseFloat(normalized);
+  return Number.isFinite(parsed) ? sign * parsed : null;
+}
+
 export function parseQuickEntry(input: string, context: ParserContext = {}): ParsedInput {
   const defaultCurrency = context.defaultCurrency || 'BRL';
   const defaultDate = context.selectedDate || new Date().toISOString().split('T')[0];
@@ -63,12 +90,11 @@ export function parseQuickEntry(input: string, context: ParserContext = {}): Par
   if (trimmed.includes('>')) {
     // Regex for transfer: from > to amount [CURRENCY]
     // Allowing no spaces around >
-    const transferMatch = trimmed.match(/^(.+?)\s*>\s*(.+?)\s+([\d.,]+)(?:\s+([A-Za-z]{3}))?$/);
+    const transferMatch = trimmed.match(/^(.+?)\s*>\s*(.+?)\s+(-?[\d.,]+)(?:\s+([A-Za-z]{3}))?$/);
     if (transferMatch) {
       const from = transferMatch[1].trim();
       const to = transferMatch[2].trim();
-      const amountStr = transferMatch[3].replace(',', '.');
-      const amount = parseFloat(amountStr);
+      const amount = parseLocalizedAmountToken(transferMatch[3]);
       const currency = transferMatch[4] ? transferMatch[4].toUpperCase() : defaultCurrency;
 
       return {
@@ -94,17 +120,20 @@ export function parseQuickEntry(input: string, context: ParserContext = {}): Par
 
   for (let i = tokens.length - 1; i >= 0; i--) {
     // Check for NxM shorthand (e.g. 120x12)
-    const xMatch = tokens[i].match(/^(\d+(?:[.,]\d+)?)x(\d+)$/i);
+    const xMatch = tokens[i].match(/^(-?[\d.,]+)x(\d+)$/i);
     if (xMatch) {
-      amountIndex = i;
-      amount = parseFloat(xMatch[1].replace(',', '.'));
-      installments = { current: 1, total: parseInt(xMatch[2], 10) };
-      break;
+      const parsedAmount = parseLocalizedAmountToken(xMatch[1]);
+      if (parsedAmount !== null) {
+        amountIndex = i;
+        amount = parsedAmount;
+        installments = { current: 1, total: parseInt(xMatch[2], 10) };
+        break;
+      }
     }
-    const val = tokens[i].replace(',', '.');
-    if (!isNaN(parseFloat(val)) && isFinite(Number(val)) && /^-?\d+([.,]\d+)?$/.test(tokens[i])) {
+    const parsedAmount = parseLocalizedAmountToken(tokens[i]);
+    if (parsedAmount !== null) {
       amountIndex = i;
-      amount = parseFloat(val);
+      amount = parsedAmount;
       break;
     }
   }

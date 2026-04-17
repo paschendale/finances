@@ -1,5 +1,33 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-04-17 - Localized Amount Parsing: Thousand Separators + Last Decimal Separator
+
+### Problem
+Quick entry parsing treated `.` and `,` as interchangeable decimal separators with a simple replacement strategy. Inputs like `1.250,86` were interpreted incorrectly, causing cents after the comma to be ignored in some paths.
+
+### Fix
+- Added `parseLocalizedAmountToken()` in `app/src/lib/ledger-parser/parser.ts`.
+- New parsing rule: for numeric tokens containing separators, the **last** `.` or `,` is treated as the decimal separator, and all earlier separators are treated as grouping (thousand) separators.
+- Wired this helper into all amount extraction paths:
+  - transfer parsing (`from > to amount [CURRENCY]`)
+  - regular amount token detection
+  - installment shorthand (`amountxN`)
+
+### Tests
+- Added parser tests covering:
+  - `padaria 1.250,86` -> `1250.86`
+  - `padaria 1,250.86` -> `1250.86`
+  - `wise > nubank 1.250,86` -> transfer amount `1250.86`
+  - `compra 1.250,86x12` -> `1250.86` with installments
+- Full parser suite now passes (`44` tests).
+
+### Files Modified
+- `app/src/lib/ledger-parser/parser.ts`
+- `app/src/lib/ledger-parser/parser.test.ts`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
 ## 2026-04-17 - Auto-detect Income from Matched Category + Expense/Income Toggle UI
 
 ### Problem

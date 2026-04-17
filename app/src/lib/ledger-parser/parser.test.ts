@@ -105,6 +105,15 @@ describe('parseQuickEntry Specs', () => {
         currency: 'EUR'
       });
     });
+
+    it('32b. wise > nubank 1.250,86', () => {
+      runTest('wise > nubank 1.250,86', {
+        type: 'transfer',
+        from: 'wise',
+        to: 'nubank',
+        amount: 1250.86,
+      });
+    });
   });
 
   describe('Basic Expenses', () => {
@@ -294,6 +303,18 @@ describe('parseQuickEntry Specs', () => {
         amount: 32
       });
     });
+
+    it('28b. padaria 1.250,86', () => {
+      runTest('padaria 1.250,86', {
+        amount: 1250.86,
+      });
+    });
+
+    it('28c. padaria 1,250.86', () => {
+      runTest('padaria 1,250.86', {
+        amount: 1250.86,
+      });
+    });
   });
 
   describe('Installments', () => {
@@ -338,6 +359,15 @@ describe('parseQuickEntry Specs', () => {
     it('40. padaria 18 has no installments', () => {
       runTest('padaria 18', {
         installments: undefined,
+      });
+    });
+
+    it('40b. compra 1.250,86x12', () => {
+      runTest('compra 1.250,86x12', {
+        type: 'expense',
+        description: 'compra',
+        amount: 1250.86,
+        installments: { current: 1, total: 12 },
       });
     });
   });
