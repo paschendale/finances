@@ -499,6 +499,7 @@ export function QuickEntryInput({ filters }: { filters?: LedgerFilters }) {
   const computedTotal = (installmentAmountMode === 'per' && parsedInstallments && preview)
     ? preview.entries[0].amount * (parsedInstallments.total - parsedInstallments.current + 1)
     : null;
+  const isSubmitEnabled = !!preview && !mutation.isPending && preview.entries[0].amount !== 0;
 
   return (
     <div className="w-full space-y-2 relative z-[100]">
@@ -847,11 +848,11 @@ export function QuickEntryInput({ filters }: { filters?: LedgerFilters }) {
 
               <button
                 onClick={confirmTransaction}
-                disabled={mutation.isPending || (preview.entries[0].amount === 0)}
+                disabled={!isSubmitEnabled}
                 className={cn(
                   "px-4 py-1.5 rounded-lg text-[12px] font-bold transition-all flex items-center gap-1.5",
-                  (isEdited || !input) && !mutation.isPending
-                    ? "bg-primary text-primary-foreground shadow-md hover:brightness-105 active:scale-95"
+                  isSubmitEnabled
+                    ? "bg-emerald-500/85 text-white shadow-md hover:bg-emerald-500 active:scale-95"
                     : "bg-muted/50 text-muted-foreground/50"
                 )}
               >

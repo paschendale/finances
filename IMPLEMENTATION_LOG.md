@@ -1,5 +1,12 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-04-29 - Quick Entry Done/Confirm button validity state
+
+- Updated `QuickEntryInput` submit button visual logic to match its actual enabled/disabled behavior.
+- Added `isSubmitEnabled` boolean and reused it for both `disabled` and class styling, so the button only appears active when clickable.
+- Active `Confirm`/`Done` state now uses a green (`emerald`) style to clearly indicate valid input and readiness to submit.
+- Files: `app/src/components/QuickEntryInput.tsx`, `IMPLEMENTATION_LOG.md`
+
 ## 2026-04-17 - Docker Compose (Postgres, PostgREST, nginx SPA)
 
 - Root `Dockerfile` (Node build → Python + nginx): runs `migrate.py` and `set_jwt_secret.py` on container start, then serves Vite `dist`.
