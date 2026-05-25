@@ -27,6 +27,14 @@ function AppContent() {
     return (params.get('view') as 'ledger' | 'dashboard' | 'accounts' | 'budget') || 'dashboard';
   });
 
+  const [fromBudget, setFromBudget] = useState(false);
+
+  const navigateToLedger = useCallback((accountId: string, startDate: string, endDate: string) => {
+    setFilters(f => ({ ...f, accountIds: [accountId], startDate, endDate }));
+    setFromBudget(true);
+    setView('ledger');
+  }, []);
+
   const [filters, setFilters] = useState<LedgerFilters>(() => {
     const params = new URLSearchParams(window.location.search);
     const startDate = params.get('start') || format(startOfYear(new Date()), 'yyyy-MM-dd');
@@ -69,7 +77,7 @@ function AppContent() {
         <div className="flex items-center gap-4">
           <nav className="flex rounded-lg border border-white/[0.08] bg-white/[0.02] p-0.5 backdrop-blur-md">
             <button
-              onClick={() => setView("dashboard")}
+              onClick={() => { setView("dashboard"); setFromBudget(false); }}
               className={cn(
                 "flex items-center gap-2 px-4 py-2 rounded-md text-[13px] font-medium tracking-[-0.01em] transition-colors",
                 view === "dashboard"
@@ -81,7 +89,7 @@ function AppContent() {
               Dashboard
             </button>
             <button
-              onClick={() => setView("ledger")}
+              onClick={() => { setView("ledger"); setFromBudget(false); }}
               className={cn(
                 "flex items-center gap-2 px-4 py-2 rounded-md text-[13px] font-medium tracking-[-0.01em] transition-colors",
                 view === "ledger"
@@ -93,7 +101,7 @@ function AppContent() {
               Ledger
             </button>
             <button
-              onClick={() => setView("accounts")}
+              onClick={() => { setView("accounts"); setFromBudget(false); }}
               className={cn(
                 "flex items-center gap-2 px-4 py-2 rounded-md text-[13px] font-medium tracking-[-0.01em] transition-colors",
                 view === "accounts"
@@ -105,7 +113,7 @@ function AppContent() {
               Accounts
             </button>
             <button
-              onClick={() => setView("budget")}
+              onClick={() => { setView("budget"); setFromBudget(false); }}
               className={cn(
                 "flex items-center gap-2 px-4 py-2 rounded-md text-[13px] font-medium tracking-[-0.01em] transition-colors",
                 view === "budget"
@@ -134,13 +142,16 @@ function AppContent() {
             <QuickEntryInput filters={filters} />
             <div className="w-full space-y-4">
               <LedgerFilterBar filters={filters} onChange={setFilters} />
-              <LedgerTable filters={filters} />
+              <LedgerTable
+                filters={filters}
+                onBackToBudget={fromBudget ? () => { setView('budget'); setFromBudget(false); } : undefined}
+              />
             </div>
           </div>
         ) : view === "accounts" ? (
           <AccountsPage />
         ) : view === "budget" ? (
-          <BudgetPage />
+          <BudgetPage onNavigateToLedger={navigateToLedger} />
         ) : (
           <Dashboard filters={filters} onFilterChange={setFilters} />
         )}

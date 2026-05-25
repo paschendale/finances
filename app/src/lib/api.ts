@@ -541,3 +541,67 @@ export async function fetchExchangeRate(
   if (!rate) throw new Error(`Exchange rate not found for ${fromCurrency}/${baseCurrency} on ${date}`);
   return rate;
 }
+
+export interface BudgetPlan {
+  id: string;
+  name: string;
+  period_start: string;
+  period_end: string;
+  is_current: boolean;
+  created_at: string;
+}
+
+export interface BudgetItemWithAccount {
+  id: string;
+  plan_id: string;
+  account_id: string;
+  account_full_name: string;
+  account_name: string;
+  icon: string | null;
+  color: string | null;
+  parent_id: string | null;
+  period_amount: number;
+  min_pct: number;
+  max_pct: number;
+}
+
+export interface BudgetMonthlySpending {
+  plan_id: string;
+  account_id: string;
+  month: string;
+  spent: number;
+}
+
+export async function fetchCurrentBudgetPlan(): Promise<BudgetPlan | null> {
+  const response = await fetch(`${API_URL}/budget_plans?is_current=eq.true`, {
+    headers: getHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to fetch current budget plan');
+  }
+  const data: BudgetPlan[] = await response.json();
+  return data[0] ?? null;
+}
+
+export async function fetchBudgetItems(planId: string): Promise<BudgetItemWithAccount[]> {
+  const response = await fetch(`${API_URL}/budget_items_with_accounts?plan_id=eq.${planId}`, {
+    headers: getHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to fetch budget items');
+  }
+  return response.json();
+}
+
+export async function fetchBudgetMonthlySpending(planId: string): Promise<BudgetMonthlySpending[]> {
+  const response = await fetch(`${API_URL}/budget_monthly_spending?plan_id=eq.${planId}`, {
+    headers: getHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to fetch budget monthly spending');
+  }
+  return response.json();
+}

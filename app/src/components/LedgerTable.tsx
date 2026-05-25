@@ -718,7 +718,7 @@ function TransactionRow({
   );
 }
 
-export function LedgerTable({ filters }: { filters: LedgerFilters }) {
+export function LedgerTable({ filters, onBackToBudget }: { filters: LedgerFilters; onBackToBudget?: () => void }) {
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showExport, setShowExport] = useState(false);
@@ -931,7 +931,17 @@ export function LedgerTable({ filters }: { filters: LedgerFilters }) {
           onClose={() => setShowExport(false)}
         />
       )}
-      <div className="flex justify-end mb-2">
+      <div className="flex justify-between items-center mb-2">
+        {onBackToBudget ? (
+          <button
+            onClick={onBackToBudget}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold uppercase tracking-wider text-white/40 hover:text-white/70 hover:bg-white/[0.05] border border-white/[0.06] transition-all"
+          >
+            ← Back to Budget
+          </button>
+        ) : (
+          <div />
+        )}
         <button
           onClick={() => setShowExport(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold uppercase tracking-wider text-white/40 hover:text-white/70 hover:bg-white/[0.05] border border-white/[0.06] transition-all"

@@ -2,11 +2,16 @@ import { useState } from 'react';
 import { addMonths, subMonths, startOfMonth, format } from 'date-fns';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { BudgetExecutionView } from './BudgetExecutionView';
 
 type SubMode = 'execution' | 'planning';
 type PeriodView = 'monthly' | 'period';
 
-export function BudgetPage() {
+interface BudgetPageProps {
+  onNavigateToLedger: (accountId: string, startDate: string, endDate: string) => void;
+}
+
+export function BudgetPage({ onNavigateToLedger }: BudgetPageProps) {
   const [subMode, setSubMode] = useState<SubMode>('execution');
   const [currentMonth, setCurrentMonth] = useState<Date>(() => startOfMonth(new Date()));
   const [periodView, setPeriodView] = useState<PeriodView>('monthly');
@@ -81,9 +86,11 @@ export function BudgetPage() {
 
       {/* Content area */}
       {subMode === 'execution' ? (
-        <div className="flex items-center justify-center py-24 text-muted-foreground text-sm">
-          Execution view — coming in Phase 3
-        </div>
+        <BudgetExecutionView
+          currentMonth={currentMonth}
+          periodView={periodView}
+          onNavigateToLedger={onNavigateToLedger}
+        />
       ) : (
         <div className="flex items-center justify-center py-24 text-muted-foreground text-sm">
           Planning view — coming in Phase 4

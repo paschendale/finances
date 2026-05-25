@@ -1,5 +1,35 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-05-25 — Budget Module: Phase 3 — Execution View
+
+### Tasks
+- [x] `BudgetBar.tsx` — bar with 3 states (under target / over target within max / over max), threshold markers (min, target, max), helper values row (Min / Target / Max / Remaining)
+- [x] `BudgetCategoryRow.tsx` — category name + AccountIcon + BudgetBar + spent amount; click navigates to Ledger
+- [x] `BudgetExecutionView.tsx` — fetches current plan, budget items, and monthly spending; renders hierarchical rows with rolling-adjustment targets; empty state when no plan
+- [x] "← Back to Budget" button in LedgerTable toolbar (shown only when navigated from Budget)
+- [x] `api.ts` — added `BudgetPlan`, `BudgetItemWithAccount`, `BudgetMonthlySpending` interfaces and `fetchCurrentBudgetPlan`, `fetchBudgetItems`, `fetchBudgetMonthlySpending` functions
+- [x] `BudgetPage.tsx` — accepts `onNavigateToLedger` prop; wires `BudgetExecutionView` in execution mode
+- [x] `App.tsx` — `fromBudget` state + `navigateToLedger` callback thread through to `BudgetPage` and `LedgerTable`
+
+### Decisions
+- `BudgetBar` receives pre-computed `target` (adjustedMonthly or period_amount) so it stays generic and reusable for both Monthly and Period views.
+- Rolling adjustment (`computeAdjustedMonthly`) lives inline in `BudgetExecutionView`; no separate module needed yet.
+- Hierarchy rendering uses `buildHierarchy` recursive helper operating on the flat `budget_items_with_accounts` list — no tree pre-build needed.
+- `fromBudget` boolean in `App.tsx` controls the back-button visibility; resets on any manual nav click.
+- `navigateToLedger` sets both `accountIds` filter and the month date range from the current navigation month.
+
+### Files Modified
+- `app/src/lib/api.ts`
+- `app/src/components/BudgetBar.tsx` (new)
+- `app/src/components/BudgetCategoryRow.tsx` (new)
+- `app/src/components/BudgetExecutionView.tsx` (new)
+- `app/src/components/BudgetPage.tsx`
+- `app/src/components/LedgerTable.tsx`
+- `app/src/App.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
 ## 2026-05-25 — Budget Module: Phase 2 — Budget Page Shell
 
 ### Tasks
