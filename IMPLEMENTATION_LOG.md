@@ -1,5 +1,26 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-05-25 — Budget Module: Phase 1 — Database
+
+### Tasks
+- [x] `migrations/0039_budget_plans.sql` — `budget_plans` and `budget_items` tables
+- [x] `migrations/0040_budget_views.sql` — `budget_items_with_accounts` and `budget_monthly_spending` views
+- [x] `migrations/0041_budget_rpcs.sql` — `create_budget_plan`, `set_current_budget_plan`, `upsert_budget_item`, `delete_budget_item` RPCs
+
+### Decisions
+- `budget_items` has `ON DELETE CASCADE` from `plan_id` so deleting a plan removes its items atomically.
+- No DB-level CHECK for `account_id` type — enforced in `upsert_budget_item` RPC (spec-specified; requires a join).
+- `budget_monthly_spending` uses the same `full_name LIKE '…:%'` hierarchy rollup pattern as `account_balances` rather than a recursive CTE; pre-aggregates monthly spending in a CTE then LEFT JOINs against a `plan_months` grid so all months within the plan period appear even with zero spending.
+- `create_budget_plan` sets all existing plans to `is_current = FALSE` before inserting the new plan as current — matches `set_current_budget_plan` logic.
+- All RPCs use `SECURITY DEFINER` and have explicit `GRANT EXECUTE TO authenticated` (default privileges from 0021 would cover it, but spec requires explicit grants).
+
+### Files Created
+- `migrations/0039_budget_plans.sql`
+- `migrations/0040_budget_views.sql`
+- `migrations/0041_budget_rpcs.sql`
+
+---
+
 ## 2026-05-25 - Budget Module: Feature Specification and Documentation
 
 ### Tasks
