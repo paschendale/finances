@@ -1,5 +1,25 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-05-25 — Budget Module: Phase 2 — Budget Page Shell
+
+### Tasks
+- [x] Added `budget` to the view type union in `App.tsx`; added "Budget" tab (PiggyBank icon) to top nav
+- [x] Created `BudgetPage.tsx` — sub-mode switcher (Execution | Planning), month navigator (`← May 2026 →`), period toggle (Monthly | Period), Plans button stub
+
+### Decisions
+- All four controls in `BudgetPage` use local React state; no global state needed at this shell stage.
+- Month navigator uses `addMonths`/`subMonths`/`startOfMonth` from date-fns (already installed).
+- Execution and Planning content areas are inline stubs — deleted in Phase 3/4 when real views land.
+- Plans button is a visual stub only; wired to `BudgetPlanListModal` in Phase 4.
+- `PiggyBank` chosen as the Budget nav icon for clear semantic fit.
+
+### Files Modified
+- `app/src/App.tsx`
+- `app/src/components/BudgetPage.tsx` (new)
+- `IMPLEMENTATION_LOG.md`
+
+---
+
 ## 2026-05-25 — Budget Module: Phase 1 — Database
 
 ### Tasks

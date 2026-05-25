@@ -3,10 +3,11 @@ import { QuickEntryInput } from '@/components/QuickEntryInput';
 import { LedgerTable } from '@/components/LedgerTable';
 import { Dashboard } from '@/components/Dashboard';
 import { AccountsPage } from '@/components/AccountsPage';
+import { BudgetPage } from '@/components/BudgetPage';
 import { LedgerFilterBar, type LedgerFilters } from '@/components/LedgerFilterBar';
 import { LoginPage } from '@/components/LoginPage';
 import { useState, useEffect, useCallback } from 'react';
-import { LayoutDashboard, List, Wallet, LogOut, BookMarked } from 'lucide-react';
+import { LayoutDashboard, List, Wallet, LogOut, BookMarked, PiggyBank } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, startOfYear, endOfMonth } from 'date-fns';
 import { AUTH_TOKEN_KEY, logout, setOnLogout } from '@/lib/api';
@@ -21,9 +22,9 @@ function AppContent() {
     return () => setOnLogout(() => {});
   }, []);
 
-  const [view, setView] = useState<'ledger' | 'dashboard' | 'accounts'>(() => {
+  const [view, setView] = useState<'ledger' | 'dashboard' | 'accounts' | 'budget'>(() => {
     const params = new URLSearchParams(window.location.search);
-    return (params.get('view') as 'ledger' | 'dashboard' | 'accounts') || 'dashboard';
+    return (params.get('view') as 'ledger' | 'dashboard' | 'accounts' | 'budget') || 'dashboard';
   });
 
   const [filters, setFilters] = useState<LedgerFilters>(() => {
@@ -103,6 +104,18 @@ function AppContent() {
               <BookMarked className="w-3.5 h-3.5 opacity-80" />
               Accounts
             </button>
+            <button
+              onClick={() => setView("budget")}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-md text-[13px] font-medium tracking-[-0.01em] transition-colors",
+                view === "budget"
+                  ? "bg-white/10 text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground/80",
+              )}
+            >
+              <PiggyBank className="w-3.5 h-3.5 opacity-80" />
+              Budget
+            </button>
           </nav>
 
           <button
@@ -126,6 +139,8 @@ function AppContent() {
           </div>
         ) : view === "accounts" ? (
           <AccountsPage />
+        ) : view === "budget" ? (
+          <BudgetPage />
         ) : (
           <Dashboard filters={filters} onFilterChange={setFilters} />
         )}
