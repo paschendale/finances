@@ -348,3 +348,116 @@ Description memories joined with resolved account names. Used for quick-entry au
 | `currency` | `TEXT` | Last used currency for this description. |
 | `usage_count` | `INTEGER` | How many times this description has been used. |
 | `last_used_at` | `TIMESTAMPTZ` | When it was last used. |
+
+---
+
+## Budget Module
+
+### `create_budget_plan`
+
+Creates a new budget plan and sets it as the current plan (all other plans are set to `is_current = false`).
+
+**Endpoint:** `POST /rpc/create_budget_plan`
+
+**Arguments:**
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `p_name` | `TEXT` | Plan name (e.g. "2026 Annual Budget"). |
+| `p_period_start` | `DATE` | Budget period start date (YYYY-MM-DD). |
+| `p_period_end` | `DATE` | Budget period end date (YYYY-MM-DD). |
+
+**Response:** The created `budget_plans` row.
+
+---
+
+### `set_current_budget_plan`
+
+Switches the active plan. Sets `is_current = true` for the given plan and `false` for all others.
+
+**Endpoint:** `POST /rpc/set_current_budget_plan`
+
+**Arguments:**
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `p_plan_id` | `UUID` | The plan to make current. |
+
+**Response:** `true` on success.
+
+---
+
+### `upsert_budget_item`
+
+Inserts or updates a budget item for a `(plan_id, account_id)` pair. The account must be of type `expense`.
+
+**Endpoint:** `POST /rpc/upsert_budget_item`
+
+**Arguments:**
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `p_plan_id` | `UUID` | Plan ID. |
+| `p_account_id` | `UUID` | Expense account ID. |
+| `p_period_amount` | `NUMERIC` | Total budget for the entire plan period. |
+| `p_min_pct` | `NUMERIC` | Minimum monthly % of adjusted target (e.g. 60). |
+| `p_max_pct` | `NUMERIC` | Maximum monthly % of adjusted target (e.g. 140). |
+
+**Response:** The upserted `budget_items` row.
+
+---
+
+### `delete_budget_item`
+
+Removes a budget item from a plan.
+
+**Endpoint:** `POST /rpc/delete_budget_item`
+
+**Arguments:**
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `p_id` | `UUID` | Budget item ID to delete. |
+
+**Response:** `true` if deleted, `false` if not found.
+
+---
+
+### `budget_items_with_accounts`
+
+Budget items joined with their account's full hierarchical name, icon, and color. Primary endpoint for rendering the budget category list.
+
+**Endpoint:** `GET /budget_items_with_accounts`
+
+Supports filtering: `?plan_id=eq.<uuid>`
+
+| Property | Type | Description |
+| :--- | :--- | :--- |
+| `id` | `UUID` | Budget item ID. |
+| `plan_id` | `UUID` | Plan ID. |
+| `account_id` | `UUID` | Account ID. |
+| `account_full_name` | `TEXT` | Full hierarchical name (e.g. `expenses:food:grocery`). |
+| `account_name` | `TEXT` | Leaf name only (e.g. `grocery`). |
+| `icon` | `TEXT` | Account icon slug. |
+| `color` | `TEXT` | Account color hex. |
+| `parent_id` | `UUID` | Account parent ID (for hierarchy rendering). |
+| `period_amount` | `NUMERIC` | Total period budget. |
+| `min_pct` | `NUMERIC` | Minimum monthly %. |
+| `max_pct` | `NUMERIC` | Maximum monthly %. |
+
+---
+
+### `budget_monthly_spending`
+
+For each budget item, returns actual spending per calendar month within the plan period. Spending is rolled up from `entries.amount_base` for the item's account and all its descendant accounts.
+
+**Endpoint:** `GET /budget_monthly_spending`
+
+Supports filtering: `?plan_id=eq.<uuid>`
+
+| Property | Type | Description |
+| :--- | :--- | :--- |
+| `plan_id` | `UUID` | Plan ID. |
+| `account_id` | `UUID` | Budget item account ID. |
+| `month` | `DATE` | First day of the month (e.g. `2026-01-01`). |
+| `spent` | `NUMERIC` | Sum of `amount_base` for that account and descendants in that month. |

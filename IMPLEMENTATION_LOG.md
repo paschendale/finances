@@ -1,5 +1,40 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-05-25 - Budget Module: Feature Specification and Documentation
+
+### Tasks
+- [x] Wrote `docs/BUDGET_MODULE.md` — full feature spec for the budget/planning module
+- [x] Updated `docs/DOMAINS.md` — added `budget_plans` and `budget_items` entity descriptions
+- [x] Updated `docs/API_CONTRACT.md` — added 4 RPC specs and 2 view specs for the budget module
+- [x] Updated `docs/ARCHITECTURE.md` — removed "budgeting" from the "NOT included" list
+
+### Scope
+The budget module adds a 4th top-level tab (Budget) with Execution/Planning sub-modes. Users define budgets per expense category with a period total amount and monthly min/max % thresholds. A rolling adjustment algorithm redistributes the remaining budget across future months based on past spending. Clicking a category bar navigates to the Ledger with pre-applied filters.
+
+### Decisions
+- `period_amount` stored as the single source of truth; all monthly targets are derived.
+- Rolling adjustment is computed frontend-side from the `budget_monthly_spending` view; no stored intermediates.
+- `budget_monthly_spending` uses a recursive CTE to roll up spending from descendant accounts, matching the existing `account_balances` pattern.
+- Budget items are always in base currency — no multi-currency budget targets.
+- The module is read-only from an accounting perspective (never writes transactions).
+
+### Files Modified
+- `docs/BUDGET_MODULE.md` (new)
+- `docs/DOMAINS.md`
+- `docs/API_CONTRACT.md`
+- `docs/ARCHITECTURE.md`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
+## 2026-05-24 - Financial Analysis: Spending Patterns 2022–2026
+
+- Connected to live database and ran spending/income analysis across all years.
+- Identified key income drivers (Territorial business growth), major expense jumps (new apartment in Sudoeste, HRV financing, personal spending), and savings opportunities.
+- No code changes — pure data analysis session.
+
+---
+
 ## 2026-04-29 - Quick Entry Done/Confirm button validity state
 
 - Updated `QuickEntryInput` submit button visual logic to match its actual enabled/disabled behavior.
