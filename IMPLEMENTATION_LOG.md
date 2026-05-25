@@ -1,5 +1,35 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-05-25 — Budget Module: Phase 4 — Planning View
+
+### Tasks
+- [x] `api.ts` — added `fetchAllBudgetPlans`, `createBudgetPlan`, `setCurrentBudgetPlan`, `upsertBudgetItem`, `deleteBudgetItem`
+- [x] `BudgetPlanWizard.tsx` — name + period modal → `create_budget_plan` RPC; defaults to current year; Escape/backdrop dismiss; Confirm disabled until valid
+- [x] `BudgetPlanListModal.tsx` — lists all plans ordered by `created_at desc`; Set current button (disabled with checkmark when already current); "New Plan" entry point
+- [x] `BudgetPlanningView.tsx` — editable category rows with AccountIcon, amount input (Monthly↔Yearly toggle), Min%/Max% inputs, live BudgetBar preview, remove button; add-category SearchableSelect (expense accounts only, not already in plan); Save commits all upserts + deletes in parallel; dirty tracking via `setDirty` callback
+- [x] `BudgetExecutionView.tsx` — added `onCreatePlan?` prop; empty state shows "Create Budget Plan" button
+- [x] `BudgetPage.tsx` — wired Plans button → `BudgetPlanListModal`; wired wizard open/close; replaced planning stub with `BudgetPlanningView`; dirty-state guard on mode switch via `isDirtyRef`; hoisted `useQuery(['budgetCurrentPlan'])` to pass `plan` to planning view
+
+### Decisions
+- `isDirtyRef` (not state) in `BudgetPage` avoids re-renders when dirty flag changes; only consulted on mode-switch click.
+- `BudgetPlanningView` resets draft via `useEffect` on `serverItems` — covers plan switches without needing an explicit reset callback.
+- Amount input stores `period_amount` (total for period); Monthly/Yearly toggle is pure display state per row; switching recalculates the displayed value without losing precision.
+- Save uses `Promise.all` for upserts + deletes (not sequential) — order doesn't matter since each item is identified by `(plan_id, account_id)`.
+- `fetchAllBudgetPlans` uses `?order=created_at.desc` so the list modal always shows newest plans first.
+- `BudgetPlanWizard` invalidates both `['budgetCurrentPlan']` and `['budgetPlans']` on success so both the execution view and list modal update instantly.
+- TanStack Query deduplicates the `['budgetCurrentPlan']` fetch between `BudgetPage` and `BudgetExecutionView` — no extra network call.
+
+### Files Modified
+- `app/src/lib/api.ts`
+- `app/src/components/BudgetPlanWizard.tsx` (new)
+- `app/src/components/BudgetPlanListModal.tsx` (new)
+- `app/src/components/BudgetPlanningView.tsx` (new)
+- `app/src/components/BudgetExecutionView.tsx`
+- `app/src/components/BudgetPage.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
 ## 2026-05-25 — Budget Module: Phase 3 — Execution View
 
 ### Tasks

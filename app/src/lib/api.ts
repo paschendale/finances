@@ -605,3 +605,75 @@ export async function fetchBudgetMonthlySpending(planId: string): Promise<Budget
   }
   return response.json();
 }
+
+export async function fetchAllBudgetPlans(): Promise<BudgetPlan[]> {
+  const response = await fetch(`${API_URL}/budget_plans?order=created_at.desc`, {
+    headers: getHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to fetch budget plans');
+  }
+  return response.json();
+}
+
+export async function createBudgetPlan(name: string, periodStart: string, periodEnd: string): Promise<BudgetPlan> {
+  const response = await fetch(`${API_URL}/rpc/create_budget_plan`, {
+    method: 'POST',
+    headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_name: name, p_period_start: periodStart, p_period_end: periodEnd }),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to create budget plan');
+  }
+  return response.json();
+}
+
+export async function setCurrentBudgetPlan(planId: string): Promise<void> {
+  const response = await fetch(`${API_URL}/rpc/set_current_budget_plan`, {
+    method: 'POST',
+    headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_plan_id: planId }),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to set current budget plan');
+  }
+}
+
+export async function upsertBudgetItem(
+  planId: string,
+  accountId: string,
+  periodAmount: number,
+  minPct: number,
+  maxPct: number,
+): Promise<void> {
+  const response = await fetch(`${API_URL}/rpc/upsert_budget_item`, {
+    method: 'POST',
+    headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      p_plan_id: planId,
+      p_account_id: accountId,
+      p_period_amount: periodAmount,
+      p_min_pct: minPct,
+      p_max_pct: maxPct,
+    }),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to upsert budget item');
+  }
+}
+
+export async function deleteBudgetItem(id: string): Promise<void> {
+  const response = await fetch(`${API_URL}/rpc/delete_budget_item`, {
+    method: 'POST',
+    headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_id: id }),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to delete budget item');
+  }
+}

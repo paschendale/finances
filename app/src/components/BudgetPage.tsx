@@ -1,8 +1,13 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { addMonths, subMonths, startOfMonth, format } from 'date-fns';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
+import { fetchCurrentBudgetPlan } from '@/lib/api';
 import { BudgetExecutionView } from './BudgetExecutionView';
+import { BudgetPlanningView } from './BudgetPlanningView';
+import { BudgetPlanWizard } from './BudgetPlanWizard';
+import { BudgetPlanListModal } from './BudgetPlanListModal';
 
 type SubMode = 'execution' | 'planning';
 type PeriodView = 'monthly' | 'period';
@@ -15,6 +20,27 @@ export function BudgetPage({ onNavigateToLedger }: BudgetPageProps) {
   const [subMode, setSubMode] = useState<SubMode>('execution');
   const [currentMonth, setCurrentMonth] = useState<Date>(() => startOfMonth(new Date()));
   const [periodView, setPeriodView] = useState<PeriodView>('monthly');
+  const [showPlansModal, setShowPlansModal] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
+  const isDirtyRef = useRef(false);
+
+  const { data: currentPlan = null } = useQuery({
+    queryKey: ['budgetCurrentPlan'],
+    queryFn: fetchCurrentBudgetPlan,
+  });
+
+  function handleSubModeChange(nextMode: SubMode) {
+    if (subMode === 'planning' && nextMode === 'execution' && isDirtyRef.current) {
+      if (!window.confirm('Discard unsaved changes?')) return;
+      isDirtyRef.current = false;
+    }
+    setSubMode(nextMode);
+  }
+
+  function openWizard() {
+    setShowPlansModal(false);
+    setShowWizard(true);
+  }
 
   return (
     <div className="w-full space-y-6 pb-20">
@@ -24,7 +50,7 @@ export function BudgetPage({ onNavigateToLedger }: BudgetPageProps) {
           {(['execution', 'planning'] as SubMode[]).map((mode) => (
             <button
               key={mode}
-              onClick={() => setSubMode(mode)}
+              onClick={() => handleSubModeChange(mode)}
               className={cn(
                 'flex items-center px-4 py-2 rounded-md text-[13px] font-medium tracking-[-0.01em] transition-colors capitalize',
                 subMode === mode
@@ -78,7 +104,10 @@ export function BudgetPage({ onNavigateToLedger }: BudgetPageProps) {
           </nav>
 
           {/* Plans button */}
-          <button className="flex items-center px-4 py-2 rounded-lg border border-white/[0.08] bg-white/[0.02] text-[13px] font-medium tracking-[-0.01em] text-muted-foreground hover:text-foreground/80 transition-colors backdrop-blur-md">
+          <button
+            onClick={() => setShowPlansModal(true)}
+            className="flex items-center px-4 py-2 rounded-lg border border-white/[0.08] bg-white/[0.02] text-[13px] font-medium tracking-[-0.01em] text-muted-foreground hover:text-foreground/80 transition-colors backdrop-blur-md"
+          >
             Plans
           </button>
         </div>
@@ -90,11 +119,33 @@ export function BudgetPage({ onNavigateToLedger }: BudgetPageProps) {
           currentMonth={currentMonth}
           periodView={periodView}
           onNavigateToLedger={onNavigateToLedger}
+          onCreatePlan={openWizard}
         />
       ) : (
-        <div className="flex items-center justify-center py-24 text-muted-foreground text-sm">
-          Planning view — coming in Phase 4
-        </div>
+        <BudgetPlanningView
+          plan={currentPlan}
+          onOpenWizard={openWizard}
+          setDirty={(v) => { isDirtyRef.current = v; }}
+          onSaved={() => setSubMode('execution')}
+        />
+      )}
+
+      {/* Modals */}
+      {showPlansModal && (
+        <BudgetPlanListModal
+          onClose={() => setShowPlansModal(false)}
+          onNewPlan={openWizard}
+        />
+      )}
+
+      {showWizard && (
+        <BudgetPlanWizard
+          onClose={() => setShowWizard(false)}
+          onSuccess={() => {
+            setShowWizard(false);
+            setSubMode('planning');
+          }}
+        />
       )}
     </div>
   );

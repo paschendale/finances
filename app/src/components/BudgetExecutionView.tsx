@@ -14,6 +14,7 @@ interface BudgetExecutionViewProps {
   currentMonth: Date;
   periodView: 'monthly' | 'period';
   onNavigateToLedger: (accountId: string, startDate: string, endDate: string) => void;
+  onCreatePlan?: () => void;
 }
 
 function computeAdjustedMonthly(
@@ -44,7 +45,7 @@ function buildHierarchy(
     .flatMap((item) => [item, ...buildHierarchy(items, item.account_id, accountIdSet)]);
 }
 
-export function BudgetExecutionView({ currentMonth, periodView, onNavigateToLedger }: BudgetExecutionViewProps) {
+export function BudgetExecutionView({ currentMonth, periodView, onNavigateToLedger, onCreatePlan }: BudgetExecutionViewProps) {
   const { data: plan, isLoading: planLoading } = useQuery({
     queryKey: ['budgetCurrentPlan'],
     queryFn: fetchCurrentBudgetPlan,
@@ -80,8 +81,16 @@ export function BudgetExecutionView({ currentMonth, periodView, onNavigateToLedg
         <PiggyBank className="w-10 h-10 text-white/20" />
         <div className="text-center space-y-1">
           <p className="text-[15px] font-medium text-foreground/60">No budget plan active</p>
-          <p className="text-[13px] text-muted-foreground">Switch to Planning mode to create your first plan.</p>
+          <p className="text-[13px] text-muted-foreground">Create a plan to start tracking your budget.</p>
         </div>
+        {onCreatePlan && (
+          <button
+            onClick={onCreatePlan}
+            className="mt-2 px-5 py-2.5 rounded-xl bg-white text-black text-[13px] font-semibold hover:bg-white/90 active:scale-[0.98] transition-all"
+          >
+            Create Budget Plan
+          </button>
+        )}
       </div>
     );
   }
