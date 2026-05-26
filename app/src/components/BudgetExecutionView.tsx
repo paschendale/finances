@@ -1,18 +1,19 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { differenceInCalendarMonths, format, startOfMonth, endOfMonth } from 'date-fns';
+import { differenceInCalendarMonths, format, parseISO, startOfMonth, endOfMonth } from 'date-fns';
+import { ChevronDown, ChevronRight, PiggyBank } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import {
   fetchCurrentBudgetPlan,
   fetchBudgetItems,
   fetchBudgetMonthlySpending,
+  fetchBudgetPeriodTotals,
   type BudgetItemWithAccount,
   type BudgetMonthlySpending,
+
 } from '@/lib/api';
 import { BudgetCategoryRow } from './BudgetCategoryRow';
-import { PiggyBank } from 'lucide-react';
-
-type RenderNode =
-  | { type: 'item'; item: BudgetItemWithAccount; depth: number; isParent: boolean }
-  | { type: 'group-header'; label: string };
+import { BudgetBar } from './BudgetBar';
 
 interface BudgetExecutionViewProps {
   currentMonth: Date;
@@ -20,6 +21,8 @@ interface BudgetExecutionViewProps {
   onNavigateToLedger: (accountId: string, startDate: string, endDate: string) => void;
   onCreatePlan?: () => void;
 }
+
+// ─── helpers ────────────────────────────────────────────────────────────────
 
 function computeAdjustedMonthly(
   periodAmount: number,
@@ -34,73 +37,101 @@ function computeAdjustedMonthly(
   return remaining / remainingMonths;
 }
 
-function buildHierarchy(
-  items: BudgetItemWithAccount[],
-  parentAccountId: string | null,
-  accountIdSet: Set<string>,
-): BudgetItemWithAccount[] {
-  return items
-    .filter((item) => {
-      if (parentAccountId === null) {
-        return item.parent_id === null || !accountIdSet.has(item.parent_id);
-      }
-      return item.parent_id === parentAccountId;
-    })
-    .flatMap((item) => [item, ...buildHierarchy(items, item.account_id, accountIdSet)]);
+interface SpentData {
+  spentThisMonth: number;
+  spentTotal: number;
+  spentBeforeCurrent: number;
 }
 
-function buildRenderNodes(
-  items: BudgetItemWithAccount[],
-  accountIdSet: Set<string>,
-): RenderNode[] {
-  // Sort root-level items by parent_id so siblings with the same parent are adjacent
-  const sortedItems = [...items].sort((a, b) => {
-    const aIsRoot = !a.parent_id || !accountIdSet.has(a.parent_id);
-    const bIsRoot = !b.parent_id || !accountIdSet.has(b.parent_id);
-    if (aIsRoot && bIsRoot) {
-      return (a.parent_id ?? '').localeCompare(b.parent_id ?? '');
-    }
-    return 0;
-  });
+function getSpentForAccount(
+  accountId: string,
+  spending: BudgetMonthlySpending[],
+  currentMonthKey: string,
+): SpentData {
+  const rows = spending.filter((s) => s.account_id === accountId);
+  const spentThisMonth = Number(rows.find((s) => s.month === currentMonthKey)?.spent ?? 0);
+  const spentTotal = rows.reduce((sum, s) => sum + Number(s.spent), 0);
+  const spentBeforeCurrent = rows
+    .filter((s) => s.month < currentMonthKey)
+    .reduce((sum, s) => sum + Number(s.spent), 0);
+  return { spentThisMonth, spentTotal, spentBeforeCurrent };
+}
 
-  const ordered = buildHierarchy(sortedItems, null, accountIdSet);
+// ─── grouping model ──────────────────────────────────────────────────────────
 
-  function getDepth(item: BudgetItemWithAccount): number {
-    let depth = 0;
-    let parentId = item.parent_id;
-    while (parentId !== null && accountIdSet.has(parentId)) {
-      depth++;
-      const parent = items.find((i) => i.account_id === parentId);
-      parentId = parent?.parent_id ?? null;
+interface Group {
+  key: string;
+  label: string;
+  ownerItem: BudgetItemWithAccount | null; // parent item in budget, or null
+  childItems: BudgetItemWithAccount[];     // non-owner items shown under this header
+  minSortOrder: number;
+}
+
+function buildGroups(items: BudgetItemWithAccount[]): Group[] {
+  const accountIdSet = new Set(items.map((i) => i.account_id));
+  const groups = new Map<string, Group>();
+
+  // First pass: register owner groups (parent items in budget that have children in budget)
+  for (const item of items) {
+    const hasChildren = items.some((other) => other.parent_id === item.account_id);
+    if (hasChildren) {
+      groups.set(item.account_id, {
+        key: item.account_id,
+        label: item.account_name,
+        ownerItem: item,
+        childItems: [],
+        minSortOrder: item.sort_order,
+      });
     }
-    return depth;
   }
 
-  const nodes: RenderNode[] = [];
-  const seenGroups = new Set<string>();
+  // Second pass: assign each item to a group
+  for (const item of items) {
+    const hasChildren = items.some((other) => other.parent_id === item.account_id);
+    if (hasChildren) continue; // already registered as group owner above
 
-  for (const item of ordered) {
-    const depth = getDepth(item);
-    const isParent = items.some((other) => other.parent_id === item.account_id);
-
-    // Emit a group-header when root-level items share a parent not in the budget
-    if (depth === 0 && item.parent_id !== null && !accountIdSet.has(item.parent_id)) {
-      const groupKey = item.parent_id;
-      if (!seenGroups.has(groupKey)) {
-        seenGroups.add(groupKey);
+    if (item.parent_id !== null && accountIdSet.has(item.parent_id)) {
+      // Child of an owner item → append to that owner's group
+      const g = groups.get(item.parent_id)!;
+      g.childItems.push(item);
+      g.minSortOrder = Math.min(g.minSortOrder, item.sort_order);
+    } else if (item.parent_id !== null && !accountIdSet.has(item.parent_id)) {
+      // Has a parent in the hierarchy but that parent is NOT in budget → label-only group keyed by parent_id
+      const gKey = item.parent_id;
+      if (!groups.has(gKey)) {
         const parts = item.account_full_name.split(':');
-        const label = parts.length >= 2 ? parts[parts.length - 2] : null;
-        if (label) nodes.push({ type: 'group-header', label });
+        const label = parts.length >= 2 ? parts[parts.length - 2] : item.account_name;
+        groups.set(gKey, { key: gKey, label, ownerItem: null, childItems: [], minSortOrder: item.sort_order });
       }
+      const g = groups.get(gKey)!;
+      g.childItems.push(item);
+      g.minSortOrder = Math.min(g.minSortOrder, item.sort_order);
+    } else {
+      // Orphan item (no parent at all) — its own label-only group
+      const gKey = `orphan-${item.account_id}`;
+      groups.set(gKey, {
+        key: gKey,
+        label: item.account_name,
+        ownerItem: null,
+        childItems: [item],
+        minSortOrder: item.sort_order,
+      });
     }
-
-    nodes.push({ type: 'item', item, depth, isParent });
   }
 
-  return nodes;
+  return [...groups.values()].sort((a, b) => a.minSortOrder - b.minSortOrder);
 }
 
-export function BudgetExecutionView({ currentMonth, periodView, onNavigateToLedger, onCreatePlan }: BudgetExecutionViewProps) {
+// ─── component ───────────────────────────────────────────────────────────────
+
+export function BudgetExecutionView({
+  currentMonth,
+  periodView,
+  onNavigateToLedger,
+  onCreatePlan,
+}: BudgetExecutionViewProps) {
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
   const { data: plan, isLoading: planLoading } = useQuery({
     queryKey: ['budgetCurrentPlan'],
     queryFn: fetchCurrentBudgetPlan,
@@ -118,7 +149,13 @@ export function BudgetExecutionView({ currentMonth, periodView, onNavigateToLedg
     enabled: !!plan?.id,
   });
 
-  const isLoading = planLoading || itemsLoading || spendingLoading;
+  const { data: periodTotals = [], isLoading: totalsLoading } = useQuery({
+    queryKey: ['budgetPeriodTotals', plan?.id],
+    queryFn: () => fetchBudgetPeriodTotals(plan!.id),
+    enabled: !!plan?.id,
+  });
+
+  const isLoading = planLoading || itemsLoading || spendingLoading || totalsLoading;
 
   if (isLoading) {
     return (
@@ -156,18 +193,29 @@ export function BudgetExecutionView({ currentMonth, periodView, onNavigateToLedg
   const monthIndex = differenceInCalendarMonths(startOfMonth(currentMonth), planStart);
   const currentMonthKey = format(startOfMonth(currentMonth), 'yyyy-MM-dd');
 
-  function getSpentForAccount(accountId: string, monthlySpending: BudgetMonthlySpending[]): {
-    spentThisMonth: number;
-    spentTotal: number;
-    spentBeforeCurrent: number;
-  } {
-    const rows = monthlySpending.filter((s) => s.account_id === accountId);
-    const spentThisMonth = rows.find((s) => s.month === currentMonthKey)?.spent ?? 0;
-    const spentTotal = rows.reduce((sum, s) => sum + Number(s.spent), 0);
-    const spentBeforeCurrent = rows
-      .filter((s) => s.month < currentMonthKey)
-      .reduce((sum, s) => sum + Number(s.spent), 0);
-    return { spentThisMonth: Number(spentThisMonth), spentTotal, spentBeforeCurrent };
+  function resolveItemValues(item: BudgetItemWithAccount): { spent: number; target: number; remaining: number } {
+    const { spentThisMonth, spentTotal, spentBeforeCurrent } = getSpentForAccount(
+      item.account_id,
+      spending,
+      currentMonthKey,
+    );
+    if (periodView === 'period') {
+      const target = Number(item.period_amount);
+      return { spent: spentTotal, target, remaining: target - spentTotal };
+    }
+    const target = computeAdjustedMonthly(Number(item.period_amount), numMonths, monthIndex, spentBeforeCurrent);
+    return { spent: spentThisMonth, target, remaining: target - spentThisMonth };
+  }
+
+  function aggregateGroup(group: Group): { spent: number; target: number; remaining: number } {
+    const allItems = group.ownerItem ? [group.ownerItem, ...group.childItems] : group.childItems;
+    return allItems.reduce(
+      (acc, item) => {
+        const v = resolveItemValues(item);
+        return { spent: acc.spent + v.spent, target: acc.target + v.target, remaining: acc.remaining + v.remaining };
+      },
+      { spent: 0, target: 0, remaining: 0 },
+    );
   }
 
   function handleRowClick(item: BudgetItemWithAccount) {
@@ -176,73 +224,223 @@ export function BudgetExecutionView({ currentMonth, periodView, onNavigateToLedg
     onNavigateToLedger(item.account_id, startDate, endDate);
   }
 
-  const accountIdSet = new Set(items.map((i) => i.account_id));
-  const renderNodes = buildRenderNodes(items, accountIdSet);
+  function toggleCollapse(key: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  // ── "Outros" computation ──────────────────────────────────────────────────
+  const totalBudgetedSpent = periodView === 'period'
+    ? spending.reduce((sum, s) => sum + Number(s.spent), 0)
+    : spending
+        .filter((s) => s.month === currentMonthKey)
+        .reduce((sum, s) => sum + Number(s.spent), 0);
+
+  const totalAllSpent = periodView === 'period'
+    ? periodTotals.reduce((sum, t) => sum + Number(t.total_spent), 0)
+    : Number(periodTotals.find((t) => t.month === currentMonthKey)?.total_spent ?? 0);
+
+  const othersSpent = Math.max(0, totalAllSpent - totalBudgetedSpent);
+
+  // ── render ────────────────────────────────────────────────────────────────
+  const groups = buildGroups(items);
 
   return (
-    <div className="w-full rounded-xl border border-white/[0.08] bg-white/[0.01] overflow-hidden">
-      {/* Header row */}
-      <div className="flex items-center px-4 py-2 border-b border-white/[0.06]">
-        <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-white/30 w-36 shrink-0">Category</span>
-        <span className="flex-1 text-[11px] font-bold uppercase tracking-[0.12em] text-white/30">Progress</span>
-        <span className="w-20 text-right text-[11px] font-bold uppercase tracking-[0.12em] text-white/30">Spent</span>
+    <div className="w-full space-y-1">
+      {/* Plan title */}
+      <div className="px-1 pb-2 flex items-baseline gap-3">
+        <span className="text-[15px] font-semibold text-foreground/80">{plan.name}</span>
+        <span className="text-[11px] font-mono text-white/30">
+          {format(parseISO(plan.period_start), 'MMM yyyy')} – {format(parseISO(plan.period_end), 'MMM yyyy')}
+        </span>
       </div>
 
-      {renderNodes.length === 0 ? (
-        <div className="py-12 text-center text-[13px] text-muted-foreground">
-          No budget categories defined. Switch to Planning mode to add categories.
+      <div className="w-full rounded-xl border border-white/[0.08] bg-white/[0.01] overflow-hidden">
+        {/* Column header */}
+        <div className="flex items-center px-4 py-2 border-b border-white/[0.06]">
+          <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-white/30 w-36 shrink-0">Category</span>
+          <span className="flex-1 text-[11px] font-bold uppercase tracking-[0.12em] text-white/30">Progress</span>
+          <span className="w-20 text-right text-[11px] font-bold uppercase tracking-[0.12em] text-white/30">Spent</span>
+          <span className="w-8 shrink-0" />
         </div>
-      ) : (
-        renderNodes.map((node, idx) => {
-          if (node.type === 'group-header') {
+
+        {groups.length === 0 ? (
+          <div className="py-12 text-center text-[13px] text-muted-foreground">
+            No budget categories defined. Switch to Planning mode to add categories.
+          </div>
+        ) : (
+          groups.map((group) => {
+            const isCollapsed = collapsed.has(group.key);
+            const agg = aggregateGroup(group);
+
             return (
-              <div
-                key={`group-${node.label}-${idx}`}
-                className="px-4 py-1.5 border-b border-white/[0.04] bg-white/[0.02]"
-              >
-                <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/25">
-                  {node.label}
-                </span>
+              <div key={group.key}>
+                {/* ── Group header ─────────────────────────────────────── */}
+                {group.ownerItem ? (
+                  // Owner header: shows the parent item's own data (or aggregate when collapsed)
+                  <GroupOwnerHeader
+                    group={group}
+                    isCollapsed={isCollapsed}
+                    onToggle={() => toggleCollapse(group.key)}
+                    onClick={() => handleRowClick(group.ownerItem!)}
+                    values={isCollapsed ? agg : resolveItemValues(group.ownerItem)}
+                  />
+                ) : (
+                  // Label-only header (parent not in budget, or orphan)
+                  <GroupLabelHeader
+                    label={group.label}
+                    isCollapsed={isCollapsed}
+                    onToggle={() => toggleCollapse(group.key)}
+                    values={isCollapsed ? agg : null}
+                    minPct={isCollapsed && group.childItems[0] ? group.childItems[0].min_pct : 0}
+                    maxPct={isCollapsed && group.childItems[0] ? group.childItems[0].max_pct : 100}
+                  />
+                )}
+
+                {/* ── Child items (hidden when collapsed) ─────────────── */}
+                {!isCollapsed &&
+                  group.childItems.map((item) => {
+                    const v = resolveItemValues(item);
+                    return (
+                      <BudgetCategoryRow
+                        key={item.id}
+                        item={item}
+                        spent={v.spent}
+                        target={v.target}
+                        remaining={v.remaining}
+                        showParentPrefix={group.ownerItem === null}
+                        onClick={() => handleRowClick(item)}
+                      />
+                    );
+                  })}
               </div>
             );
-          }
+          })
+        )}
 
-          const { item, depth, isParent } = node;
-          const { spentThisMonth, spentTotal, spentBeforeCurrent } = getSpentForAccount(item.account_id, spending);
+        {/* ── Outros row ──────────────────────────────────────────────── */}
+        {othersSpent > 0 && (
+          <div className="flex items-center gap-3 px-4 py-3 border-t border-white/[0.04] bg-white/[0.01]">
+            <div className="w-36 shrink-0">
+              <span className="text-[13px] font-medium text-white/40 tracking-[-0.01em]">Outros</span>
+            </div>
+            <div className="flex-1 min-w-0 flex items-center">
+              <span className="text-[11px] text-white/20 italic">unbudgeted</span>
+            </div>
+            <div className="w-6 shrink-0" />
+            <div className="text-[12px] font-mono text-white/40 tabular-nums shrink-0 w-20 text-right">
+              R$ {othersSpent.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
-          let spent: number;
-          let target: number;
-          let remaining: number;
+// ─── sub-components ──────────────────────────────────────────────────────────
 
-          if (periodView === 'period') {
-            spent = spentTotal;
-            target = Number(item.period_amount);
-            remaining = target - spentTotal;
-          } else {
-            spent = spentThisMonth;
-            target = computeAdjustedMonthly(
-              Number(item.period_amount),
-              numMonths,
-              monthIndex,
-              spentBeforeCurrent,
-            );
-            remaining = target - spentThisMonth;
-          }
+interface GroupOwnerHeaderProps {
+  group: Group;
+  isCollapsed: boolean;
+  onToggle: () => void;
+  onClick: () => void;
+  values: { spent: number; target: number; remaining: number };
+}
 
-          return (
-            <BudgetCategoryRow
-              key={item.id}
-              item={item}
-              spent={spent}
-              target={target}
-              remaining={remaining}
-              depth={depth}
-              isParent={isParent}
-              onClick={() => handleRowClick(item)}
+function GroupOwnerHeader({ group, isCollapsed, onToggle, onClick, values }: GroupOwnerHeaderProps) {
+  const item = group.ownerItem!;
+  return (
+    <div className="flex items-center border-b border-white/[0.06] bg-white/[0.03] hover:bg-white/[0.05] transition-colors">
+      <button
+        onClick={onClick}
+        className="flex items-center gap-3 flex-1 min-w-0 px-4 py-3 text-left"
+      >
+        <div className="w-36 shrink-0">
+          <span className="text-[13px] font-semibold text-foreground/90 tracking-[-0.01em]">
+            {item.account_name}
+          </span>
+          {isCollapsed && (
+            <span className="ml-2 text-[10px] text-white/25 font-normal">
+              {group.childItems.length} {group.childItems.length === 1 ? 'item' : 'items'}
+            </span>
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <BudgetBar
+            spent={values.spent}
+            target={values.target}
+            minPct={item.min_pct}
+            maxPct={item.max_pct}
+            remaining={values.remaining}
+          />
+        </div>
+      </button>
+      <div className="text-[12px] font-mono text-white/50 tabular-nums w-20 text-right shrink-0">
+        R$ {values.spent.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+      </div>
+      <button
+        onClick={onToggle}
+        className="shrink-0 w-8 flex items-center justify-center text-white/25 hover:text-white/60 transition-colors self-stretch"
+        aria-label={isCollapsed ? 'Expand' : 'Collapse'}
+      >
+        {isCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+      </button>
+    </div>
+  );
+}
+
+interface GroupLabelHeaderProps {
+  label: string;
+  isCollapsed: boolean;
+  onToggle: () => void;
+  values: { spent: number; target: number; remaining: number } | null;
+  minPct: number;
+  maxPct: number;
+}
+
+function GroupLabelHeader({ label, isCollapsed, onToggle, values, minPct, maxPct }: GroupLabelHeaderProps) {
+  return (
+    <div className={cn(
+      'flex items-center border-b border-white/[0.06] transition-colors',
+      isCollapsed ? 'bg-white/[0.02] hover:bg-white/[0.04]' : 'bg-white/[0.015]',
+    )}>
+      <div className="flex items-center gap-3 flex-1 min-w-0 px-4 py-2">
+        <div className="w-36 shrink-0">
+          <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-white/30">{label}</span>
+        </div>
+        {isCollapsed && values ? (
+          <div className="flex-1 min-w-0">
+            <BudgetBar
+              spent={values.spent}
+              target={values.target}
+              minPct={minPct}
+              maxPct={maxPct}
+              remaining={values.remaining}
             />
-          );
-        })
+          </div>
+        ) : (
+          <div className="flex-1" />
+        )}
+      </div>
+      {isCollapsed && values ? (
+        <div className="text-[12px] font-mono text-white/40 tabular-nums w-20 text-right shrink-0">
+          R$ {values.spent.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+        </div>
+      ) : (
+        <div className="w-20 shrink-0" />
       )}
+      <button
+        onClick={onToggle}
+        className="shrink-0 w-8 flex items-center justify-center text-white/20 hover:text-white/50 transition-colors self-stretch"
+        aria-label={isCollapsed ? 'Expand' : 'Collapse'}
+      >
+        {isCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+      </button>
     </div>
   );
 }

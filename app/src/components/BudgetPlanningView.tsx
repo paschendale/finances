@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { differenceInCalendarMonths, parseISO, format } from 'date-fns';
-import { X, Plus, Loader2, PiggyBank } from 'lucide-react';
+import { X, Plus, Loader2, PiggyBank, ChevronUp, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   fetchBudgetItems,
@@ -34,6 +34,7 @@ interface DraftItem {
   period_amount: number;
   min_pct: number;
   max_pct: number;
+  sort_order: number;
   amountMode: AmountMode;
   deleted?: boolean;
 }
@@ -49,6 +50,7 @@ function toDraft(item: BudgetItemWithAccount): DraftItem {
     period_amount: Number(item.period_amount),
     min_pct: Number(item.min_pct),
     max_pct: Number(item.max_pct),
+    sort_order: item.sort_order,
     amountMode: 'monthly',
   };
 }
@@ -103,6 +105,7 @@ export function BudgetPlanningView({ plan, onOpenWizard, setDirty, onSaved }: Bu
   function addItem(accountId: string) {
     const account = accounts.find((a) => a.account_id === accountId);
     if (!account) return;
+    const maxOrder = draft.filter((d) => !d.deleted).reduce((m, d) => Math.max(m, d.sort_order), -1);
     setDraft((prev) => [
       ...prev,
       {
@@ -114,12 +117,28 @@ export function BudgetPlanningView({ plan, onOpenWizard, setDirty, onSaved }: Bu
         period_amount: 0,
         min_pct: 60,
         max_pct: 140,
+        sort_order: maxOrder + 1,
         amountMode: 'monthly',
         deleted: false,
       },
     ]);
     setDirty(true);
     setSaveError(null);
+  }
+
+  function moveItem(accountId: string, direction: 'up' | 'down') {
+    setDraft((prev) => {
+      const visible = [...prev.filter((d) => !d.deleted)].sort((a, b) => a.sort_order - b.sort_order);
+      const idx = visible.findIndex((d) => d.account_id === accountId);
+      const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+      if (swapIdx < 0 || swapIdx >= visible.length) return prev;
+      // Swap positions then assign clean 0,10,20... values so ties never cause no-ops
+      const reordered = [...visible];
+      [reordered[idx], reordered[swapIdx]] = [reordered[swapIdx], reordered[idx]];
+      const orderMap = new Map(reordered.map((d, i) => [d.account_id, i * 10]));
+      return prev.map((d) => orderMap.has(d.account_id) ? { ...d, sort_order: orderMap.get(d.account_id)! } : d);
+    });
+    setDirty(true);
   }
 
   function removeItem(accountId: string) {
@@ -140,7 +159,7 @@ export function BudgetPlanningView({ plan, onOpenWizard, setDirty, onSaved }: Bu
 
       await Promise.all([
         ...toUpsert.map((d) =>
-          upsertBudgetItem(plan.id, d.account_id, d.period_amount, d.min_pct, d.max_pct),
+          upsertBudgetItem(plan.id, d.account_id, d.period_amount, d.min_pct, d.max_pct, d.sort_order),
         ),
         ...toDelete.map((d) => deleteBudgetItem(d.id!)),
       ]);
@@ -225,13 +244,15 @@ export function BudgetPlanningView({ plan, onOpenWizard, setDirty, onSaved }: Bu
           </div>
         )}
 
-        {visibleItems.map((item) => (
+        {[...visibleItems].sort((a, b) => a.sort_order - b.sort_order).map((item, idx, arr) => (
           <PlanningRow
             key={item.account_id}
             item={item}
             numMonths={numMonths}
             onUpdate={(changes) => updateItem(item.account_id, changes)}
             onRemove={() => removeItem(item.account_id)}
+            onMoveUp={idx > 0 ? () => moveItem(item.account_id, 'up') : undefined}
+            onMoveDown={idx < arr.length - 1 ? () => moveItem(item.account_id, 'down') : undefined}
           />
         ))}
       </div>
@@ -277,9 +298,11 @@ interface PlanningRowProps {
   numMonths: number;
   onUpdate: (changes: Partial<DraftItem>) => void;
   onRemove: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
 }
 
-function PlanningRow({ item, numMonths, onUpdate, onRemove }: PlanningRowProps) {
+function PlanningRow({ item, numMonths, onUpdate, onRemove, onMoveUp, onMoveDown }: PlanningRowProps) {
   const monthlyAmount = numMonths > 0 ? item.period_amount / numMonths : 0;
   const displayAmount = item.amountMode === 'monthly' ? monthlyAmount : item.period_amount;
 
@@ -369,13 +392,29 @@ function PlanningRow({ item, numMonths, onUpdate, onRemove }: PlanningRowProps) 
           />
         </div>
 
-        {/* Remove */}
-        <button
-          onClick={onRemove}
-          className="w-6 h-6 flex items-center justify-center rounded-md text-white/25 hover:text-red-400/80 hover:bg-white/[0.04] transition-all"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
+        {/* Reorder + Remove */}
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={onMoveUp}
+            disabled={!onMoveUp}
+            className="w-5 h-5 flex items-center justify-center rounded text-white/20 hover:text-white/60 disabled:opacity-0 transition-all"
+          >
+            <ChevronUp className="w-3 h-3" />
+          </button>
+          <button
+            onClick={onMoveDown}
+            disabled={!onMoveDown}
+            className="w-5 h-5 flex items-center justify-center rounded text-white/20 hover:text-white/60 disabled:opacity-0 transition-all"
+          >
+            <ChevronDown className="w-3 h-3" />
+          </button>
+          <button
+            onClick={onRemove}
+            className="w-5 h-5 flex items-center justify-center rounded-md text-white/25 hover:text-red-400/80 hover:bg-white/[0.04] transition-all"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* Live BudgetBar preview */}

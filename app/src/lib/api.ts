@@ -563,6 +563,13 @@ export interface BudgetItemWithAccount {
   period_amount: number;
   min_pct: number;
   max_pct: number;
+  sort_order: number;
+}
+
+export interface BudgetPeriodTotal {
+  plan_id: string;
+  month: string;
+  total_spent: number;
 }
 
 export interface BudgetMonthlySpending {
@@ -648,6 +655,7 @@ export async function upsertBudgetItem(
   periodAmount: number,
   minPct: number,
   maxPct: number,
+  sortOrder = 0,
 ): Promise<void> {
   const response = await fetch(`${API_URL}/rpc/upsert_budget_item`, {
     method: 'POST',
@@ -658,12 +666,24 @@ export async function upsertBudgetItem(
       p_period_amount: periodAmount,
       p_min_pct: minPct,
       p_max_pct: maxPct,
+      p_sort_order: sortOrder,
     }),
   });
   if (!response.ok) {
     if (response.status === 401) logout();
     throw new Error('Failed to upsert budget item');
   }
+}
+
+export async function fetchBudgetPeriodTotals(planId: string): Promise<BudgetPeriodTotal[]> {
+  const response = await fetch(`${API_URL}/budget_period_totals?plan_id=eq.${planId}`, {
+    headers: getHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to fetch budget period totals');
+  }
+  return response.json();
 }
 
 export async function deleteBudgetItem(id: string): Promise<void> {

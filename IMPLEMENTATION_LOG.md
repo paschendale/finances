@@ -1,5 +1,34 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-05-26 — Budget Execution View: Phase 2 Improvements
+
+### Tasks
+- [x] **Plan title**: `plan.name` + date range rendered above the category table in `BudgetExecutionView`
+- [x] **Unified group model**: `buildGroups()` replaces `buildRenderNodes`. Every item belongs to a group. Group header is the parent's interactive budget row when parent is in budget; label-only row otherwise. Orphan items get a label header + their row below (name repeats as designed).
+- [x] **Collapsible groups**: `collapsed: Set<string>` state. Each group header has a chevron toggle. `GroupOwnerHeader` and `GroupLabelHeader` sub-components handle the two header variants.
+- [x] **Aggregation when collapsed**: `aggregateGroup()` sums spent/target/remaining across all items in the group. Shown in the header row when collapsed.
+- [x] **Sort order (DB)**: Migration `0042_budget_sort_order.sql` — adds `sort_order INTEGER DEFAULT 0` to `budget_items`, updates view and `upsert_budget_item` RPC. `BudgetItemWithAccount` and `upsertBudgetItem` updated in `api.ts`.
+- [x] **Sort order (UI)**: `DraftItem` gains `sort_order`. ↑/↓ buttons on each `PlanningRow` swap adjacent sort orders. `handleSave` passes `sort_order` to upsert. Planning list sorted by `sort_order`.
+- [x] **"Outros" row**: Migration `0043_budget_period_totals.sql` — `budget_period_totals` view aggregates total expense spending per month per plan. `fetchBudgetPeriodTotals` added to `api.ts`. Execution view computes `othersSpent = totalAllSpent - totalBudgetedSpent` and renders an "Outros" row when > 0.
+
+### Decisions
+- Groups keyed by `parent_id` (for label-only groups) or `account_id` (for owner groups / orphans) — stable across re-renders.
+- `buildGroups` sorts groups by `minSortOrder` (minimum sort_order among group items) so group order tracks the user's intent from the planning view.
+- "Outros" uses no `BudgetBar` (no target) — just a spent label; shown only when unbudgeted spending > 0.
+- DB migrations are `CREATE OR REPLACE` / `ADD COLUMN IF NOT EXISTS` — safe to re-run.
+- Migrations still need to be applied via `python scripts/migrate.py`.
+
+### Files Modified
+- `migrations/0042_budget_sort_order.sql` (new)
+- `migrations/0043_budget_period_totals.sql` (new)
+- `app/src/lib/api.ts`
+- `app/src/components/BudgetExecutionView.tsx`
+- `app/src/components/BudgetCategoryRow.tsx`
+- `app/src/components/BudgetPlanningView.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
 ## 2026-05-25 — Budget Module: Bug Fix Session
 
 ### Tasks
