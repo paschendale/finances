@@ -13,7 +13,7 @@ type SubMode = 'execution' | 'planning';
 type PeriodView = 'monthly' | 'period';
 
 interface BudgetPageProps {
-  onNavigateToLedger: (accountId: string, startDate: string, endDate: string) => void;
+  onNavigateToLedger: (accountId: string, startDate: string, endDate: string, accountFullName?: string) => void;
 }
 
 export function BudgetPage({ onNavigateToLedger }: BudgetPageProps) {

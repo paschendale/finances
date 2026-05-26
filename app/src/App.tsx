@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { QuickEntryInput } from '@/components/QuickEntryInput';
 import { LedgerTable } from '@/components/LedgerTable';
 import { Dashboard } from '@/components/Dashboard';
@@ -10,7 +10,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { LayoutDashboard, List, Wallet, LogOut, BookMarked, PiggyBank } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, startOfYear, endOfMonth } from 'date-fns';
-import { AUTH_TOKEN_KEY, logout, setOnLogout } from '@/lib/api';
+import { AUTH_TOKEN_KEY, logout, setOnLogout, fetchAccounts } from '@/lib/api';
 
 const queryClient = new QueryClient();
 
@@ -29,11 +29,25 @@ function AppContent() {
 
   const [fromBudget, setFromBudget] = useState(false);
 
-  const navigateToLedger = useCallback((accountId: string, startDate: string, endDate: string) => {
-    setFilters(f => ({ ...f, accountIds: [accountId], startDate, endDate }));
+  const { data: accounts = [] } = useQuery({
+    queryKey: ['accounts'],
+    queryFn: fetchAccounts,
+    enabled: isAuthenticated,
+  });
+
+  const navigateToLedger = useCallback((accountId: string, startDate: string, endDate: string, accountFullName?: string) => {
+    let accountIds: string[];
+    if (accountFullName) {
+      const prefix = accountFullName + ':';
+      const matching = accounts.filter(a => a.account_name === accountFullName || a.account_name.startsWith(prefix));
+      accountIds = matching.length > 0 ? matching.map(a => a.account_id) : [accountId];
+    } else {
+      accountIds = [accountId];
+    }
+    setFilters(f => ({ ...f, accountIds, startDate, endDate }));
     setFromBudget(true);
     setView('ledger');
-  }, []);
+  }, [accounts]);
 
   const [filters, setFilters] = useState<LedgerFilters>(() => {
     const params = new URLSearchParams(window.location.search);

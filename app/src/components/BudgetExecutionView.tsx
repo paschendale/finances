@@ -17,7 +17,7 @@ import { BudgetBar } from './BudgetBar';
 interface BudgetExecutionViewProps {
   currentMonth: Date;
   periodView: 'monthly' | 'period';
-  onNavigateToLedger: (accountId: string, startDate: string, endDate: string) => void;
+  onNavigateToLedger: (accountId: string, startDate: string, endDate: string, accountFullName?: string) => void;
   onCreatePlan?: () => void;
 }
 
@@ -283,7 +283,7 @@ export function BudgetExecutionView({
   function handleRowClick(item: BudgetItemWithAccount) {
     const startDate = format(startOfMonth(currentMonth), 'yyyy-MM-dd');
     const endDate = format(endOfMonth(currentMonth), 'yyyy-MM-dd');
-    onNavigateToLedger(item.account_id, startDate, endDate);
+    onNavigateToLedger(item.account_id, startDate, endDate, item.account_full_name);
   }
 
   function toggleCollapse(key: string) {
@@ -370,8 +370,12 @@ export function BudgetExecutionView({
               isCollapsed={isCollapsed}
               onToggle={() => toggleCollapse(group.key)}
               values={isCollapsed ? agg : null}
-              minPct={isCollapsed && group.childItems[0] ? group.childItems[0].min_pct : 0}
-              maxPct={isCollapsed && group.childItems[0] ? group.childItems[0].max_pct : 100}
+              minPct={isCollapsed && group.childItems.length > 0
+                ? group.childItems.reduce((s, c) => s + c.min_pct, 0) / group.childItems.length
+                : 0}
+              maxPct={isCollapsed && group.childItems.length > 0
+                ? group.childItems.reduce((s, c) => s + c.max_pct, 0) / group.childItems.length
+                : 100}
               hideMax={hideMax}
             />
           )}

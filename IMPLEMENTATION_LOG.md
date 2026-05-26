@@ -1,5 +1,30 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-05-26 — PR #5 Pre-Release Review: Budget Module Fixes
+
+### Tasks
+- [x] **Migration 0045** — Drops stale 5-param and 6-param overloads of `upsert_budget_item` left by migrations 0041 and 0042 (CREATE OR REPLACE with a different signature creates a new overload, not a replacement; 0044's 7-param version is the only one used).
+- [x] **BUDGET_BACKLOG.md** — Marked all 4 phases as `[x]` (were completed but left unchecked).
+- [x] **Hierarchical ledger drill-through** — `navigateToLedger` in `App.tsx` now accepts `accountFullName?`. If provided, it resolves all accounts whose `account_name` equals or starts with that prefix and passes them all as `accountIds`. This matches the aggregation logic in `budget_monthly_spending` (which rolls up sub-accounts via `LIKE full_name || ':%'`). `BudgetExecutionView.handleRowClick` now passes `item.account_full_name`. `BudgetPage` and `BudgetExecutionView` prop types updated accordingly.
+- [x] **GroupLabelHeader aggregate thresholds** — Collapsed label-header now shows averaged `min_pct`/`max_pct` across all child items instead of using only the first child's values.
+- [x] **helperText always visible** — Monthly adjustment text in `BudgetCategoryRow` changed from `opacity-0 hover:opacity-100` to `opacity-60 hover:opacity-100` so the notice is always readable (not hover-only).
+
+### Decisions
+- `accounts` query added to `AppContent` in `App.tsx` — TanStack Query deduplicates it against the same query already used in `BudgetPlanningView`, `QuickEntryInput`, etc., so no extra network call.
+- `navigateToLedger` deps updated to include `accounts`; `useCallback` recreates the callback on accounts refresh (negligible cost).
+- Averaged thresholds for grouped bar are display-only; no financial impact.
+
+### Files Modified
+- `migrations/0045_budget_function_cleanup.sql` (new)
+- `BUDGET_BACKLOG.md`
+- `app/src/App.tsx`
+- `app/src/components/BudgetPage.tsx`
+- `app/src/components/BudgetExecutionView.tsx`
+- `app/src/components/BudgetCategoryRow.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
 ## 2026-05-26 — Budget: Monthly vs Yearly Category Types
 
 ### Tasks

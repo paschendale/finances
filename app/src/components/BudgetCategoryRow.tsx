@@ -49,7 +49,7 @@ export function BudgetCategoryRow({ item, spent, target, remaining, onClick, hid
             hideMax={hideMax}
           />
           {helperText && (
-            <p className="text-[10px] font-mono text-amber-400/50 mt-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+            <p className="text-[10px] font-mono text-amber-400/50 mt-1 opacity-60 group-hover:opacity-100 transition-opacity duration-150">
               {helperText}
             </p>
           )}
