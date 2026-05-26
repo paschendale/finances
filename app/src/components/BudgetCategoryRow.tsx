@@ -60,9 +60,9 @@ export function BudgetCategoryRow({ item, spent, target, remaining, onClick, hid
           <div className="flex items-baseline justify-end gap-1.5">
             <span className="text-[9px] font-medium uppercase tracking-wide text-white/20 shrink-0">Target</span>
             <span className={cn(
-              'text-[11px] font-mono tabular-nums rounded px-1 transition-colors',
+              'text-[11px] font-mono tabular-nums transition-colors',
               helperText
-                ? 'text-amber-400/80 bg-amber-500/10'
+                ? 'text-amber-400/80 bg-amber-500/10 rounded px-1'
                 : 'text-white/30',
             )}>
               R$&nbsp;{target.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}

@@ -339,8 +339,8 @@ export function BudgetExecutionView({
     return sum + spending.filter((s) => s.account_id === item.account_id).reduce((s2, r) => s2 + Number(r.spent), 0);
   }, 0);
 
-  const monthlyGroupSpent = periodView === 'period' ? monthlySpentTotal : monthlySpentThisMonth;
   const monthlyGroupTarget = periodView === 'period' ? monthlyTotalPeriod : monthlyTotalBase;
+  const monthlyGroupSpent = (periodView === 'period' ? monthlySpentTotal : monthlySpentThisMonth) + othersSpent;
 
   // ── render ────────────────────────────────────────────────────────────────
   const monthlyGroups = buildGroups(monthlyItems);
@@ -410,7 +410,7 @@ export function BudgetExecutionView({
 
       <div className="w-full rounded-xl border border-white/[0.08] bg-white/[0.01] overflow-hidden">
         {/* Column header */}
-        <div className="flex items-center px-4 py-2 border-b border-white/[0.06]">
+        <div className="flex items-center gap-3 px-4 py-2 border-b border-white/[0.06]">
           <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-white/30 w-36 shrink-0">Category</span>
           <span className="flex-1 text-[11px] font-bold uppercase tracking-[0.12em] text-white/30">Progress</span>
           <div className="w-28 text-right shrink-0 space-y-0.5">
@@ -461,6 +461,27 @@ export function BudgetExecutionView({
                   <div className="w-8 shrink-0" />
                 </div>
 
+                {/* Outros row — unbudgeted spending counts against the monthly budget */}
+                {othersSpent > 0 && (
+                  <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.04]">
+                    <div className="w-36 shrink-0">
+                      <span className="text-[13px] font-medium text-white/40 tracking-[-0.01em]">Outros</span>
+                    </div>
+                    <div className="flex-1 min-w-0 flex items-center">
+                      <span className="text-[11px] text-white/20 italic">unbudgeted</span>
+                    </div>
+                    <div className="shrink-0 w-28 text-right">
+                      <div className="flex items-baseline justify-end gap-1.5">
+                        <span className="text-[9px] font-medium uppercase tracking-wide text-white/20 shrink-0">Spent</span>
+                        <span className="text-[12px] font-mono text-white/40 tabular-nums">
+                          R$&nbsp;{othersSpent.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="w-8 shrink-0" />
+                  </div>
+                )}
+
                 {renderGroups(monthlyGroups)}
               </>
             )}
@@ -470,12 +491,12 @@ export function BudgetExecutionView({
               <>
                 {/* Section divider when both sections present */}
                 {monthlyItems.length > 0 && (
-                  <div className="flex items-center px-4 py-2 border-t border-white/[0.06] bg-amber-400/[0.03]">
+                  <div className="flex items-center gap-3 px-4 py-2 border-t border-white/[0.06] bg-amber-400/[0.03]">
                     <div className="w-36 shrink-0">
                       <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-amber-400/60">Yearly</span>
                     </div>
                     <div className="flex-1" />
-                    <div className="w-20 shrink-0" />
+                    <div className="w-28 shrink-0" />
                     <div className="w-8 shrink-0" />
                   </div>
                 )}
@@ -488,8 +509,8 @@ export function BudgetExecutionView({
           </>
         )}
 
-        {/* ── Outros row ──────────────────────────────────────────────── */}
-        {othersSpent > 0 && (
+        {/* ── Outros row (fallback — only when no monthly section) ─── */}
+        {othersSpent > 0 && monthlyItems.length === 0 && (
           <div className="flex items-center gap-3 px-4 py-3 border-t border-white/[0.04] bg-white/[0.01]">
             <div className="w-36 shrink-0">
               <span className="text-[13px] font-medium text-white/40 tracking-[-0.01em]">Outros</span>
@@ -497,10 +518,15 @@ export function BudgetExecutionView({
             <div className="flex-1 min-w-0 flex items-center">
               <span className="text-[11px] text-white/20 italic">unbudgeted</span>
             </div>
-            <div className="w-6 shrink-0" />
-            <div className="text-[12px] font-mono text-white/40 tabular-nums shrink-0 w-28 text-right">
-              R$ {othersSpent.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            <div className="shrink-0 w-28 text-right">
+              <div className="flex items-baseline justify-end gap-1.5">
+                <span className="text-[9px] font-medium uppercase tracking-wide text-white/20 shrink-0">Spent</span>
+                <span className="text-[12px] font-mono text-white/40 tabular-nums">
+                  R$&nbsp;{othersSpent.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                </span>
+              </div>
             </div>
+            <div className="w-8 shrink-0" />
           </div>
         )}
       </div>
@@ -522,10 +548,10 @@ interface GroupOwnerHeaderProps {
 function GroupOwnerHeader({ group, isCollapsed, onToggle, onClick, values, hideMax }: GroupOwnerHeaderProps) {
   const item = group.ownerItem!;
   return (
-    <div className="flex items-center border-b border-white/[0.06] bg-white/[0.03] hover:bg-white/[0.05] transition-colors">
+    <div className="flex items-center gap-3 px-4 border-b border-white/[0.06] bg-white/[0.03] hover:bg-white/[0.05] transition-colors">
       <button
         onClick={onClick}
-        className="flex items-center gap-3 flex-1 min-w-0 px-4 py-3 text-left"
+        className="flex items-center gap-3 flex-1 min-w-0 py-3 text-left"
       >
         <div className="w-36 shrink-0">
           <span className="text-[13px] font-semibold text-foreground/90 tracking-[-0.01em]">
@@ -548,8 +574,19 @@ function GroupOwnerHeader({ group, isCollapsed, onToggle, onClick, values, hideM
           />
         </div>
       </button>
-      <div className="text-[12px] font-mono text-white/50 tabular-nums w-28 text-right shrink-0">
-        R$ {values.spent.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+      <div className="shrink-0 w-28 text-right space-y-0.5">
+        <div className="flex items-baseline justify-end gap-1.5">
+          <span className="text-[9px] font-medium uppercase tracking-wide text-white/20 shrink-0">Target</span>
+          <span className="text-[11px] font-mono tabular-nums text-white/30">
+            R$&nbsp;{values.target.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+          </span>
+        </div>
+        <div className="flex items-baseline justify-end gap-1.5">
+          <span className="text-[9px] font-medium uppercase tracking-wide text-white/20 shrink-0">Spent</span>
+          <span className="text-[12px] font-mono text-white/50 tabular-nums">
+            R$&nbsp;{values.spent.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+          </span>
+        </div>
       </div>
       <button
         onClick={onToggle}
@@ -575,10 +612,10 @@ interface GroupLabelHeaderProps {
 function GroupLabelHeader({ label, isCollapsed, onToggle, values, minPct, maxPct, hideMax }: GroupLabelHeaderProps) {
   return (
     <div className={cn(
-      'flex items-center border-b border-white/[0.06] transition-colors',
+      'flex items-center gap-3 px-4 border-b border-white/[0.06] transition-colors',
       isCollapsed ? 'bg-white/[0.02] hover:bg-white/[0.04]' : 'bg-white/[0.015]',
     )}>
-      <div className="flex items-center gap-3 flex-1 min-w-0 px-4 py-2">
+      <div className="flex items-center gap-3 flex-1 min-w-0 py-2">
         <div className="w-36 shrink-0">
           <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-white/30">{label}</span>
         </div>
@@ -598,11 +635,22 @@ function GroupLabelHeader({ label, isCollapsed, onToggle, values, minPct, maxPct
         )}
       </div>
       {isCollapsed && values ? (
-        <div className="text-[12px] font-mono text-white/40 tabular-nums w-28 text-right shrink-0">
-          R$ {values.spent.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+        <div className="shrink-0 w-28 text-right space-y-0.5">
+          <div className="flex items-baseline justify-end gap-1.5">
+            <span className="text-[9px] font-medium uppercase tracking-wide text-white/20 shrink-0">Target</span>
+            <span className="text-[11px] font-mono tabular-nums text-white/30">
+              R$&nbsp;{values.target.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            </span>
+          </div>
+          <div className="flex items-baseline justify-end gap-1.5">
+            <span className="text-[9px] font-medium uppercase tracking-wide text-white/20 shrink-0">Spent</span>
+            <span className="text-[12px] font-mono text-white/40 tabular-nums">
+              R$&nbsp;{values.spent.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            </span>
+          </div>
         </div>
       ) : (
-        <div className="w-20 shrink-0" />
+        <div className="w-28 shrink-0" />
       )}
       <button
         onClick={onToggle}
