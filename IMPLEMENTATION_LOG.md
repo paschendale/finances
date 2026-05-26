@@ -1,5 +1,31 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-05-26 — Budget: Monthly vs Yearly Category Types
+
+### Tasks
+- [x] **Migration 0044** — Added `category_type TEXT DEFAULT 'yearly'` to `budget_items` with CHECK constraint (`monthly` | `yearly`). Rebuilt `budget_items_with_accounts` view and updated `upsert_budget_item` RPC to accept `p_category_type`.
+- [x] **api.ts** — Added `category_type` to `BudgetItemWithAccount` interface; added `categoryType` parameter to `upsertBudgetItem`.
+- [x] **BudgetPlanningView.tsx** — Added `category_type` to `DraftItem`; per-row type toggle pill (blue = Monthly, amber = Yearly); separate section headers with explanatory captions; reorder buttons constrained within same type; `handleSave` passes `category_type` to upsert.
+- [x] **BudgetExecutionView.tsx** — Two-section layout (Monthly on top, Yearly on bottom) with colored section headers; monthly vertical adjustment algorithm (`computeMonthlyVerticalAdjustments`); monthly aggregate BudgetBar header showing total monthly budget vs total spent; `resolveItemValues` branches on `category_type`.
+
+### Decisions
+- **Yearly**: unchanged horizontal rolling adjustment (`computeAdjustedMonthly` — remaining period budget / remaining months).
+- **Monthly**: fixed base monthly (period_amount / numMonths) with no carryover. Within a given month, overspenders' excess is redistributed proportionally from underspenders' surplus. The adjustment is display-only (nothing written to DB); next month resets to base.
+- Vertical adjustment formula: `coverable = min(totalOverspend, totalUnderspendSurplus)`. Overspenders get `target = spent` (shows 100%). Underspenders get `target = base - (coverable × base / totalUnderspendBudget)`, floored at `spent`.
+- In period view: monthly items show `period_amount` as target with total spending (no rolling adjustment).
+- Monthly section aggregate bar uses `minPct=0, maxPct=200` so no threshold markers appear in normal range.
+- `buildGroups` called separately per type so collapsible hierarchy works within each section independently.
+- Existing items default to `'yearly'` via the DB DEFAULT — no data migration needed.
+
+### Files Modified
+- `migrations/0044_budget_category_type.sql` (new)
+- `app/src/lib/api.ts`
+- `app/src/components/BudgetPlanningView.tsx`
+- `app/src/components/BudgetExecutionView.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
 ## 2026-05-26 — Budget Execution View: Phase 2 Improvements
 
 ### Tasks

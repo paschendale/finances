@@ -1,3 +1,4 @@
+import { cn } from '@/lib/utils';
 import { type BudgetItemWithAccount } from '@/lib/api';
 import { AccountIcon } from './AccountIcon';
 import { BudgetBar } from './BudgetBar';
@@ -7,15 +8,16 @@ interface BudgetCategoryRowProps {
   spent: number;
   target: number;
   remaining: number;
-  /** True for items whose parent is NOT in budget — show `parent › leaf` label */
-  showParentPrefix?: boolean;
   onClick: () => void;
+  /** Hides max marker and Max label (use for period views) */
+  hideMax?: boolean;
+  /** Optional adjustment notice shown below the bar (monthly view only) */
+  helperText?: string;
 }
 
-export function BudgetCategoryRow({ item, spent, target, remaining, showParentPrefix, onClick }: BudgetCategoryRowProps) {
+export function BudgetCategoryRow({ item, spent, target, remaining, onClick, hideMax, helperText }: BudgetCategoryRowProps) {
   const parts = item.account_full_name.split(':');
   const leafName = parts[parts.length - 1];
-  const parentName = showParentPrefix && parts.length >= 2 ? parts[parts.length - 2] : null;
 
   return (
     <button
@@ -32,9 +34,6 @@ export function BudgetCategoryRow({ item, spent, target, remaining, showParentPr
             size="sm"
           />
           <span className="text-[13px] font-medium text-foreground/80 truncate tracking-[-0.01em]">
-            {parentName && (
-              <span className="text-white/30 font-normal">{parentName} <span className="text-white/20">›</span>{' '}</span>
-            )}
             {leafName}
           </span>
         </div>
@@ -47,12 +46,34 @@ export function BudgetCategoryRow({ item, spent, target, remaining, showParentPr
             minPct={item.min_pct}
             maxPct={item.max_pct}
             remaining={remaining}
+            hideMax={hideMax}
           />
+          {helperText && (
+            <p className="text-[10px] font-mono text-amber-400/50 mt-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+              {helperText}
+            </p>
+          )}
         </div>
 
-        {/* Spent amount */}
-        <div className="text-[12px] font-mono text-white/50 tabular-nums shrink-0 w-20 text-right">
-          R$ {spent.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+        {/* Target (top) / Spent (bottom) */}
+        <div className="shrink-0 w-28 text-right space-y-0.5">
+          <div className="flex items-baseline justify-end gap-1.5">
+            <span className="text-[9px] font-medium uppercase tracking-wide text-white/20 shrink-0">Target</span>
+            <span className={cn(
+              'text-[11px] font-mono tabular-nums rounded px-1 transition-colors',
+              helperText
+                ? 'text-amber-400/80 bg-amber-500/10'
+                : 'text-white/30',
+            )}>
+              R$&nbsp;{target.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            </span>
+          </div>
+          <div className="flex items-baseline justify-end gap-1.5">
+            <span className="text-[9px] font-medium uppercase tracking-wide text-white/20 shrink-0">Spent</span>
+            <span className="text-[12px] font-mono text-white/50 tabular-nums">
+              R$&nbsp;{spent.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            </span>
+          </div>
         </div>
         {/* Spacer matching header chevron column */}
         <div className="w-8 shrink-0" />

@@ -564,6 +564,7 @@ export interface BudgetItemWithAccount {
   min_pct: number;
   max_pct: number;
   sort_order: number;
+  category_type: 'yearly' | 'monthly';
 }
 
 export interface BudgetPeriodTotal {
@@ -656,6 +657,7 @@ export async function upsertBudgetItem(
   minPct: number,
   maxPct: number,
   sortOrder = 0,
+  categoryType: 'yearly' | 'monthly' = 'yearly',
 ): Promise<void> {
   const response = await fetch(`${API_URL}/rpc/upsert_budget_item`, {
     method: 'POST',
@@ -667,6 +669,7 @@ export async function upsertBudgetItem(
       p_min_pct: minPct,
       p_max_pct: maxPct,
       p_sort_order: sortOrder,
+      p_category_type: categoryType,
     }),
   });
   if (!response.ok) {

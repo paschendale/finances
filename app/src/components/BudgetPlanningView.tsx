@@ -36,6 +36,7 @@ interface DraftItem {
   max_pct: number;
   sort_order: number;
   amountMode: AmountMode;
+  category_type: 'yearly' | 'monthly';
   deleted?: boolean;
 }
 
@@ -52,6 +53,7 @@ function toDraft(item: BudgetItemWithAccount): DraftItem {
     max_pct: Number(item.max_pct),
     sort_order: item.sort_order,
     amountMode: 'monthly',
+    category_type: item.category_type ?? 'yearly',
   };
 }
 
@@ -119,6 +121,7 @@ export function BudgetPlanningView({ plan, onOpenWizard, setDirty, onSaved }: Bu
         max_pct: 140,
         sort_order: maxOrder + 1,
         amountMode: 'monthly',
+        category_type: 'yearly',
         deleted: false,
       },
     ]);
@@ -128,12 +131,16 @@ export function BudgetPlanningView({ plan, onOpenWizard, setDirty, onSaved }: Bu
 
   function moveItem(accountId: string, direction: 'up' | 'down') {
     setDraft((prev) => {
-      const visible = [...prev.filter((d) => !d.deleted)].sort((a, b) => a.sort_order - b.sort_order);
-      const idx = visible.findIndex((d) => d.account_id === accountId);
+      const item = prev.find((d) => d.account_id === accountId);
+      if (!item) return prev;
+      // Only sort within the same type
+      const sameType = [...prev.filter((d) => !d.deleted && d.category_type === item.category_type)].sort(
+        (a, b) => a.sort_order - b.sort_order,
+      );
+      const idx = sameType.findIndex((d) => d.account_id === accountId);
       const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
-      if (swapIdx < 0 || swapIdx >= visible.length) return prev;
-      // Swap positions then assign clean 0,10,20... values so ties never cause no-ops
-      const reordered = [...visible];
+      if (swapIdx < 0 || swapIdx >= sameType.length) return prev;
+      const reordered = [...sameType];
       [reordered[idx], reordered[swapIdx]] = [reordered[swapIdx], reordered[idx]];
       const orderMap = new Map(reordered.map((d, i) => [d.account_id, i * 10]));
       return prev.map((d) => orderMap.has(d.account_id) ? { ...d, sort_order: orderMap.get(d.account_id)! } : d);
@@ -159,7 +166,7 @@ export function BudgetPlanningView({ plan, onOpenWizard, setDirty, onSaved }: Bu
 
       await Promise.all([
         ...toUpsert.map((d) =>
-          upsertBudgetItem(plan.id, d.account_id, d.period_amount, d.min_pct, d.max_pct, d.sort_order),
+          upsertBudgetItem(plan.id, d.account_id, d.period_amount, d.min_pct, d.max_pct, d.sort_order, d.category_type),
         ),
         ...toDelete.map((d) => deleteBudgetItem(d.id!)),
       ]);
@@ -206,6 +213,12 @@ export function BudgetPlanningView({ plan, onOpenWizard, setDirty, onSaved }: Bu
   }
 
   const visibleItems = draft.filter((d) => !d.deleted);
+  const monthlyItems = [...visibleItems.filter((d) => d.category_type === 'monthly')].sort(
+    (a, b) => a.sort_order - b.sort_order,
+  );
+  const yearlyItems = [...visibleItems.filter((d) => d.category_type === 'yearly')].sort(
+    (a, b) => a.sort_order - b.sort_order,
+  );
 
   return (
     <div className="w-full space-y-4">
@@ -230,8 +243,9 @@ export function BudgetPlanningView({ plan, onOpenWizard, setDirty, onSaved }: Bu
       {/* Category list */}
       <div className="rounded-t-xl border border-white/[0.08] bg-white/[0.01] overflow-hidden">
         {/* Table header */}
-        <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-3 px-4 py-2 border-b border-white/[0.06] items-center">
+        <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-3 px-4 py-2 border-b border-white/[0.06] items-center">
           <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/25">Category</span>
+          <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/25 w-20 text-center">Type</span>
           <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/25 w-32 text-right">Amount</span>
           <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/25 w-16 text-center">Min %</span>
           <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/25 w-16 text-center">Max %</span>
@@ -244,17 +258,47 @@ export function BudgetPlanningView({ plan, onOpenWizard, setDirty, onSaved }: Bu
           </div>
         )}
 
-        {[...visibleItems].sort((a, b) => a.sort_order - b.sort_order).map((item, idx, arr) => (
-          <PlanningRow
-            key={item.account_id}
-            item={item}
-            numMonths={numMonths}
-            onUpdate={(changes) => updateItem(item.account_id, changes)}
-            onRemove={() => removeItem(item.account_id)}
-            onMoveUp={idx > 0 ? () => moveItem(item.account_id, 'up') : undefined}
-            onMoveDown={idx < arr.length - 1 ? () => moveItem(item.account_id, 'down') : undefined}
-          />
-        ))}
+        {/* Monthly section */}
+        {monthlyItems.length > 0 && (
+          <>
+            <div className="px-4 py-2 border-b border-white/[0.06] bg-white/[0.02]">
+              <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-blue-400/60">Monthly</span>
+              <span className="ml-2 text-[10px] text-white/25">Fixed per-month budget · surplus/deficit redistributed within the month across monthly categories</span>
+            </div>
+            {monthlyItems.map((item, idx) => (
+              <PlanningRow
+                key={item.account_id}
+                item={item}
+                numMonths={numMonths}
+                onUpdate={(changes) => updateItem(item.account_id, changes)}
+                onRemove={() => removeItem(item.account_id)}
+                onMoveUp={idx > 0 ? () => moveItem(item.account_id, 'up') : undefined}
+                onMoveDown={idx < monthlyItems.length - 1 ? () => moveItem(item.account_id, 'down') : undefined}
+              />
+            ))}
+          </>
+        )}
+
+        {/* Yearly section */}
+        {yearlyItems.length > 0 && (
+          <>
+            <div className="px-4 py-2 border-b border-white/[0.06] bg-white/[0.02]">
+              <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-amber-400/60">Yearly</span>
+              <span className="ml-2 text-[10px] text-white/25">Total period budget · remaining redistributes across future months as you spend</span>
+            </div>
+            {yearlyItems.map((item, idx) => (
+              <PlanningRow
+                key={item.account_id}
+                item={item}
+                numMonths={numMonths}
+                onUpdate={(changes) => updateItem(item.account_id, changes)}
+                onRemove={() => removeItem(item.account_id)}
+                onMoveUp={idx > 0 ? () => moveItem(item.account_id, 'up') : undefined}
+                onMoveDown={idx < yearlyItems.length - 1 ? () => moveItem(item.account_id, 'down') : undefined}
+              />
+            ))}
+          </>
+        )}
       </div>
 
       {/* Add category row — outside overflow-hidden so the dropdown isn't clipped */}
@@ -320,12 +364,16 @@ function PlanningRow({ item, numMonths, onUpdate, onRemove, onMoveUp, onMoveDown
     onUpdate({ amountMode: item.amountMode === 'monthly' ? 'yearly' : 'monthly' });
   }
 
+  function toggleCategoryType() {
+    onUpdate({ category_type: item.category_type === 'monthly' ? 'yearly' : 'monthly' });
+  }
+
   const previewTarget = numMonths > 0 ? item.period_amount / numMonths : 0;
 
   return (
     <div className="border-b border-white/[0.04] last:border-0 px-4 py-3 space-y-2.5">
-      {/* Top row: icon + name + inputs + remove */}
-      <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-3 items-center">
+      {/* Top row: icon + name + type toggle + inputs + remove */}
+      <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-3 items-center">
         {/* Name */}
         <div className="flex items-center gap-2 min-w-0">
           <AccountIcon
@@ -342,7 +390,22 @@ function PlanningRow({ item, numMonths, onUpdate, onRemove, onMoveUp, onMoveDown
           </span>
         </div>
 
-        {/* Amount + toggle */}
+        {/* Category type toggle */}
+        <div className="w-20 flex items-center justify-center">
+          <button
+            onClick={toggleCategoryType}
+            className={cn(
+              'w-full px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide border transition-all text-center',
+              item.category_type === 'monthly'
+                ? 'border-blue-400/30 text-blue-400/80 bg-blue-400/[0.08] hover:bg-blue-400/[0.14]'
+                : 'border-amber-400/30 text-amber-400/80 bg-amber-400/[0.08] hover:bg-amber-400/[0.14]',
+            )}
+          >
+            {item.category_type === 'monthly' ? '/mo' : '/yr'}
+          </button>
+        </div>
+
+        {/* Amount + display mode toggle */}
         <div className="flex items-center gap-1 w-32">
           <input
             type="number"
@@ -357,7 +420,7 @@ function PlanningRow({ item, numMonths, onUpdate, onRemove, onMoveUp, onMoveDown
             onClick={toggleAmountMode}
             className="px-1.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide border border-white/[0.08] text-white/40 hover:text-white/70 hover:bg-white/[0.05] transition-all tabular-nums w-[3.5rem] text-center"
           >
-            {item.amountMode === 'monthly' ? '/mo' : '/yr'}
+            {item.amountMode === 'monthly' ? 'mo' : 'yr'}
           </button>
         </div>
 
