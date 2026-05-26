@@ -1,5 +1,27 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-05-25 — Budget Module: Bug Fix Session
+
+### Tasks
+- [x] **Bug 1 — Remaining ignores current month**: Removed `getPeriodRemaining`. Compute `remaining` inline alongside `spent`/`target`; in monthly mode `remaining = target - spentThisMonth`, in period mode `remaining = period_amount - spentTotal`.
+- [x] **Bug 2 — Add-category dropdown clipped**: Split category table container into `rounded-t-xl overflow-hidden` (table + rows) and a separate `rounded-b-xl` div (SearchableSelect only). The add row has no `overflow-hidden`, allowing the dropdown to render freely.
+- [x] **Bug 3 — Category name missing parent**: Both `BudgetCategoryRow` and `PlanningRow` now derive `parentName` from `account_full_name` (split on `:`). At depth 0 (execution) or always (planning), shows `parentName › leafName`. At depth > 0 the parent row is already visible above, so only the leaf is shown.
+- [x] **Bug 4 — Siblings not grouped**: Root-level items are stable-sorted by `parent_id` before `buildHierarchy` so siblings are always adjacent. `buildRenderNodes` emits a `group-header` node when a new parent group begins (parent not in budget).
+- [x] **Bug 5 — Parent categories not styled as containers**: `isParent` flag computed per item (`items.some(other => other.parent_id === item.account_id)`). `BudgetCategoryRow` accepts `isParent?` — parent rows get `bg-white/[0.03]` background and `font-semibold` name.
+
+### Decisions
+- `buildRenderNodes` replaces the old `buildHierarchy` + inline `getDepth` pattern; returns a discriminated-union array (`item | group-header`) for clean render logic.
+- `remaining` was always period-level before; now it tracks the selected view (monthly remaining = how much is left of this month's target, not the full plan).
+- Removed the `formatHierarchicalName` import from `BudgetCategoryRow` — name formatting is now inline and context-aware (depth-based).
+
+### Files Modified
+- `app/src/components/BudgetExecutionView.tsx`
+- `app/src/components/BudgetCategoryRow.tsx`
+- `app/src/components/BudgetPlanningView.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
 ## 2026-05-25 — Budget Module: Phase 4 — Planning View
 
 ### Tasks

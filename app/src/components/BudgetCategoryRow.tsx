@@ -1,24 +1,35 @@
 import { type BudgetItemWithAccount } from '@/lib/api';
 import { AccountIcon } from './AccountIcon';
 import { BudgetBar } from './BudgetBar';
-import { formatHierarchicalName } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 interface BudgetCategoryRowProps {
   item: BudgetItemWithAccount;
   spent: number;
   target: number;
-  periodRemaining: number;
+  remaining: number;
   depth: number;
+  isParent?: boolean;
   onClick: () => void;
 }
 
-export function BudgetCategoryRow({ item, spent, target, periodRemaining, depth, onClick }: BudgetCategoryRowProps) {
+export function BudgetCategoryRow({ item, spent, target, remaining, depth, isParent, onClick }: BudgetCategoryRowProps) {
   const indentPx = depth * 20;
+
+  const parts = item.account_full_name.split(':');
+  const leafName = parts[parts.length - 1];
+  // Only show parent prefix at root level (depth 0); if depth > 0, the parent row is already visible above
+  const parentName = depth === 0 && parts.length >= 2 ? parts[parts.length - 2] : null;
 
   return (
     <button
       onClick={onClick}
-      className="w-full text-left px-4 py-3 hover:bg-white/[0.03] transition-colors border-b border-white/[0.04] group"
+      className={cn(
+        'w-full text-left px-4 py-3 transition-colors border-b border-white/[0.04] group',
+        isParent
+          ? 'bg-white/[0.03] hover:bg-white/[0.05]'
+          : 'hover:bg-white/[0.03]',
+      )}
       style={{ paddingLeft: `${16 + indentPx}px` }}
     >
       <div className="flex items-center gap-3">
@@ -30,8 +41,14 @@ export function BudgetCategoryRow({ item, spent, target, periodRemaining, depth,
             color={item.color}
             size="sm"
           />
-          <span className="text-[13px] font-medium text-foreground/80 truncate tracking-[-0.01em]">
-            {formatHierarchicalName(item.account_name)}
+          <span className={cn(
+            'text-[13px] truncate tracking-[-0.01em]',
+            isParent ? 'font-semibold text-foreground/90' : 'font-medium text-foreground/80',
+          )}>
+            {parentName && (
+              <span className="text-white/30 font-normal">{parentName} <span className="text-white/20">›</span>{' '}</span>
+            )}
+            {leafName}
           </span>
         </div>
 
@@ -42,7 +59,7 @@ export function BudgetCategoryRow({ item, spent, target, periodRemaining, depth,
             target={target}
             minPct={item.min_pct}
             maxPct={item.max_pct}
-            remaining={periodRemaining}
+            remaining={remaining}
           />
         </div>
 

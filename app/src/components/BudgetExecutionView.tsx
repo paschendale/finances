@@ -10,6 +10,10 @@ import {
 import { BudgetCategoryRow } from './BudgetCategoryRow';
 import { PiggyBank } from 'lucide-react';
 
+type RenderNode =
+  | { type: 'item'; item: BudgetItemWithAccount; depth: number; isParent: boolean }
+  | { type: 'group-header'; label: string };
+
 interface BudgetExecutionViewProps {
   currentMonth: Date;
   periodView: 'monthly' | 'period';
@@ -43,6 +47,57 @@ function buildHierarchy(
       return item.parent_id === parentAccountId;
     })
     .flatMap((item) => [item, ...buildHierarchy(items, item.account_id, accountIdSet)]);
+}
+
+function buildRenderNodes(
+  items: BudgetItemWithAccount[],
+  accountIdSet: Set<string>,
+): RenderNode[] {
+  // Sort root-level items by parent_id so siblings with the same parent are adjacent
+  const sortedItems = [...items].sort((a, b) => {
+    const aIsRoot = !a.parent_id || !accountIdSet.has(a.parent_id);
+    const bIsRoot = !b.parent_id || !accountIdSet.has(b.parent_id);
+    if (aIsRoot && bIsRoot) {
+      return (a.parent_id ?? '').localeCompare(b.parent_id ?? '');
+    }
+    return 0;
+  });
+
+  const ordered = buildHierarchy(sortedItems, null, accountIdSet);
+
+  function getDepth(item: BudgetItemWithAccount): number {
+    let depth = 0;
+    let parentId = item.parent_id;
+    while (parentId !== null && accountIdSet.has(parentId)) {
+      depth++;
+      const parent = items.find((i) => i.account_id === parentId);
+      parentId = parent?.parent_id ?? null;
+    }
+    return depth;
+  }
+
+  const nodes: RenderNode[] = [];
+  const seenGroups = new Set<string>();
+
+  for (const item of ordered) {
+    const depth = getDepth(item);
+    const isParent = items.some((other) => other.parent_id === item.account_id);
+
+    // Emit a group-header when root-level items share a parent not in the budget
+    if (depth === 0 && item.parent_id !== null && !accountIdSet.has(item.parent_id)) {
+      const groupKey = item.parent_id;
+      if (!seenGroups.has(groupKey)) {
+        seenGroups.add(groupKey);
+        const parts = item.account_full_name.split(':');
+        const label = parts.length >= 2 ? parts[parts.length - 2] : null;
+        if (label) nodes.push({ type: 'group-header', label });
+      }
+    }
+
+    nodes.push({ type: 'item', item, depth, isParent });
+  }
+
+  return nodes;
 }
 
 export function BudgetExecutionView({ currentMonth, periodView, onNavigateToLedger, onCreatePlan }: BudgetExecutionViewProps) {
@@ -115,31 +170,14 @@ export function BudgetExecutionView({ currentMonth, periodView, onNavigateToLedg
     return { spentThisMonth: Number(spentThisMonth), spentTotal, spentBeforeCurrent };
   }
 
-  function getPeriodRemaining(item: BudgetItemWithAccount): number {
-    const rows = spending.filter((s) => s.account_id === item.account_id);
-    const spentAll = rows.reduce((sum, s) => sum + Number(s.spent), 0);
-    return item.period_amount - spentAll;
-  }
-
-  const accountIdSet = new Set(items.map((i) => i.account_id));
-  const orderedItems = buildHierarchy(items, null, accountIdSet);
-
-  function getDepth(item: BudgetItemWithAccount): number {
-    let depth = 0;
-    let parentId = item.parent_id;
-    while (parentId !== null && accountIdSet.has(parentId)) {
-      depth++;
-      const parent = items.find((i) => i.account_id === parentId);
-      parentId = parent?.parent_id ?? null;
-    }
-    return depth;
-  }
-
   function handleRowClick(item: BudgetItemWithAccount) {
     const startDate = format(startOfMonth(currentMonth), 'yyyy-MM-dd');
     const endDate = format(endOfMonth(currentMonth), 'yyyy-MM-dd');
     onNavigateToLedger(item.account_id, startDate, endDate);
   }
+
+  const accountIdSet = new Set(items.map((i) => i.account_id));
+  const renderNodes = buildRenderNodes(items, accountIdSet);
 
   return (
     <div className="w-full rounded-xl border border-white/[0.08] bg-white/[0.01] overflow-hidden">
@@ -150,21 +188,36 @@ export function BudgetExecutionView({ currentMonth, periodView, onNavigateToLedg
         <span className="w-20 text-right text-[11px] font-bold uppercase tracking-[0.12em] text-white/30">Spent</span>
       </div>
 
-      {orderedItems.length === 0 ? (
+      {renderNodes.length === 0 ? (
         <div className="py-12 text-center text-[13px] text-muted-foreground">
           No budget categories defined. Switch to Planning mode to add categories.
         </div>
       ) : (
-        orderedItems.map((item) => {
-          const depth = getDepth(item);
+        renderNodes.map((node, idx) => {
+          if (node.type === 'group-header') {
+            return (
+              <div
+                key={`group-${node.label}-${idx}`}
+                className="px-4 py-1.5 border-b border-white/[0.04] bg-white/[0.02]"
+              >
+                <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/25">
+                  {node.label}
+                </span>
+              </div>
+            );
+          }
+
+          const { item, depth, isParent } = node;
           const { spentThisMonth, spentTotal, spentBeforeCurrent } = getSpentForAccount(item.account_id, spending);
 
           let spent: number;
           let target: number;
+          let remaining: number;
 
           if (periodView === 'period') {
             spent = spentTotal;
             target = Number(item.period_amount);
+            remaining = target - spentTotal;
           } else {
             spent = spentThisMonth;
             target = computeAdjustedMonthly(
@@ -173,9 +226,8 @@ export function BudgetExecutionView({ currentMonth, periodView, onNavigateToLedg
               monthIndex,
               spentBeforeCurrent,
             );
+            remaining = target - spentThisMonth;
           }
-
-          const periodRemaining = getPeriodRemaining(item);
 
           return (
             <BudgetCategoryRow
@@ -183,8 +235,9 @@ export function BudgetExecutionView({ currentMonth, periodView, onNavigateToLedg
               item={item}
               spent={spent}
               target={target}
-              periodRemaining={periodRemaining}
+              remaining={remaining}
               depth={depth}
+              isParent={isParent}
               onClick={() => handleRowClick(item)}
             />
           );

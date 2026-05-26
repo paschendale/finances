@@ -209,7 +209,7 @@ export function BudgetPlanningView({ plan, onOpenWizard, setDirty, onSaved }: Bu
       </div>
 
       {/* Category list */}
-      <div className="rounded-xl border border-white/[0.08] bg-white/[0.01] overflow-hidden">
+      <div className="rounded-t-xl border border-white/[0.08] bg-white/[0.01] overflow-hidden">
         {/* Table header */}
         <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-3 px-4 py-2 border-b border-white/[0.06] items-center">
           <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/25">Category</span>
@@ -234,17 +234,17 @@ export function BudgetPlanningView({ plan, onOpenWizard, setDirty, onSaved }: Bu
             onRemove={() => removeItem(item.account_id)}
           />
         ))}
+      </div>
 
-        {/* Add category row */}
-        <div className="px-4 py-3 border-t border-white/[0.04]">
-          <SearchableSelect
-            options={expenseAccountOptions}
-            value=""
-            onChange={addItem}
-            placeholder="Add category…"
-            icon={Plus}
-          />
-        </div>
+      {/* Add category row — outside overflow-hidden so the dropdown isn't clipped */}
+      <div className="rounded-b-xl border border-t-0 border-white/[0.08] bg-white/[0.01] px-4 py-3 relative">
+        <SearchableSelect
+          options={expenseAccountOptions}
+          value=""
+          onChange={addItem}
+          placeholder="Add category…"
+          icon={Plus}
+        />
       </div>
 
       {/* Footer */}
@@ -283,6 +283,10 @@ function PlanningRow({ item, numMonths, onUpdate, onRemove }: PlanningRowProps) 
   const monthlyAmount = numMonths > 0 ? item.period_amount / numMonths : 0;
   const displayAmount = item.amountMode === 'monthly' ? monthlyAmount : item.period_amount;
 
+  const nameParts = item.account_full_name.split(':');
+  const leafName = nameParts[nameParts.length - 1];
+  const parentName = nameParts.length >= 2 ? nameParts[nameParts.length - 2] : null;
+
   function handleAmountChange(raw: string) {
     const val = parseFloat(raw.replace(',', '.')) || 0;
     const periodAmount = item.amountMode === 'monthly' ? val * numMonths : val;
@@ -308,7 +312,10 @@ function PlanningRow({ item, numMonths, onUpdate, onRemove }: PlanningRowProps) 
             size="sm"
           />
           <span className="text-[13px] font-medium text-foreground/80 truncate">
-            {item.account_name.split(':').pop() ?? item.account_name}
+            {parentName && (
+              <span className="text-white/30 font-normal">{parentName} <span className="text-white/20">›</span>{' '}</span>
+            )}
+            {leafName}
           </span>
         </div>
 
