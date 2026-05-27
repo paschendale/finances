@@ -237,7 +237,6 @@ The system intentionally excludes:
 multi-user support
 bank synchronization
 receipt OCR
-budgeting
 notifications
 ```
 

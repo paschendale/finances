@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import * as XLSX from 'xlsx';
 import { fetchTransactionsForExport, fetchAccounts, fetchAccountsTree, type Transaction, type AccountNode } from '@/lib/api';
@@ -34,6 +34,7 @@ function exportData(transactions: Transaction[], format: 'csv' | 'xlsx', startDa
 }
 
 export function ExportWizard({ onClose, initialFilters }: ExportWizardProps) {
+  const startDateRef = useRef<HTMLInputElement>(null);
   const [startDate, setStartDate] = useState(initialFilters?.startDate || '');
   const [endDate, setEndDate] = useState(initialFilters?.endDate || '');
   const [accountIds, setAccountIds] = useState<string[]>(initialFilters?.accountIds || []);
@@ -105,8 +106,11 @@ export function ExportWizard({ onClose, initialFilters }: ExportWizardProps) {
           <div className="flex flex-col gap-1.5">
             <label className="text-[10px] font-bold uppercase tracking-widest text-white/30">Date Range</label>
             <div className="flex items-center gap-2 bg-white/[0.03] border border-white/10 rounded-xl px-2.5 py-1.5 backdrop-blur-md">
-              <Calendar className="w-3 h-3 text-white/30 shrink-0" />
+              <button type="button" onClick={() => startDateRef.current?.showPicker()} className="cursor-pointer shrink-0">
+                <Calendar className="w-3 h-3 text-white/30 hover:text-white/60 transition-colors" />
+              </button>
               <input
+                ref={startDateRef}
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}

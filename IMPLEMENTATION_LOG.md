@@ -1,5 +1,334 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-05-27 — UX Fix: Calendar Icons Open Date Picker
+
+### Tasks
+- [x] **QuickEntryInput.tsx** — Added `dateInputRef` and wrapped Calendar icon in a `<button>` that calls `dateInputRef.current?.showPicker()` to open the native date picker on click.
+- [x] **LedgerFilterBar.tsx** — Added `startDateRef`; Calendar icon now opens the start-date picker on click.
+- [x] **ExportWizard.tsx** — Same pattern: `startDateRef` + Calendar icon button opens the start-date picker.
+
+### Decisions
+- Used `HTMLInputElement.showPicker()` — the standard programmatic API for opening the native date picker; no new dependencies needed.
+- Calendar icon in Dashboard.tsx is already part of a functional button (custom range toggle) — no change needed there.
+- LedgerTable.tsx and BudgetPlanWizard.tsx have date inputs without calendar icons — no change needed.
+
+### Files Modified
+- `app/src/components/QuickEntryInput.tsx`
+- `app/src/components/LedgerFilterBar.tsx`
+- `app/src/components/ExportWizard.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
+## 2026-05-27 — Dashboard: Expense Chart — Single Ring + Drill-Down
+
+### Tasks
+- [x] **Single ring**: Removed the multi-`<Pie>` concentric rendering (inner solid disc + outer donut). The chart now renders a single donut (`innerRadius=60, outerRadius=110`) regardless of data depth, matching the Income Sources chart style.
+- [x] **Drill-down navigation**: `ExpenseBreakdownChart` now has local `drillPath: string[]` state. Starting at L1, clicking a category that has children drills into it (replaces the ring with its subcategories). Clicking again drills to L3. Clicking a leaf category toggles the global `categoryFilter` for the rest of the dashboard.
+- [x] **Breadcrumb**: A breadcrumb row above the chart (visible when `drillPath.length > 0`) shows "All Expenses / Category / Subcategory" with each segment clickable to navigate back to that level.
+- [x] **Reset on clear**: A `useEffect` resets `drillPath` when the external "Viewing: X | Clear" button nulls `categoryFilter`.
+- [x] **Legend drill indicator**: Legend entries that have children show a "›" indicator; the legend header updates to show the current drill level name.
+- [x] **Display names**: Fixed `formatPie` to use the last path segment as the display name (was stripping only the first segment, causing L3 names like `basica:mercado` instead of `mercado`).
+
+### Decisions
+- `drillPath` is local to `ExpenseBreakdownChart` — no need to lift it to Dashboard since `setCategoryFilter` is called on each drill to keep the rest of the dashboard in sync.
+- Leaf-category click still toggles `categoryFilter` (not drill) so the existing "Viewing: X | Clear" affordance is preserved for leaf nodes.
+- Single donut style chosen for visual consistency with the Income Sources chart.
+
+### Files Modified
+- `app/src/components/Dashboard.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
+
+## 2026-05-27 — Dashboard: Budget Highlights Panel + Section Reorder
+
+### Tasks
+- [x] **Dashboard section reorder** — New layout order: key indicators → budget highlights → asset breakdown history → expense+income dual panel → balance check-in. `BalanceCheckInPanel` moved from position 3 to end; asset history extracted from the 3-col grid into a standalone full-width `ChartCard`.
+- [x] **Budget queries** — Added `fetchCurrentBudgetPlan`, `fetchBudgetItems`, `fetchBudgetMonthlySpending` queries to `Dashboard`. TanStack Query deduplicates them with Budget page queries.
+- [x] **`budgetMetrics` useMemo** — Generates all plan months, filters to those within the dashboard date range, pro-rates targets (`period_amount / totalPlanMonths * monthsInRange`), sums spending per category, computes `overallPct`, `topItems` (top 7 by target), `totalTarget`, `totalSpent`. Returns `null` when no plan or no overlap.
+- [x] **`BudgetHighlightsPanel`** — Glass panel (`ChartCard`-style). Left 2/3: scrollable list of category mini-bars (AccountIcon + leaf name + 1.5px progress bar + amounts). Right 1/3: `PiggyBankIndicator` + total spent/target summary.
+- [x] **`PiggyBankIndicator`** — SVG piggy bank (viewBox 200×230). Body, ear, snout, 4 legs as `<clipPath>`. Two clipped rects (unfilled + filled) rise from bottom based on `pct`. Green (`#22C55E`) fill when ≤100%, red (`#EF4444`) when over. Pig outline, inner ear, eye, nostril dots, coin slot, leg outlines, tail drawn on top. `feDropShadow` filter on percentage text for legibility.
+
+### Decisions
+- Budget panel hidden entirely when `budgetMetrics` is null (no plan or date range outside plan) — no layout shift.
+- Pro-ration uses simple `period_amount / totalPlanMonths * inRange.length` for all category types; good enough for dashboard overview without the BudgetExecutionView's rolling-adjustment complexity.
+- `addMonths` from date-fns added to generate plan month grid.
+- Unused type imports `BudgetPlan` and `BudgetMonthlySpending` omitted (TypeScript infers from query return types).
+
+### Files Modified
+- `app/src/components/Dashboard.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
+## 2026-05-27 — Budget Module: Category Insights Modal
+
+### Tasks
+- [x] **Migration 0046** — New RPC `get_category_monthly_history(p_account_id, p_months)`: generates last N calendar months, resolves account full name via `account_names_hierarchical`, sums `entries.amount_base` for the account and descendants using the same `LIKE full_name || ':%'` pattern, LEFT JOINs against month series so zero-spend months appear. Plan-independent (unlike `budget_monthly_spending`).
+- [x] **api.ts** — Added `CategoryMonthlyHistory` interface and `fetchCategoryMonthlyHistory(accountId, months=13)` calling the new RPC.
+- [x] **CategoryInsightsModal.tsx** — New modal component: fetches 13 months of history via `useQuery`, computes average/median/mode client-side, renders a Recharts `LineChart` with: actual spending line, average `ReferenceLine`, 3/6/12-month moving average lines (MA12 only when ≥12 months available). Apple-style dark modal (`bg-black/90 backdrop-blur-3xl rounded-3xl`). Stats shown as a 3-column grid. SVG legend row below chart. ESC + backdrop click close.
+- [x] **BudgetCategoryRow.tsx** — Added `onInsights?: () => void` prop. Refactored outer `<button>` to `<div role>` to allow nested button. Replaced `w-8` spacer with insights button (amber Zap icon, opacity-0 → group-hover:opacity-100).
+- [x] **BudgetExecutionView.tsx** — Added `insightsItem` state + `openInsights()` helper. Passed `onInsights` to all `BudgetCategoryRow` instances. Added `onInsights` prop + Zap button to `GroupOwnerHeader` and `GroupLabelHeader` (visible on group hover, alongside the existing chevron). Renders `CategoryInsightsModal` when `insightsItem` is set.
+- [x] **BudgetPlanningView.tsx** — Added `insightsItem` state. Added `onInsights` prop to `PlanningRow` with a Zap button in the reorder/remove button group. Renders `CategoryInsightsModal` when `insightsItem` is set.
+
+### Decisions
+- Fetching 13 months (not 12) so the 12-month moving average is fully defined for the most recent display month; chart shows the last 12.
+- Mode computed by bucketing amounts to nearest 100 (or 50 for small values) — meaningful for continuous financial data.
+- `GroupLabelHeader` derives `account_id` from `childItems[0].parent_id`; name comes from `group.label`. Icon/color are null in this case (label-only groups have no account metadata readily available).
+- Moving averages use partial windows at the start of the series (no null gaps).
+- Build passes cleanly (tsc + vite).
+
+### Files Modified
+- `migrations/0046_category_monthly_history.sql` (new)
+- `app/src/components/CategoryInsightsModal.tsx` (new)
+- `app/src/lib/api.ts`
+- `app/src/components/BudgetCategoryRow.tsx`
+- `app/src/components/BudgetExecutionView.tsx`
+- `app/src/components/BudgetPlanningView.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
+## 2026-05-26 — PR #5 Pre-Release Review: Budget Module Fixes
+
+### Tasks
+- [x] **Migration 0045** — Drops stale 5-param and 6-param overloads of `upsert_budget_item` left by migrations 0041 and 0042 (CREATE OR REPLACE with a different signature creates a new overload, not a replacement; 0044's 7-param version is the only one used).
+- [x] **BUDGET_BACKLOG.md** — Marked all 4 phases as `[x]` (were completed but left unchecked).
+- [x] **Hierarchical ledger drill-through** — `navigateToLedger` in `App.tsx` now accepts `accountFullName?`. If provided, it resolves all accounts whose `account_name` equals or starts with that prefix and passes them all as `accountIds`. This matches the aggregation logic in `budget_monthly_spending` (which rolls up sub-accounts via `LIKE full_name || ':%'`). `BudgetExecutionView.handleRowClick` now passes `item.account_full_name`. `BudgetPage` and `BudgetExecutionView` prop types updated accordingly.
+- [x] **GroupLabelHeader aggregate thresholds** — Collapsed label-header now shows averaged `min_pct`/`max_pct` across all child items instead of using only the first child's values.
+- [x] **helperText always visible** — Monthly adjustment text in `BudgetCategoryRow` changed from `opacity-0 hover:opacity-100` to `opacity-60 hover:opacity-100` so the notice is always readable (not hover-only).
+
+### Decisions
+- `accounts` query added to `AppContent` in `App.tsx` — TanStack Query deduplicates it against the same query already used in `BudgetPlanningView`, `QuickEntryInput`, etc., so no extra network call.
+- `navigateToLedger` deps updated to include `accounts`; `useCallback` recreates the callback on accounts refresh (negligible cost).
+- Averaged thresholds for grouped bar are display-only; no financial impact.
+
+### Files Modified
+- `migrations/0045_budget_function_cleanup.sql` (new)
+- `BUDGET_BACKLOG.md`
+- `app/src/App.tsx`
+- `app/src/components/BudgetPage.tsx`
+- `app/src/components/BudgetExecutionView.tsx`
+- `app/src/components/BudgetCategoryRow.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
+## 2026-05-26 — Budget: Monthly vs Yearly Category Types
+
+### Tasks
+- [x] **Migration 0044** — Added `category_type TEXT DEFAULT 'yearly'` to `budget_items` with CHECK constraint (`monthly` | `yearly`). Rebuilt `budget_items_with_accounts` view and updated `upsert_budget_item` RPC to accept `p_category_type`.
+- [x] **api.ts** — Added `category_type` to `BudgetItemWithAccount` interface; added `categoryType` parameter to `upsertBudgetItem`.
+- [x] **BudgetPlanningView.tsx** — Added `category_type` to `DraftItem`; per-row type toggle pill (blue = Monthly, amber = Yearly); separate section headers with explanatory captions; reorder buttons constrained within same type; `handleSave` passes `category_type` to upsert.
+- [x] **BudgetExecutionView.tsx** — Two-section layout (Monthly on top, Yearly on bottom) with colored section headers; monthly vertical adjustment algorithm (`computeMonthlyVerticalAdjustments`); monthly aggregate BudgetBar header showing total monthly budget vs total spent; `resolveItemValues` branches on `category_type`.
+
+### Decisions
+- **Yearly**: unchanged horizontal rolling adjustment (`computeAdjustedMonthly` — remaining period budget / remaining months).
+- **Monthly**: fixed base monthly (period_amount / numMonths) with no carryover. Within a given month, overspenders' excess is redistributed proportionally from underspenders' surplus. The adjustment is display-only (nothing written to DB); next month resets to base.
+- Vertical adjustment formula: `coverable = min(totalOverspend, totalUnderspendSurplus)`. Overspenders get `target = spent` (shows 100%). Underspenders get `target = base - (coverable × base / totalUnderspendBudget)`, floored at `spent`.
+- In period view: monthly items show `period_amount` as target with total spending (no rolling adjustment).
+- Monthly section aggregate bar uses `minPct=0, maxPct=200` so no threshold markers appear in normal range.
+- `buildGroups` called separately per type so collapsible hierarchy works within each section independently.
+- Existing items default to `'yearly'` via the DB DEFAULT — no data migration needed.
+
+### Files Modified
+- `migrations/0044_budget_category_type.sql` (new)
+- `app/src/lib/api.ts`
+- `app/src/components/BudgetPlanningView.tsx`
+- `app/src/components/BudgetExecutionView.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
+## 2026-05-26 — Budget Execution View: Phase 2 Improvements
+
+### Tasks
+- [x] **Plan title**: `plan.name` + date range rendered above the category table in `BudgetExecutionView`
+- [x] **Unified group model**: `buildGroups()` replaces `buildRenderNodes`. Every item belongs to a group. Group header is the parent's interactive budget row when parent is in budget; label-only row otherwise. Orphan items get a label header + their row below (name repeats as designed).
+- [x] **Collapsible groups**: `collapsed: Set<string>` state. Each group header has a chevron toggle. `GroupOwnerHeader` and `GroupLabelHeader` sub-components handle the two header variants.
+- [x] **Aggregation when collapsed**: `aggregateGroup()` sums spent/target/remaining across all items in the group. Shown in the header row when collapsed.
+- [x] **Sort order (DB)**: Migration `0042_budget_sort_order.sql` — adds `sort_order INTEGER DEFAULT 0` to `budget_items`, updates view and `upsert_budget_item` RPC. `BudgetItemWithAccount` and `upsertBudgetItem` updated in `api.ts`.
+- [x] **Sort order (UI)**: `DraftItem` gains `sort_order`. ↑/↓ buttons on each `PlanningRow` swap adjacent sort orders. `handleSave` passes `sort_order` to upsert. Planning list sorted by `sort_order`.
+- [x] **"Outros" row**: Migration `0043_budget_period_totals.sql` — `budget_period_totals` view aggregates total expense spending per month per plan. `fetchBudgetPeriodTotals` added to `api.ts`. Execution view computes `othersSpent = totalAllSpent - totalBudgetedSpent` and renders an "Outros" row when > 0.
+
+### Decisions
+- Groups keyed by `parent_id` (for label-only groups) or `account_id` (for owner groups / orphans) — stable across re-renders.
+- `buildGroups` sorts groups by `minSortOrder` (minimum sort_order among group items) so group order tracks the user's intent from the planning view.
+- "Outros" uses no `BudgetBar` (no target) — just a spent label; shown only when unbudgeted spending > 0.
+- DB migrations are `CREATE OR REPLACE` / `ADD COLUMN IF NOT EXISTS` — safe to re-run.
+- Migrations still need to be applied via `python scripts/migrate.py`.
+
+### Files Modified
+- `migrations/0042_budget_sort_order.sql` (new)
+- `migrations/0043_budget_period_totals.sql` (new)
+- `app/src/lib/api.ts`
+- `app/src/components/BudgetExecutionView.tsx`
+- `app/src/components/BudgetCategoryRow.tsx`
+- `app/src/components/BudgetPlanningView.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
+## 2026-05-25 — Budget Module: Bug Fix Session
+
+### Tasks
+- [x] **Bug 1 — Remaining ignores current month**: Removed `getPeriodRemaining`. Compute `remaining` inline alongside `spent`/`target`; in monthly mode `remaining = target - spentThisMonth`, in period mode `remaining = period_amount - spentTotal`.
+- [x] **Bug 2 — Add-category dropdown clipped**: Split category table container into `rounded-t-xl overflow-hidden` (table + rows) and a separate `rounded-b-xl` div (SearchableSelect only). The add row has no `overflow-hidden`, allowing the dropdown to render freely.
+- [x] **Bug 3 — Category name missing parent**: Both `BudgetCategoryRow` and `PlanningRow` now derive `parentName` from `account_full_name` (split on `:`). At depth 0 (execution) or always (planning), shows `parentName › leafName`. At depth > 0 the parent row is already visible above, so only the leaf is shown.
+- [x] **Bug 4 — Siblings not grouped**: Root-level items are stable-sorted by `parent_id` before `buildHierarchy` so siblings are always adjacent. `buildRenderNodes` emits a `group-header` node when a new parent group begins (parent not in budget).
+- [x] **Bug 5 — Parent categories not styled as containers**: `isParent` flag computed per item (`items.some(other => other.parent_id === item.account_id)`). `BudgetCategoryRow` accepts `isParent?` — parent rows get `bg-white/[0.03]` background and `font-semibold` name.
+
+### Decisions
+- `buildRenderNodes` replaces the old `buildHierarchy` + inline `getDepth` pattern; returns a discriminated-union array (`item | group-header`) for clean render logic.
+- `remaining` was always period-level before; now it tracks the selected view (monthly remaining = how much is left of this month's target, not the full plan).
+- Removed the `formatHierarchicalName` import from `BudgetCategoryRow` — name formatting is now inline and context-aware (depth-based).
+
+### Files Modified
+- `app/src/components/BudgetExecutionView.tsx`
+- `app/src/components/BudgetCategoryRow.tsx`
+- `app/src/components/BudgetPlanningView.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
+## 2026-05-25 — Budget Module: Phase 4 — Planning View
+
+### Tasks
+- [x] `api.ts` — added `fetchAllBudgetPlans`, `createBudgetPlan`, `setCurrentBudgetPlan`, `upsertBudgetItem`, `deleteBudgetItem`
+- [x] `BudgetPlanWizard.tsx` — name + period modal → `create_budget_plan` RPC; defaults to current year; Escape/backdrop dismiss; Confirm disabled until valid
+- [x] `BudgetPlanListModal.tsx` — lists all plans ordered by `created_at desc`; Set current button (disabled with checkmark when already current); "New Plan" entry point
+- [x] `BudgetPlanningView.tsx` — editable category rows with AccountIcon, amount input (Monthly↔Yearly toggle), Min%/Max% inputs, live BudgetBar preview, remove button; add-category SearchableSelect (expense accounts only, not already in plan); Save commits all upserts + deletes in parallel; dirty tracking via `setDirty` callback
+- [x] `BudgetExecutionView.tsx` — added `onCreatePlan?` prop; empty state shows "Create Budget Plan" button
+- [x] `BudgetPage.tsx` — wired Plans button → `BudgetPlanListModal`; wired wizard open/close; replaced planning stub with `BudgetPlanningView`; dirty-state guard on mode switch via `isDirtyRef`; hoisted `useQuery(['budgetCurrentPlan'])` to pass `plan` to planning view
+
+### Decisions
+- `isDirtyRef` (not state) in `BudgetPage` avoids re-renders when dirty flag changes; only consulted on mode-switch click.
+- `BudgetPlanningView` resets draft via `useEffect` on `serverItems` — covers plan switches without needing an explicit reset callback.
+- Amount input stores `period_amount` (total for period); Monthly/Yearly toggle is pure display state per row; switching recalculates the displayed value without losing precision.
+- Save uses `Promise.all` for upserts + deletes (not sequential) — order doesn't matter since each item is identified by `(plan_id, account_id)`.
+- `fetchAllBudgetPlans` uses `?order=created_at.desc` so the list modal always shows newest plans first.
+- `BudgetPlanWizard` invalidates both `['budgetCurrentPlan']` and `['budgetPlans']` on success so both the execution view and list modal update instantly.
+- TanStack Query deduplicates the `['budgetCurrentPlan']` fetch between `BudgetPage` and `BudgetExecutionView` — no extra network call.
+
+### Files Modified
+- `app/src/lib/api.ts`
+- `app/src/components/BudgetPlanWizard.tsx` (new)
+- `app/src/components/BudgetPlanListModal.tsx` (new)
+- `app/src/components/BudgetPlanningView.tsx` (new)
+- `app/src/components/BudgetExecutionView.tsx`
+- `app/src/components/BudgetPage.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
+## 2026-05-25 — Budget Module: Phase 3 — Execution View
+
+### Tasks
+- [x] `BudgetBar.tsx` — bar with 3 states (under target / over target within max / over max), threshold markers (min, target, max), helper values row (Min / Target / Max / Remaining)
+- [x] `BudgetCategoryRow.tsx` — category name + AccountIcon + BudgetBar + spent amount; click navigates to Ledger
+- [x] `BudgetExecutionView.tsx` — fetches current plan, budget items, and monthly spending; renders hierarchical rows with rolling-adjustment targets; empty state when no plan
+- [x] "← Back to Budget" button in LedgerTable toolbar (shown only when navigated from Budget)
+- [x] `api.ts` — added `BudgetPlan`, `BudgetItemWithAccount`, `BudgetMonthlySpending` interfaces and `fetchCurrentBudgetPlan`, `fetchBudgetItems`, `fetchBudgetMonthlySpending` functions
+- [x] `BudgetPage.tsx` — accepts `onNavigateToLedger` prop; wires `BudgetExecutionView` in execution mode
+- [x] `App.tsx` — `fromBudget` state + `navigateToLedger` callback thread through to `BudgetPage` and `LedgerTable`
+
+### Decisions
+- `BudgetBar` receives pre-computed `target` (adjustedMonthly or period_amount) so it stays generic and reusable for both Monthly and Period views.
+- Rolling adjustment (`computeAdjustedMonthly`) lives inline in `BudgetExecutionView`; no separate module needed yet.
+- Hierarchy rendering uses `buildHierarchy` recursive helper operating on the flat `budget_items_with_accounts` list — no tree pre-build needed.
+- `fromBudget` boolean in `App.tsx` controls the back-button visibility; resets on any manual nav click.
+- `navigateToLedger` sets both `accountIds` filter and the month date range from the current navigation month.
+
+### Files Modified
+- `app/src/lib/api.ts`
+- `app/src/components/BudgetBar.tsx` (new)
+- `app/src/components/BudgetCategoryRow.tsx` (new)
+- `app/src/components/BudgetExecutionView.tsx` (new)
+- `app/src/components/BudgetPage.tsx`
+- `app/src/components/LedgerTable.tsx`
+- `app/src/App.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
+## 2026-05-25 — Budget Module: Phase 2 — Budget Page Shell
+
+### Tasks
+- [x] Added `budget` to the view type union in `App.tsx`; added "Budget" tab (PiggyBank icon) to top nav
+- [x] Created `BudgetPage.tsx` — sub-mode switcher (Execution | Planning), month navigator (`← May 2026 →`), period toggle (Monthly | Period), Plans button stub
+
+### Decisions
+- All four controls in `BudgetPage` use local React state; no global state needed at this shell stage.
+- Month navigator uses `addMonths`/`subMonths`/`startOfMonth` from date-fns (already installed).
+- Execution and Planning content areas are inline stubs — deleted in Phase 3/4 when real views land.
+- Plans button is a visual stub only; wired to `BudgetPlanListModal` in Phase 4.
+- `PiggyBank` chosen as the Budget nav icon for clear semantic fit.
+
+### Files Modified
+- `app/src/App.tsx`
+- `app/src/components/BudgetPage.tsx` (new)
+- `IMPLEMENTATION_LOG.md`
+
+---
+
+## 2026-05-25 — Budget Module: Phase 1 — Database
+
+### Tasks
+- [x] `migrations/0039_budget_plans.sql` — `budget_plans` and `budget_items` tables
+- [x] `migrations/0040_budget_views.sql` — `budget_items_with_accounts` and `budget_monthly_spending` views
+- [x] `migrations/0041_budget_rpcs.sql` — `create_budget_plan`, `set_current_budget_plan`, `upsert_budget_item`, `delete_budget_item` RPCs
+
+### Decisions
+- `budget_items` has `ON DELETE CASCADE` from `plan_id` so deleting a plan removes its items atomically.
+- No DB-level CHECK for `account_id` type — enforced in `upsert_budget_item` RPC (spec-specified; requires a join).
+- `budget_monthly_spending` uses the same `full_name LIKE '…:%'` hierarchy rollup pattern as `account_balances` rather than a recursive CTE; pre-aggregates monthly spending in a CTE then LEFT JOINs against a `plan_months` grid so all months within the plan period appear even with zero spending.
+- `create_budget_plan` sets all existing plans to `is_current = FALSE` before inserting the new plan as current — matches `set_current_budget_plan` logic.
+- All RPCs use `SECURITY DEFINER` and have explicit `GRANT EXECUTE TO authenticated` (default privileges from 0021 would cover it, but spec requires explicit grants).
+
+### Files Created
+- `migrations/0039_budget_plans.sql`
+- `migrations/0040_budget_views.sql`
+- `migrations/0041_budget_rpcs.sql`
+
+---
+
+## 2026-05-25 - Budget Module: Feature Specification and Documentation
+
+### Tasks
+- [x] Wrote `docs/BUDGET_MODULE.md` — full feature spec for the budget/planning module
+- [x] Updated `docs/DOMAINS.md` — added `budget_plans` and `budget_items` entity descriptions
+- [x] Updated `docs/API_CONTRACT.md` — added 4 RPC specs and 2 view specs for the budget module
+- [x] Updated `docs/ARCHITECTURE.md` — removed "budgeting" from the "NOT included" list
+
+### Scope
+The budget module adds a 4th top-level tab (Budget) with Execution/Planning sub-modes. Users define budgets per expense category with a period total amount and monthly min/max % thresholds. A rolling adjustment algorithm redistributes the remaining budget across future months based on past spending. Clicking a category bar navigates to the Ledger with pre-applied filters.
+
+### Decisions
+- `period_amount` stored as the single source of truth; all monthly targets are derived.
+- Rolling adjustment is computed frontend-side from the `budget_monthly_spending` view; no stored intermediates.
+- `budget_monthly_spending` uses a recursive CTE to roll up spending from descendant accounts, matching the existing `account_balances` pattern.
+- Budget items are always in base currency — no multi-currency budget targets.
+- The module is read-only from an accounting perspective (never writes transactions).
+
+### Files Modified
+- `docs/BUDGET_MODULE.md` (new)
+- `docs/DOMAINS.md`
+- `docs/API_CONTRACT.md`
+- `docs/ARCHITECTURE.md`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
+## 2026-05-24 - Financial Analysis: Spending Patterns 2022–2026
+
+- Connected to live database and ran spending/income analysis across all years.
+- Identified key income drivers (Territorial business growth), major expense jumps (new apartment in Sudoeste, HRV financing, personal spending), and savings opportunities.
+- No code changes — pure data analysis session.
+
+---
+
 ## 2026-04-29 - Quick Entry Done/Confirm button validity state
 
 - Updated `QuickEntryInput` submit button visual logic to match its actual enabled/disabled behavior.

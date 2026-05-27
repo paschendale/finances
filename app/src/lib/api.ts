@@ -541,3 +541,183 @@ export async function fetchExchangeRate(
   if (!rate) throw new Error(`Exchange rate not found for ${fromCurrency}/${baseCurrency} on ${date}`);
   return rate;
 }
+
+export interface BudgetPlan {
+  id: string;
+  name: string;
+  period_start: string;
+  period_end: string;
+  is_current: boolean;
+  created_at: string;
+}
+
+export interface BudgetItemWithAccount {
+  id: string;
+  plan_id: string;
+  account_id: string;
+  account_full_name: string;
+  account_name: string;
+  icon: string | null;
+  color: string | null;
+  parent_id: string | null;
+  period_amount: number;
+  min_pct: number;
+  max_pct: number;
+  sort_order: number;
+  category_type: 'yearly' | 'monthly';
+}
+
+export interface BudgetPeriodTotal {
+  plan_id: string;
+  month: string;
+  total_spent: number;
+}
+
+export interface BudgetMonthlySpending {
+  plan_id: string;
+  account_id: string;
+  month: string;
+  spent: number;
+}
+
+export async function fetchCurrentBudgetPlan(): Promise<BudgetPlan | null> {
+  const response = await fetch(`${API_URL}/budget_plans?is_current=eq.true`, {
+    headers: getHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to fetch current budget plan');
+  }
+  const data: BudgetPlan[] = await response.json();
+  return data[0] ?? null;
+}
+
+export async function fetchBudgetItems(planId: string): Promise<BudgetItemWithAccount[]> {
+  const response = await fetch(`${API_URL}/budget_items_with_accounts?plan_id=eq.${planId}`, {
+    headers: getHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to fetch budget items');
+  }
+  return response.json();
+}
+
+export async function fetchBudgetMonthlySpending(planId: string): Promise<BudgetMonthlySpending[]> {
+  const response = await fetch(`${API_URL}/budget_monthly_spending?plan_id=eq.${planId}`, {
+    headers: getHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to fetch budget monthly spending');
+  }
+  return response.json();
+}
+
+export async function fetchAllBudgetPlans(): Promise<BudgetPlan[]> {
+  const response = await fetch(`${API_URL}/budget_plans?order=created_at.desc`, {
+    headers: getHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to fetch budget plans');
+  }
+  return response.json();
+}
+
+export async function createBudgetPlan(name: string, periodStart: string, periodEnd: string): Promise<BudgetPlan> {
+  const response = await fetch(`${API_URL}/rpc/create_budget_plan`, {
+    method: 'POST',
+    headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_name: name, p_period_start: periodStart, p_period_end: periodEnd }),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to create budget plan');
+  }
+  return response.json();
+}
+
+export async function setCurrentBudgetPlan(planId: string): Promise<void> {
+  const response = await fetch(`${API_URL}/rpc/set_current_budget_plan`, {
+    method: 'POST',
+    headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_plan_id: planId }),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to set current budget plan');
+  }
+}
+
+export async function upsertBudgetItem(
+  planId: string,
+  accountId: string,
+  periodAmount: number,
+  minPct: number,
+  maxPct: number,
+  sortOrder = 0,
+  categoryType: 'yearly' | 'monthly' = 'yearly',
+): Promise<void> {
+  const response = await fetch(`${API_URL}/rpc/upsert_budget_item`, {
+    method: 'POST',
+    headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      p_plan_id: planId,
+      p_account_id: accountId,
+      p_period_amount: periodAmount,
+      p_min_pct: minPct,
+      p_max_pct: maxPct,
+      p_sort_order: sortOrder,
+      p_category_type: categoryType,
+    }),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to upsert budget item');
+  }
+}
+
+export async function fetchBudgetPeriodTotals(planId: string): Promise<BudgetPeriodTotal[]> {
+  const response = await fetch(`${API_URL}/budget_period_totals?plan_id=eq.${planId}`, {
+    headers: getHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to fetch budget period totals');
+  }
+  return response.json();
+}
+
+export async function deleteBudgetItem(id: string): Promise<void> {
+  const response = await fetch(`${API_URL}/rpc/delete_budget_item`, {
+    method: 'POST',
+    headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_id: id }),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to delete budget item');
+  }
+}
+
+export interface CategoryMonthlyHistory {
+  month: string;  // YYYY-MM-DD
+  spent: number;
+}
+
+export async function fetchCategoryMonthlyHistory(
+  accountId: string,
+  months = 13,
+): Promise<CategoryMonthlyHistory[]> {
+  const response = await fetch(`${API_URL}/rpc/get_category_monthly_history`, {
+    method: 'POST',
+    headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_account_id: accountId, p_months: months }),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to fetch category monthly history');
+  }
+  return response.json();
+}

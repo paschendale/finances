@@ -609,6 +609,45 @@ Everything else is derived.
 
 ---
 
+## budget_plans
+
+Represents a named budget plan covering a date range.
+
+Fields:
+
+```
+id             UUID
+name           TEXT
+period_start   DATE
+period_end     DATE
+is_current     BOOLEAN
+created_at     TIMESTAMPTZ
+```
+
+Only one plan has `is_current = true` at a time. The Budget module reads the current plan to determine which budget items to display.
+
+---
+
+## budget_items
+
+Represents a single category budget line within a plan.
+
+Fields:
+
+```
+id              UUID
+plan_id         UUID    → FK budget_plans.id
+account_id      UUID    → FK accounts.id (type = 'expense')
+period_amount   NUMERIC
+min_pct         NUMERIC
+max_pct         NUMERIC
+created_at      TIMESTAMPTZ
+```
+
+`period_amount` is the total budget for the plan period. Monthly targets and thresholds are always derived from it. `min_pct` and `max_pct` express the acceptable monthly spending range as a percentage of the adjusted monthly target (e.g. 60 and 140 mean ±40% of target).
+
+---
+
 # Future Extensions
 
 Possible future additions include:
@@ -619,7 +658,6 @@ receipts
 bank imports
 recurring transactions
 AI classification
-budgeting
 ```
 
 These features must **not break the ledger accounting model**.

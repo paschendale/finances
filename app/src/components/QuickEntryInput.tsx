@@ -61,6 +61,7 @@ export function QuickEntryInput({ filters }: { filters?: LedgerFilters }) {
   const [showMismatchConfirm, setShowMismatchConfirm] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const dateInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
   const { data: accounts } = useQuery({
@@ -506,8 +507,11 @@ export function QuickEntryInput({ filters }: { filters?: LedgerFilters }) {
       {/* Compact Context Bar - High Z-Index relative to sibling sections */}
       <div className="flex flex-wrap gap-2 items-center bg-muted/10 px-2 py-0.5 rounded-lg border border-border/30 backdrop-blur-xl relative z-30">
         <div className="flex items-center gap-1.5 group cursor-pointer px-1">
-          <Calendar className="w-3 h-3 text-muted-foreground/50 group-hover:text-primary transition-colors" />
-          <input 
+          <button type="button" onClick={() => dateInputRef.current?.showPicker()} className="cursor-pointer">
+            <Calendar className="w-3 h-3 text-muted-foreground/50 group-hover:text-primary transition-colors" />
+          </button>
+          <input
+            ref={dateInputRef}
             type="date"
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
