@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { type Account, fetchAccounts, fetchDashboardData, fetchDailyBalances, markAccountChecked } from '@/lib/api';
+import { type Account, fetchAccounts, fetchDashboardData, fetchDailyBalances, markAccountChecked, fetchCurrentBudgetPlan, fetchBudgetItems, fetchBudgetMonthlySpending, type BudgetItemWithAccount } from '@/lib/api';
 import { isBalanceCheckStale } from '@/lib/balanceCheckStale';
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, 
   AreaChart, Area, XAxis, YAxis, CartesianGrid 
 } from 'recharts';
-import { format, startOfMonth, endOfMonth, subMonths, startOfYear, endOfYear, subYears, parseISO, isWithinInterval, differenceInDays, startOfWeek, formatDistanceToNow } from 'date-fns';
+import { format, startOfMonth, endOfMonth, subMonths, startOfYear, endOfYear, subYears, parseISO, isWithinInterval, differenceInDays, startOfWeek, formatDistanceToNow, addMonths } from 'date-fns';
 import { Calendar } from 'lucide-react';
 import { cn, formatHierarchicalName } from '@/lib/utils';
 import { type LedgerFilters } from './LedgerFilterBar';
@@ -41,9 +41,10 @@ const DATE_PRESETS: DateRange[] = [
 interface DashboardProps {
   filters: LedgerFilters;
   onFilterChange: (filters: LedgerFilters) => void;
+  onNavigateToBudget?: () => void;
 }
 
-export function Dashboard({ filters, onFilterChange }: DashboardProps) {
+export function Dashboard({ filters, onFilterChange, onNavigateToBudget }: DashboardProps) {
   const queryClient = useQueryClient();
   const [showCustom, setShowCustom] = useState(false);
 
@@ -122,6 +123,23 @@ export function Dashboard({ filters, onFilterChange }: DashboardProps) {
   const { data: dailyBalances = [] } = useQuery({
     queryKey: ['dailyBalances'],
     queryFn: fetchDailyBalances,
+  });
+
+  const { data: budgetPlan = null } = useQuery({
+    queryKey: ['budgetCurrentPlan'],
+    queryFn: fetchCurrentBudgetPlan,
+  });
+
+  const { data: budgetItems = [] } = useQuery({
+    queryKey: ['budgetItems', budgetPlan?.id],
+    queryFn: () => fetchBudgetItems(budgetPlan!.id),
+    enabled: !!budgetPlan,
+  });
+
+  const { data: budgetSpending = [] } = useQuery({
+    queryKey: ['budgetSpending', budgetPlan?.id],
+    queryFn: () => fetchBudgetMonthlySpending(budgetPlan!.id),
+    enabled: !!budgetPlan,
   });
 
   // Filter and Aggregate Data
@@ -249,6 +267,44 @@ export function Dashboard({ filters, onFilterChange }: DashboardProps) {
 
     return { expensesL1, expensesL2, expensesL3, incomePie, assetHistory };
   }, [filteredEntries, dailyBalances, dateRange]);
+
+  const budgetMetrics = useMemo(() => {
+    if (!budgetPlan || budgetItems.length === 0) return null;
+
+    const planMonths: string[] = [];
+    let cur = startOfMonth(parseISO(budgetPlan.period_start));
+    const planEndMonth = startOfMonth(parseISO(budgetPlan.period_end));
+    while (cur <= planEndMonth) {
+      planMonths.push(format(cur, 'yyyy-MM-dd'));
+      cur = addMonths(cur, 1);
+    }
+    const totalPlanMonths = planMonths.length;
+
+    const dashStart = parseISO(startDateStr);
+    const dashEnd = parseISO(endDateStr);
+    const inRange = planMonths.filter(m => {
+      const d = parseISO(m);
+      return d >= dashStart && d <= dashEnd;
+    });
+    if (inRange.length === 0) return null;
+
+    const items = budgetItems.map(item => {
+      const target = (Number(item.period_amount) / totalPlanMonths) * inRange.length;
+      const spent = budgetSpending
+        .filter(s => s.account_id === item.account_id && inRange.includes(s.month))
+        .reduce((sum, s) => sum + Number(s.spent), 0);
+      const pct = target > 0 ? (spent / target) * 100 : 0;
+      return { ...item, target, spent, pct };
+    });
+
+    const totalTarget = items.reduce((s, i) => s + i.target, 0);
+    const totalSpent = items.reduce((s, i) => s + i.spent, 0);
+    const overallPct = totalTarget > 0 ? (totalSpent / totalTarget) * 100 : 0;
+    const topItems = [...items].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+
+    return { totalTarget, totalSpent, overallPct, topItems };
+  }, [budgetPlan, budgetItems, budgetSpending, startDateStr, endDateStr]);
+
   const accountGroups = useMemo(() => {
     const checking = accounts.filter(a => a.subtype === 'checking');
     const emergency = accounts.filter(a => a.subtype === 'emergency');
@@ -362,15 +418,94 @@ export function Dashboard({ filters, onFilterChange }: DashboardProps) {
         </div>
       </div>
 
-      <BalanceCheckInPanel
-        accounts={staleCheckInAccounts}
-        disabled={markCheckedMutation.isPending}
-        onMarkChecked={(id) => markCheckedMutation.mutate(id)}
-      />
+      {/* Budget Highlights */}
+      {budgetMetrics && (
+        <BudgetHighlightsPanel metrics={budgetMetrics} onNavigateToBudget={onNavigateToBudget} />
+      )}
 
-      {/* Main Charts */}
+      {/* Asset Breakdown History */}
+      <ChartCard title="Asset Breakdown History">
+        <div className="h-[450px]">
+          <ResponsiveContainer width="100%" height="100%" key={`${dateRange.start.getTime()}-${dateRange.end.getTime()}`}>
+            <AreaChart data={stats.assetHistory} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+              <defs>
+                <linearGradient id="colorInvest" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#10B981" stopOpacity={0.3}/>
+                  <stop offset="95%" stopColor="#10B981" stopOpacity={0}/>
+                </linearGradient>
+                <linearGradient id="colorEmergency" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3}/>
+                  <stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/>
+                </linearGradient>
+                <linearGradient id="colorChecking" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#FFFFFF" stopOpacity={0.3}/>
+                  <stop offset="95%" stopColor="#FFFFFF" stopOpacity={0}/>
+                </linearGradient>
+                <linearGradient id="colorCredit" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#EF4444" stopOpacity={0.1}/>
+                  <stop offset="95%" stopColor="#EF4444" stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.03)" />
+              <XAxis
+                dataKey="label"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 11 }}
+              />
+              <YAxis
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 11 }}
+                tickFormatter={(val) => `R$ ${val / 1000}k`}
+              />
+              <Tooltip
+                contentStyle={{ backgroundColor: 'rgba(0,0,0,0.9)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(20px)' }}
+                formatter={(value: any, name: any) => [`R$ ${Number(value).toLocaleString()}`, String(name || '').replace('-', ' ')]}
+              />
+              <Area
+                type="monotone"
+                dataKey="credit-card"
+                stroke="#EF4444"
+                strokeWidth={2}
+                fillOpacity={1}
+                fill="url(#colorCredit)"
+                strokeDasharray="5 5"
+              />
+              <Area
+                stackId="1"
+                type="monotone"
+                dataKey="investments"
+                stroke="#10B981"
+                strokeWidth={3}
+                fillOpacity={1}
+                fill="url(#colorInvest)"
+              />
+              <Area
+                stackId="1"
+                type="monotone"
+                dataKey="emergency"
+                stroke="#3B82F6"
+                strokeWidth={3}
+                fillOpacity={1}
+                fill="url(#colorEmergency)"
+              />
+              <Area
+                stackId="1"
+                type="monotone"
+                dataKey="checking"
+                stroke="#FFFFFF"
+                strokeWidth={3}
+                fillOpacity={1}
+                fill="url(#colorChecking)"
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </ChartCard>
+
+      {/* Income & Expense Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Expenses Nested Pie - Bigger */}
         <ChartCard title="Expense Breakdown" className="lg:col-span-2 min-h-[500px]">
           <ExpenseBreakdownChart
             expensesL1={stats.expensesL1}
@@ -381,13 +516,12 @@ export function Dashboard({ filters, onFilterChange }: DashboardProps) {
           />
         </ChartCard>
 
-        {/* Income Pie */}
         <ChartCard title="Income Sources">
           <div className="flex flex-col h-full gap-4">
             <div className="flex-1 min-h-[250px]">
-                <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                    <Pie
+                  <Pie
                     data={stats.incomePie}
                     cx="50%"
                     cy="50%"
@@ -396,115 +530,39 @@ export function Dashboard({ filters, onFilterChange }: DashboardProps) {
                     paddingAngle={5}
                     dataKey="value"
                     stroke="none"
-                    >
+                  >
                     {stats.incomePie.map((_, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
-                    </Pie>
-                    <Tooltip 
+                  </Pie>
+                  <Tooltip
                     contentStyle={{ backgroundColor: 'rgba(0,0,0,0.9)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(20px)' }}
                     formatter={(value: any) => `R$ ${Number(value).toLocaleString()}`}
-                    />
+                  />
                 </PieChart>
-                </ResponsiveContainer>
+              </ResponsiveContainer>
             </div>
             <div className="space-y-1">
-                {stats.incomePie.slice(0, 5).map((entry, index) => (
-                    <div key={entry.fullName} className="flex items-center justify-between text-[10px]">
-                        <div className="flex items-center gap-2">
-                            <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
-                            <span className="text-muted-foreground">{entry.name}</span>
-                        </div>
-                        <span className="font-mono">R$ {entry.value.toLocaleString()}</span>
-                    </div>
-                ))}
+              {stats.incomePie.slice(0, 5).map((entry, index) => (
+                <div key={entry.fullName} className="flex items-center justify-between text-[10px]">
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
+                    <span className="text-muted-foreground">{entry.name}</span>
+                  </div>
+                  <span className="font-mono">R$ {entry.value.toLocaleString()}</span>
+                </div>
+              ))}
             </div>
-          </div>
-        </ChartCard>
-
-        {/* Monthly Area Chart */}
-        <ChartCard title="Asset Breakdown History" className="lg:col-span-3">
-          <div className="h-[450px]">
-            <ResponsiveContainer width="100%" height="100%" key={`${dateRange.start.getTime()}-${dateRange.end.getTime()}`}>
-              <AreaChart data={stats.assetHistory} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                <defs>
-                  <linearGradient id="colorInvest" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10B981" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#10B981" stopOpacity={0}/>
-                  </linearGradient>
-                  <linearGradient id="colorEmergency" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/>
-                  </linearGradient>
-                  <linearGradient id="colorChecking" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#FFFFFF" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#FFFFFF" stopOpacity={0}/>
-                  </linearGradient>
-                  <linearGradient id="colorCredit" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#EF4444" stopOpacity={0.1}/>
-                    <stop offset="95%" stopColor="#EF4444" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.03)" />
-                <XAxis 
-                  dataKey="label" 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 11 }} 
-                />
-                <YAxis 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 11 }}
-                  tickFormatter={(val) => `R$ ${val / 1000}k`}
-                />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: 'rgba(0,0,0,0.9)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(20px)' }}
-                  formatter={(value: any, name: any) => [`R$ ${Number(value).toLocaleString()}`, String(name || '').replace('-', ' ')]}
-                />
-                {/* Credit Card - Usually negative, shown separately (not stacked with assets) */}
-                <Area 
-                  type="monotone" 
-                  dataKey="credit-card" 
-                  stroke="#EF4444" 
-                  strokeWidth={2} 
-                  fillOpacity={1} 
-                  fill="url(#colorCredit)" 
-                  strokeDasharray="5 5"
-                />
-                {/* Stacked Assets */}
-                <Area 
-                  stackId="1"
-                  type="monotone" 
-                  dataKey="investments" 
-                  stroke="#10B981" 
-                  strokeWidth={3} 
-                  fillOpacity={1} 
-                  fill="url(#colorInvest)" 
-                />
-                <Area 
-                  stackId="1"
-                  type="monotone" 
-                  dataKey="emergency" 
-                  stroke="#3B82F6" 
-                  strokeWidth={3} 
-                  fillOpacity={1} 
-                  fill="url(#colorEmergency)" 
-                />
-                <Area 
-                  stackId="1"
-                  type="monotone" 
-                  dataKey="checking" 
-                  stroke="#FFFFFF" 
-                  strokeWidth={3} 
-                  fillOpacity={1} 
-                  fill="url(#colorChecking)" 
-                />
-              </AreaChart>
-            </ResponsiveContainer>
           </div>
         </ChartCard>
       </div>
+
+      {/* Balance Check-In */}
+      <BalanceCheckInPanel
+        accounts={staleCheckInAccounts}
+        disabled={markCheckedMutation.isPending}
+        onMarkChecked={(id) => markCheckedMutation.mutate(id)}
+      />
 
       {categoryFilter && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-bottom-8 duration-500">
@@ -745,5 +803,169 @@ function ChartCard({ title, children, className }: { title: string, children: Re
       <h3 className="text-xs uppercase tracking-[0.2em] text-muted-foreground font-bold mb-8">{title}</h3>
       {children}
     </div>
+  );
+}
+
+type BudgetItemSummary = BudgetItemWithAccount & { target: number; spent: number; pct: number };
+
+interface BudgetMetrics {
+  totalTarget: number;
+  totalSpent: number;
+  overallPct: number;
+  topItems: BudgetItemSummary[];
+}
+
+function BudgetHighlightsPanel({ metrics, onNavigateToBudget }: { metrics: BudgetMetrics; onNavigateToBudget?: () => void }) {
+  const fmt = (n: number) =>
+    `R$ ${n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+
+  const groups = useMemo(() => {
+    const groupMap = new Map<string | null, BudgetItemSummary[]>();
+    for (const item of metrics.topItems) {
+      const key = item.parent_id ?? null;
+      if (!groupMap.has(key)) groupMap.set(key, []);
+      groupMap.get(key)!.push(item);
+    }
+    return Array.from(groupMap.entries())
+      .sort(([, a], [, b]) => {
+        const minA = Math.min(...a.map(i => i.sort_order ?? 0));
+        const minB = Math.min(...b.map(i => i.sort_order ?? 0));
+        return minA - minB;
+      })
+      .map(([parentId, items]) => {
+        const parts = items[0].account_full_name.split(':');
+        const parentLeafName = parentId && parts.length > 1
+          ? (parts[parts.length - 2] ?? null)
+          : null;
+        return { parentId, parentLeafName, items };
+      });
+  }, [metrics.topItems]);
+
+  return (
+    <div className="bg-white/[0.03] backdrop-blur-3xl p-10 rounded-[3rem] border border-white/5 shadow-sm">
+      <div className="flex items-center justify-between mb-8">
+        <h3 className="text-xs uppercase tracking-[0.2em] text-muted-foreground font-bold">Budget Highlights</h3>
+        {onNavigateToBudget && (
+          <button
+            onClick={onNavigateToBudget}
+            className="flex items-center gap-1.5 text-[10px] font-medium text-white/40 hover:text-white/80 transition-colors group"
+          >
+            <span>Adjusted view in Budget</span>
+            <span className="text-white/20 group-hover:text-white/60 transition-colors">→</span>
+          </button>
+        )}
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Category mini-bars */}
+        <div className="lg:col-span-2 space-y-1">
+          {groups.map((group, gi) => (
+            <div key={group.parentId ?? `root-${gi}`} className={cn(!group.parentLeafName && gi > 0 && "pt-4")}>
+              {group.parentLeafName && (
+                <p className={cn(
+                  "text-[9px] uppercase tracking-widest text-white/25 font-bold px-1 pb-1.5",
+                  gi > 0 ? "pt-4" : "pt-0"
+                )}>
+                  {group.parentLeafName}
+                </p>
+              )}
+              <div className="space-y-3">
+                {group.items.map(item => {
+                  const leafName = item.account_full_name.split(':').pop() ?? item.account_name;
+                  const barPct = Math.min(item.pct, 100);
+                  const isOver = item.pct > 100;
+                  return (
+                    <div key={item.id} className="flex items-center gap-3">
+                      <AccountIcon
+                        accountName={item.account_full_name}
+                        icon={item.icon}
+                        color={item.color}
+                        size="xs"
+                        className="shrink-0"
+                      />
+                      <span className="text-xs text-white/70 w-28 truncate shrink-0 capitalize">{leafName}</span>
+                      <div className="flex-1 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                        <div
+                          className={cn(
+                            "h-full rounded-full transition-all",
+                            isOver ? "bg-red-500" : "bg-emerald-500"
+                          )}
+                          style={{ width: `${barPct}%` }}
+                        />
+                      </div>
+                      <span className="text-[10px] font-mono text-muted-foreground shrink-0 whitespace-nowrap text-right">
+                        <span className={isOver ? "text-red-400" : ""}>{fmt(item.spent)}</span>
+                        <span className="opacity-40"> / {fmt(item.target)}</span>
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Piggy bank */}
+        <div className="flex flex-col items-center justify-center gap-4">
+          <PiggyBankIndicator pct={metrics.overallPct} />
+          <div className="text-center">
+            <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Total Budget</p>
+            <p className="text-sm font-bold mt-1 whitespace-nowrap">
+              {fmt(metrics.totalSpent)}{' '}
+              <span className="text-muted-foreground font-normal">/ {fmt(metrics.totalTarget)}</span>
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const PIGGY_PATH = "M16.417 9.583A7.917 7.917 0 1 1 8.5 1.666a7.917 7.917 0 0 1 7.917 7.917zm-2.5-.382a.913.913 0 0 0-.91-.91h-.355a3.655 3.655 0 0 0-.833-1.393 3.412 3.412 0 0 1 .369-1.953.199.199 0 0 0-.152-.29.197.197 0 0 0-.124.026L9.914 5.844a3.648 3.648 0 0 0-.738-.075H7.642a3.657 3.657 0 0 0-3.587 2.947.71.71 0 0 0 0 1.419 3.656 3.656 0 0 0 1.001 1.876q.093.092.191.177v1.553a.365.365 0 0 0 .364.364h1.163a.365.365 0 0 0 .365-.364v-.694a3.64 3.64 0 0 0 .503.035h1.534a3.642 3.642 0 0 0 .503-.035v.694a.365.365 0 0 0 .365.364h1.163a.365.365 0 0 0 .364-.364v-1.553q.098-.085.19-.177a3.659 3.659 0 0 0 .891-1.451h.354a.913.913 0 0 0 .91-.91zM9.487 6.32a.364.364 0 1 1 0 .728H7.464a.364.364 0 1 1 0-.728h2.025zm-.003 3.702a.95.95 0 0 1 .235.625.929.929 0 0 1-.466.802 1.478 1.478 0 0 1-.448.19v.193a.364.364 0 0 1-.729 0v-.188a1.662 1.662 0 0 1-.285-.091 1.054 1.054 0 0 1-.406-.297.364.364 0 0 1 .55-.477.338.338 0 0 0 .126.098.928.928 0 0 0 .176.056 1.412 1.412 0 0 0 .19.024.845.845 0 0 0 .43-.119c.134-.086.134-.157.134-.191a.224.224 0 0 0-.056-.146.537.537 0 0 0-.14-.113.727.727 0 0 0-.176-.063.838.838 0 0 0-.174-.017 1.824 1.824 0 0 1-.304-.024 1.396 1.396 0 0 1-.392-.127 1.141 1.141 0 0 1-.374-.3.97.97 0 0 1-.222-.608.98.98 0 0 1 .487-.829 1.458 1.458 0 0 1 .436-.18v-.184a.364.364 0 1 1 .729 0v.193a1.714 1.714 0 0 1 .292.103 1.212 1.212 0 0 1 .354.244.364.364 0 0 1-.514.516.483.483 0 0 0-.14-.096.965.965 0 0 0-.18-.063l-.02-.004a.936.936 0 0 0-.147-.026.83.83 0 0 0-.421.113.261.261 0 0 0-.148.213.251.251 0 0 0 .06.148.417.417 0 0 0 .134.108.67.67 0 0 0 .186.06 1.099 1.099 0 0 0 .184.014 1.557 1.557 0 0 1 .328.035 1.456 1.456 0 0 1 .361.13 1.257 1.257 0 0 1 .35.278z";
+
+function PiggyBankIndicator({ pct }: { pct: number }) {
+  const fillFraction = Math.min(pct / 100, 1);
+  const fillColor = pct > 100 ? '#EF4444' : '#22C55E';
+
+  // viewBox is "-1 0 19 19"; circle center y=9.583, r=7.917
+  const pigTop = 1.666;
+  const pigBottom = 17.5;
+  const fillY = pigBottom - fillFraction * (pigBottom - pigTop);
+
+  return (
+    <svg viewBox="-1 0 19 19" className="w-36 h-auto">
+      <defs>
+        <clipPath id="piggyClip">
+          <path d={PIGGY_PATH} />
+        </clipPath>
+        <filter id="pigTextShadow" x="-50%" y="-50%" width="200%" height="200%">
+          <feDropShadow dx="0" dy="0" stdDeviation="0.4" floodColor="black" floodOpacity="0.9" />
+        </filter>
+      </defs>
+
+      {/* Dark base fill (unfilled portion) */}
+      <path d={PIGGY_PATH} fill="rgba(255,255,255,0.08)" />
+
+      {/* Colored fill rising from bottom */}
+      <rect
+        x="-1" y={fillY} width="20" height={Math.max(0, pigBottom - fillY)}
+        fill={fillColor} clipPath="url(#piggyClip)" opacity="0.9"
+      />
+
+      {/* Pig icon overlay — preserves shape details */}
+      <path d={PIGGY_PATH} fill="rgba(255,255,255,0.12)" stroke="rgba(255,255,255,0.35)" strokeWidth="0.25" />
+
+      {/* Percentage text */}
+      <text
+        x="8.5" y="9.8"
+        textAnchor="middle"
+        dominantBaseline="middle"
+        fontSize="3.2"
+        fontWeight="bold"
+        fill="white"
+        filter="url(#pigTextShadow)"
+      >
+        {Math.round(pct)}%
+      </text>
+    </svg>
   );
 }

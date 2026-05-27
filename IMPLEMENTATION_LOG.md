@@ -1,5 +1,26 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-05-27 — Dashboard: Budget Highlights Panel + Section Reorder
+
+### Tasks
+- [x] **Dashboard section reorder** — New layout order: key indicators → budget highlights → asset breakdown history → expense+income dual panel → balance check-in. `BalanceCheckInPanel` moved from position 3 to end; asset history extracted from the 3-col grid into a standalone full-width `ChartCard`.
+- [x] **Budget queries** — Added `fetchCurrentBudgetPlan`, `fetchBudgetItems`, `fetchBudgetMonthlySpending` queries to `Dashboard`. TanStack Query deduplicates them with Budget page queries.
+- [x] **`budgetMetrics` useMemo** — Generates all plan months, filters to those within the dashboard date range, pro-rates targets (`period_amount / totalPlanMonths * monthsInRange`), sums spending per category, computes `overallPct`, `topItems` (top 7 by target), `totalTarget`, `totalSpent`. Returns `null` when no plan or no overlap.
+- [x] **`BudgetHighlightsPanel`** — Glass panel (`ChartCard`-style). Left 2/3: scrollable list of category mini-bars (AccountIcon + leaf name + 1.5px progress bar + amounts). Right 1/3: `PiggyBankIndicator` + total spent/target summary.
+- [x] **`PiggyBankIndicator`** — SVG piggy bank (viewBox 200×230). Body, ear, snout, 4 legs as `<clipPath>`. Two clipped rects (unfilled + filled) rise from bottom based on `pct`. Green (`#22C55E`) fill when ≤100%, red (`#EF4444`) when over. Pig outline, inner ear, eye, nostril dots, coin slot, leg outlines, tail drawn on top. `feDropShadow` filter on percentage text for legibility.
+
+### Decisions
+- Budget panel hidden entirely when `budgetMetrics` is null (no plan or date range outside plan) — no layout shift.
+- Pro-ration uses simple `period_amount / totalPlanMonths * inRange.length` for all category types; good enough for dashboard overview without the BudgetExecutionView's rolling-adjustment complexity.
+- `addMonths` from date-fns added to generate plan month grid.
+- Unused type imports `BudgetPlan` and `BudgetMonthlySpending` omitted (TypeScript infers from query return types).
+
+### Files Modified
+- `app/src/components/Dashboard.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
 ## 2026-05-27 — Budget Module: Category Insights Modal
 
 ### Tasks

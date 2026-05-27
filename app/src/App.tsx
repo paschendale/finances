@@ -167,7 +167,7 @@ function AppContent() {
         ) : view === "budget" ? (
           <BudgetPage onNavigateToLedger={navigateToLedger} />
         ) : (
-          <Dashboard filters={filters} onFilterChange={setFilters} />
+          <Dashboard filters={filters} onFilterChange={setFilters} onNavigateToBudget={() => setView('budget')} />
         )}
       </main>
     </div>
