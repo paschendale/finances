@@ -1,5 +1,33 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-05-27 — Budget Module: Category Insights Modal
+
+### Tasks
+- [x] **Migration 0046** — New RPC `get_category_monthly_history(p_account_id, p_months)`: generates last N calendar months, resolves account full name via `account_names_hierarchical`, sums `entries.amount_base` for the account and descendants using the same `LIKE full_name || ':%'` pattern, LEFT JOINs against month series so zero-spend months appear. Plan-independent (unlike `budget_monthly_spending`).
+- [x] **api.ts** — Added `CategoryMonthlyHistory` interface and `fetchCategoryMonthlyHistory(accountId, months=13)` calling the new RPC.
+- [x] **CategoryInsightsModal.tsx** — New modal component: fetches 13 months of history via `useQuery`, computes average/median/mode client-side, renders a Recharts `LineChart` with: actual spending line, average `ReferenceLine`, 3/6/12-month moving average lines (MA12 only when ≥12 months available). Apple-style dark modal (`bg-black/90 backdrop-blur-3xl rounded-3xl`). Stats shown as a 3-column grid. SVG legend row below chart. ESC + backdrop click close.
+- [x] **BudgetCategoryRow.tsx** — Added `onInsights?: () => void` prop. Refactored outer `<button>` to `<div role>` to allow nested button. Replaced `w-8` spacer with insights button (amber Zap icon, opacity-0 → group-hover:opacity-100).
+- [x] **BudgetExecutionView.tsx** — Added `insightsItem` state + `openInsights()` helper. Passed `onInsights` to all `BudgetCategoryRow` instances. Added `onInsights` prop + Zap button to `GroupOwnerHeader` and `GroupLabelHeader` (visible on group hover, alongside the existing chevron). Renders `CategoryInsightsModal` when `insightsItem` is set.
+- [x] **BudgetPlanningView.tsx** — Added `insightsItem` state. Added `onInsights` prop to `PlanningRow` with a Zap button in the reorder/remove button group. Renders `CategoryInsightsModal` when `insightsItem` is set.
+
+### Decisions
+- Fetching 13 months (not 12) so the 12-month moving average is fully defined for the most recent display month; chart shows the last 12.
+- Mode computed by bucketing amounts to nearest 100 (or 50 for small values) — meaningful for continuous financial data.
+- `GroupLabelHeader` derives `account_id` from `childItems[0].parent_id`; name comes from `group.label`. Icon/color are null in this case (label-only groups have no account metadata readily available).
+- Moving averages use partial windows at the start of the series (no null gaps).
+- Build passes cleanly (tsc + vite).
+
+### Files Modified
+- `migrations/0046_category_monthly_history.sql` (new)
+- `app/src/components/CategoryInsightsModal.tsx` (new)
+- `app/src/lib/api.ts`
+- `app/src/components/BudgetCategoryRow.tsx`
+- `app/src/components/BudgetExecutionView.tsx`
+- `app/src/components/BudgetPlanningView.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
 ## 2026-05-26 — PR #5 Pre-Release Review: Budget Module Fixes
 
 ### Tasks

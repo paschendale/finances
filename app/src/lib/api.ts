@@ -700,3 +700,24 @@ export async function deleteBudgetItem(id: string): Promise<void> {
     throw new Error('Failed to delete budget item');
   }
 }
+
+export interface CategoryMonthlyHistory {
+  month: string;  // YYYY-MM-DD
+  spent: number;
+}
+
+export async function fetchCategoryMonthlyHistory(
+  accountId: string,
+  months = 13,
+): Promise<CategoryMonthlyHistory[]> {
+  const response = await fetch(`${API_URL}/rpc/get_category_monthly_history`, {
+    method: 'POST',
+    headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_account_id: accountId, p_months: months }),
+  });
+  if (!response.ok) {
+    if (response.status === 401) logout();
+    throw new Error('Failed to fetch category monthly history');
+  }
+  return response.json();
+}

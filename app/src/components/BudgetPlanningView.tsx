@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { differenceInCalendarMonths, parseISO, format } from 'date-fns';
-import { X, Plus, Loader2, PiggyBank, ChevronUp, ChevronDown } from 'lucide-react';
+import { X, Plus, Loader2, PiggyBank, ChevronUp, ChevronDown, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   fetchBudgetItems,
@@ -14,6 +14,7 @@ import {
 import { AccountIcon } from './AccountIcon';
 import { BudgetBar } from './BudgetBar';
 import { SearchableSelect } from './SearchableSelect';
+import { CategoryInsightsModal } from './CategoryInsightsModal';
 
 interface BudgetPlanningViewProps {
   plan: BudgetPlan | null;
@@ -62,6 +63,9 @@ export function BudgetPlanningView({ plan, onOpenWizard, setDirty, onSaved }: Bu
   const [draft, setDraft] = useState<DraftItem[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [insightsItem, setInsightsItem] = useState<{
+    id: string; name: string; fullName: string; icon: string | null; color: string | null;
+  } | null>(null);
 
   const { data: serverItems = [], isLoading: itemsLoading } = useQuery({
     queryKey: ['budgetItems', plan?.id],
@@ -221,6 +225,17 @@ export function BudgetPlanningView({ plan, onOpenWizard, setDirty, onSaved }: Bu
   );
 
   return (
+    <>
+    {insightsItem && (
+      <CategoryInsightsModal
+        accountId={insightsItem.id}
+        accountName={insightsItem.name}
+        accountFullName={insightsItem.fullName}
+        icon={insightsItem.icon}
+        color={insightsItem.color}
+        onClose={() => setInsightsItem(null)}
+      />
+    )}
     <div className="w-full space-y-4">
       {/* Plan header */}
       <div className="flex items-center justify-between gap-3 px-1">
@@ -274,6 +289,7 @@ export function BudgetPlanningView({ plan, onOpenWizard, setDirty, onSaved }: Bu
                 onRemove={() => removeItem(item.account_id)}
                 onMoveUp={idx > 0 ? () => moveItem(item.account_id, 'up') : undefined}
                 onMoveDown={idx < monthlyItems.length - 1 ? () => moveItem(item.account_id, 'down') : undefined}
+                onInsights={() => setInsightsItem({ id: item.account_id, name: item.account_name, fullName: item.account_full_name, icon: item.icon, color: item.color })}
               />
             ))}
           </>
@@ -295,6 +311,7 @@ export function BudgetPlanningView({ plan, onOpenWizard, setDirty, onSaved }: Bu
                 onRemove={() => removeItem(item.account_id)}
                 onMoveUp={idx > 0 ? () => moveItem(item.account_id, 'up') : undefined}
                 onMoveDown={idx < yearlyItems.length - 1 ? () => moveItem(item.account_id, 'down') : undefined}
+                onInsights={() => setInsightsItem({ id: item.account_id, name: item.account_name, fullName: item.account_full_name, icon: item.icon, color: item.color })}
               />
             ))}
           </>
@@ -334,6 +351,7 @@ export function BudgetPlanningView({ plan, onOpenWizard, setDirty, onSaved }: Bu
         </button>
       </div>
     </div>
+    </>
   );
 }
 
@@ -344,9 +362,10 @@ interface PlanningRowProps {
   onRemove: () => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
+  onInsights: () => void;
 }
 
-function PlanningRow({ item, numMonths, onUpdate, onRemove, onMoveUp, onMoveDown }: PlanningRowProps) {
+function PlanningRow({ item, numMonths, onUpdate, onRemove, onMoveUp, onMoveDown, onInsights }: PlanningRowProps) {
   const monthlyAmount = numMonths > 0 ? item.period_amount / numMonths : 0;
   const displayAmount = item.amountMode === 'monthly' ? monthlyAmount : item.period_amount;
 
@@ -476,6 +495,13 @@ function PlanningRow({ item, numMonths, onUpdate, onRemove, onMoveUp, onMoveDown
             className="w-5 h-5 flex items-center justify-center rounded-md text-white/25 hover:text-red-400/80 hover:bg-white/[0.04] transition-all"
           >
             <X className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={onInsights}
+            className="w-5 h-5 flex items-center justify-center rounded text-amber-400/30 hover:text-amber-400/80 hover:bg-amber-400/10 transition-all"
+            aria-label="Category insights"
+          >
+            <Zap className="w-3 h-3" />
           </button>
         </div>
       </div>

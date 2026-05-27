@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { differenceInCalendarMonths, format, parseISO, startOfMonth, endOfMonth } from 'date-fns';
-import { ChevronDown, ChevronRight, PiggyBank } from 'lucide-react';
+import { ChevronDown, ChevronRight, PiggyBank, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   fetchCurrentBudgetPlan,
@@ -13,6 +13,7 @@ import {
 } from '@/lib/api';
 import { BudgetCategoryRow } from './BudgetCategoryRow';
 import { BudgetBar } from './BudgetBar';
+import { CategoryInsightsModal } from './CategoryInsightsModal';
 
 interface BudgetExecutionViewProps {
   currentMonth: Date;
@@ -163,6 +164,13 @@ export function BudgetExecutionView({
   onCreatePlan,
 }: BudgetExecutionViewProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [insightsItem, setInsightsItem] = useState<{
+    id: string; name: string; fullName: string; icon: string | null; color: string | null;
+  } | null>(null);
+
+  function openInsights(id: string, name: string, fullName: string, icon: string | null, color: string | null) {
+    setInsightsItem({ id, name, fullName, icon, color });
+  }
 
   const { data: plan, isLoading: planLoading } = useQuery({
     queryKey: ['budgetCurrentPlan'],
@@ -363,6 +371,13 @@ export function BudgetExecutionView({
               onClick={() => handleRowClick(group.ownerItem!)}
               values={isCollapsed ? agg : resolveItemValues(group.ownerItem)}
               hideMax={hideMax}
+              onInsights={() => openInsights(
+                group.ownerItem!.account_id,
+                group.ownerItem!.account_name,
+                group.ownerItem!.account_full_name,
+                group.ownerItem!.icon,
+                group.ownerItem!.color,
+              )}
             />
           ) : (
             <GroupLabelHeader
@@ -377,6 +392,12 @@ export function BudgetExecutionView({
                 ? group.childItems.reduce((s, c) => s + c.max_pct, 0) / group.childItems.length
                 : 100}
               hideMax={hideMax}
+              onInsights={group.childItems[0]?.parent_id
+                ? () => {
+                    const parentId = group.childItems[0].parent_id!;
+                    openInsights(parentId, group.label, group.label, null, null);
+                  }
+                : undefined}
             />
           )}
 
@@ -390,10 +411,10 @@ export function BudgetExecutionView({
                   spent={v.spent}
                   target={v.target}
                   remaining={v.remaining}
-
                   onClick={() => handleRowClick(item)}
                   hideMax={hideMax}
                   helperText={getHelperText(item)}
+                  onInsights={() => openInsights(item.account_id, item.account_name, item.account_full_name, item.icon, item.color)}
                 />
               );
             })}
@@ -403,6 +424,17 @@ export function BudgetExecutionView({
   }
 
   return (
+    <>
+    {insightsItem && (
+      <CategoryInsightsModal
+        accountId={insightsItem.id}
+        accountName={insightsItem.name}
+        accountFullName={insightsItem.fullName}
+        icon={insightsItem.icon}
+        color={insightsItem.color}
+        onClose={() => setInsightsItem(null)}
+      />
+    )}
     <div className="w-full space-y-1">
       {/* Plan title */}
       <div className="px-1 pb-2 flex items-baseline gap-3">
@@ -535,6 +567,7 @@ export function BudgetExecutionView({
         )}
       </div>
     </div>
+    </>
   );
 }
 
@@ -545,14 +578,15 @@ interface GroupOwnerHeaderProps {
   isCollapsed: boolean;
   onToggle: () => void;
   onClick: () => void;
+  onInsights?: () => void;
   values: { spent: number; target: number; remaining: number };
   hideMax?: boolean;
 }
 
-function GroupOwnerHeader({ group, isCollapsed, onToggle, onClick, values, hideMax }: GroupOwnerHeaderProps) {
+function GroupOwnerHeader({ group, isCollapsed, onToggle, onClick, onInsights, values, hideMax }: GroupOwnerHeaderProps) {
   const item = group.ownerItem!;
   return (
-    <div className="flex items-center gap-3 px-4 border-b border-white/[0.06] bg-white/[0.03] hover:bg-white/[0.05] transition-colors">
+    <div className="flex items-center gap-3 px-4 border-b border-white/[0.06] bg-white/[0.03] hover:bg-white/[0.05] transition-colors group">
       <button
         onClick={onClick}
         className="flex items-center gap-3 flex-1 min-w-0 py-3 text-left"
@@ -592,13 +626,25 @@ function GroupOwnerHeader({ group, isCollapsed, onToggle, onClick, values, hideM
           </span>
         </div>
       </div>
-      <button
-        onClick={onToggle}
-        className="shrink-0 w-8 flex items-center justify-center text-white/25 hover:text-white/60 transition-colors self-stretch"
-        aria-label={isCollapsed ? 'Expand' : 'Collapse'}
-      >
-        {isCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-      </button>
+      {/* Right controls: insights (hover) + chevron */}
+      <div className="shrink-0 flex items-center self-stretch">
+        {onInsights && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onInsights(); }}
+            className="opacity-0 group-hover:opacity-100 transition-opacity w-6 h-full flex items-center justify-center rounded text-amber-400/50 hover:text-amber-400 hover:bg-amber-400/10"
+            aria-label="Category insights"
+          >
+            <Zap className="w-3 h-3" />
+          </button>
+        )}
+        <button
+          onClick={onToggle}
+          className="w-8 h-full flex items-center justify-center text-white/25 hover:text-white/60 transition-colors"
+          aria-label={isCollapsed ? 'Expand' : 'Collapse'}
+        >
+          {isCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+        </button>
+      </div>
     </div>
   );
 }
@@ -607,16 +653,17 @@ interface GroupLabelHeaderProps {
   label: string;
   isCollapsed: boolean;
   onToggle: () => void;
+  onInsights?: () => void;
   values: { spent: number; target: number; remaining: number } | null;
   minPct: number;
   maxPct: number;
   hideMax?: boolean;
 }
 
-function GroupLabelHeader({ label, isCollapsed, onToggle, values, minPct, maxPct, hideMax }: GroupLabelHeaderProps) {
+function GroupLabelHeader({ label, isCollapsed, onToggle, onInsights, values, minPct, maxPct, hideMax }: GroupLabelHeaderProps) {
   return (
     <div className={cn(
-      'flex items-center gap-3 px-4 border-b border-white/[0.06] transition-colors',
+      'flex items-center gap-3 px-4 border-b border-white/[0.06] transition-colors group',
       isCollapsed ? 'bg-white/[0.02] hover:bg-white/[0.04]' : 'bg-white/[0.015]',
     )}>
       <div className="flex items-center gap-3 flex-1 min-w-0 py-2">
@@ -656,13 +703,25 @@ function GroupLabelHeader({ label, isCollapsed, onToggle, values, minPct, maxPct
       ) : (
         <div className="w-28 shrink-0" />
       )}
-      <button
-        onClick={onToggle}
-        className="shrink-0 w-8 flex items-center justify-center text-white/20 hover:text-white/50 transition-colors self-stretch"
-        aria-label={isCollapsed ? 'Expand' : 'Collapse'}
-      >
-        {isCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-      </button>
+      {/* Right controls: insights (hover) + chevron */}
+      <div className="shrink-0 flex items-center self-stretch">
+        {onInsights && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onInsights(); }}
+            className="opacity-0 group-hover:opacity-100 transition-opacity w-6 h-full flex items-center justify-center rounded text-amber-400/50 hover:text-amber-400 hover:bg-amber-400/10"
+            aria-label="Category insights"
+          >
+            <Zap className="w-3 h-3" />
+          </button>
+        )}
+        <button
+          onClick={onToggle}
+          className="w-8 h-full flex items-center justify-center text-white/20 hover:text-white/50 transition-colors"
+          aria-label={isCollapsed ? 'Expand' : 'Collapse'}
+        >
+          {isCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+        </button>
+      </div>
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type BudgetItemWithAccount } from '@/lib/api';
 import { AccountIcon } from './AccountIcon';
@@ -13,16 +14,18 @@ interface BudgetCategoryRowProps {
   hideMax?: boolean;
   /** Optional adjustment notice shown below the bar (monthly view only) */
   helperText?: string;
+  /** Opens the insights modal for this category */
+  onInsights?: () => void;
 }
 
-export function BudgetCategoryRow({ item, spent, target, remaining, onClick, hideMax, helperText }: BudgetCategoryRowProps) {
+export function BudgetCategoryRow({ item, spent, target, remaining, onClick, hideMax, helperText, onInsights }: BudgetCategoryRowProps) {
   const parts = item.account_full_name.split(':');
   const leafName = parts[parts.length - 1];
 
   return (
-    <button
+    <div
       onClick={onClick}
-      className="w-full text-left px-4 py-3 hover:bg-white/[0.03] transition-colors border-b border-white/[0.04] last:border-0 group"
+      className="w-full text-left px-4 py-3 hover:bg-white/[0.03] transition-colors border-b border-white/[0.04] last:border-0 group cursor-pointer"
     >
       <div className="flex items-center gap-3">
         {/* Icon + name */}
@@ -75,9 +78,20 @@ export function BudgetCategoryRow({ item, spent, target, remaining, onClick, hid
             </span>
           </div>
         </div>
-        {/* Spacer matching header chevron column */}
-        <div className="w-8 shrink-0" />
+
+        {/* Insights button / chevron-alignment spacer */}
+        <div className="w-8 shrink-0 flex items-center justify-center">
+          {onInsights && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onInsights(); }}
+              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-amber-400/50 hover:text-amber-400 hover:bg-amber-400/10"
+              aria-label="Category insights"
+            >
+              <Zap className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
       </div>
-    </button>
+    </div>
   );
 }
