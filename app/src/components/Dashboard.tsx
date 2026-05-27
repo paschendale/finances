@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type Account, fetchAccounts, fetchDashboardData, fetchDailyBalances, markAccountChecked, fetchCurrentBudgetPlan, fetchBudgetItems, fetchBudgetMonthlySpending, type BudgetItemWithAccount } from '@/lib/api';
 import { isBalanceCheckStale } from '@/lib/balanceCheckStale';
@@ -197,15 +197,15 @@ export function Dashboard({ filters, onFilterChange, onNavigateToBudget }: Dashb
       }
     });
 
-    const formatPie = (map: Record<string, number>) => 
+    const formatPie = (map: Record<string, number>) =>
       Object.entries(map)
         .map(([fullName, value]) => {
           const parts = fullName.split(':');
-          const displayName = parts.length > 1 ? parts.slice(1).join(':') : fullName;
-          return { 
-            name: formatHierarchicalName(displayName), 
-            fullName, 
-            value 
+          const displayName = parts[parts.length - 1];
+          return {
+            name: formatHierarchicalName(displayName),
+            fullName,
+            value
           };
         })
         .sort((a, b) => b.value - a.value);
@@ -590,112 +590,128 @@ function ExpenseBreakdownChart({
   categoryFilter: string | null;
   setCategoryFilter: (v: string | null) => void;
 }) {
-  const hasL2 = expensesL2.length > 0;
-  const hasL3 = expensesL3.length > 0;
-  const levels = hasL3 ? 3 : hasL2 ? 2 : 1;
+  const [drillPath, setDrillPath] = useState<string[]>([]);
 
-  // Adaptive radii based on how many levels exist
-  const radii = {
-    1: [{ inner: 0, outer: 100 }],
-    2: [{ inner: 0, outer: 60 }, { inner: 70, outer: 110 }],
-    3: [{ inner: 0, outer: 60 }, { inner: 70, outer: 110 }, { inner: 120, outer: 150 }],
-  }[levels]!;
+  // Reset drill when external "Clear" button nulls categoryFilter
+  useEffect(() => {
+    if (!categoryFilter) setDrillPath([]);
+  }, [categoryFilter]);
 
-  const getL1Index = (fullName: string) =>
-    expensesL1.findIndex(x => x.fullName === fullName.split(':')[0]);
+  const visibleData = useMemo(() => {
+    if (drillPath.length === 0) return expensesL1;
+    if (drillPath.length === 1) {
+      const prefix = drillPath[0] + ':';
+      return expensesL2.filter(e => e.fullName.startsWith(prefix));
+    }
+    const prefix = drillPath[drillPath.length - 1] + ':';
+    return expensesL3.filter(e => e.fullName.startsWith(prefix));
+  }, [drillPath, expensesL1, expensesL2, expensesL3]);
+
+  const hasChildren = (entry: PieEntry): boolean => {
+    const prefix = entry.fullName + ':';
+    if (drillPath.length === 0) return expensesL2.some(e => e.fullName.startsWith(prefix));
+    if (drillPath.length === 1) return expensesL3.some(e => e.fullName.startsWith(prefix));
+    return false;
+  };
+
+  const handleClick = (entry: PieEntry) => {
+    if (hasChildren(entry)) {
+      const newPath = [...drillPath, entry.fullName];
+      setDrillPath(newPath);
+      setCategoryFilter(entry.fullName);
+    } else {
+      setCategoryFilter(categoryFilter === entry.fullName ? null : entry.fullName);
+    }
+  };
+
+  const handleBack = (toIndex: number) => {
+    const newPath = drillPath.slice(0, toIndex);
+    setDrillPath(newPath);
+    setCategoryFilter(newPath.length > 0 ? newPath[newPath.length - 1] : null);
+  };
 
   return (
-    <div className="flex flex-col lg:flex-row h-full gap-8">
-      <div className="flex-1 min-h-[400px]">
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            <Pie
-              data={expensesL1}
-              cx="50%" cy="50%"
-              innerRadius={radii[0].inner} outerRadius={radii[0].outer}
-              dataKey="value"
-              stroke="rgba(0,0,0,0.5)" strokeWidth={2}
-            >
-              {expensesL1.map((entry, index) => (
-                <Cell
-                  key={`l1-${index}`}
-                  fill={COLORS[index % COLORS.length]}
-                  className="hover:opacity-80 transition-opacity cursor-pointer"
-                  onClick={() => setCategoryFilter(categoryFilter === entry.fullName ? null : entry.fullName)}
-                />
-              ))}
-            </Pie>
-            {levels >= 2 && (
-              <Pie
-                data={expensesL2}
-                cx="50%" cy="50%"
-                innerRadius={radii[1].inner} outerRadius={radii[1].outer}
-                dataKey="value"
-                stroke="rgba(0,0,0,0.5)" strokeWidth={2}
-              >
-                {expensesL2.map((entry, index) => {
-                  const l1Idx = getL1Index(entry.fullName);
-                  return (
-                    <Cell
-                      key={`l2-${index}`}
-                      fill={COLORS[l1Idx >= 0 ? l1Idx % COLORS.length : index % COLORS.length]}
-                      opacity={0.7}
-                      className="hover:opacity-100 transition-opacity cursor-pointer"
-                      onClick={() => setCategoryFilter(categoryFilter === entry.fullName ? null : entry.fullName)}
-                    />
-                  );
-                })}
-              </Pie>
-            )}
-            {levels >= 3 && (
-              <Pie
-                data={expensesL3}
-                cx="50%" cy="50%"
-                innerRadius={radii[2].inner} outerRadius={radii[2].outer}
-                dataKey="value"
-                stroke="rgba(0,0,0,0.5)" strokeWidth={2}
-              >
-                {expensesL3.map((entry, index) => {
-                  const l1Idx = getL1Index(entry.fullName);
-                  return (
-                    <Cell
-                      key={`l3-${index}`}
-                      fill={COLORS[l1Idx >= 0 ? l1Idx % COLORS.length : index % COLORS.length]}
-                      opacity={0.4}
-                      className="hover:opacity-100 transition-opacity cursor-pointer"
-                      onClick={() => setCategoryFilter(categoryFilter === entry.fullName ? null : entry.fullName)}
-                    />
-                  );
-                })}
-              </Pie>
-            )}
-            <Tooltip
-              contentStyle={{ backgroundColor: 'rgba(0,0,0,0.9)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(20px)' }}
-              formatter={(value: any) => `R$ ${Number(value).toLocaleString()}`}
-            />
-          </PieChart>
-        </ResponsiveContainer>
-      </div>
-      <div className="w-full lg:w-64 overflow-y-auto max-h-[400px] pr-4 space-y-2 custom-scrollbar">
-        <h4 className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold mb-4">Top Categories</h4>
-        {expensesL1.map((entry, index) => (
-          <div
-            key={entry.fullName}
-            className={cn(
-              "flex items-center justify-between group cursor-pointer p-2 rounded-xl transition-all",
-              categoryFilter === entry.fullName ? "bg-white/10" : "hover:bg-white/5"
-            )}
-            onClick={() => setCategoryFilter(categoryFilter === entry.fullName ? null : entry.fullName)}
+    <div className="flex flex-col h-full gap-4">
+      {drillPath.length > 0 && (
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <button
+            onClick={() => handleBack(0)}
+            className="hover:text-white transition-colors"
           >
-            <div className="flex items-center gap-3">
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
-              <span className="text-xs font-medium truncate w-24 text-white/80">{entry.name}</span>
+            All Expenses
+          </button>
+          {drillPath.map((p, i) => (
+            <Fragment key={p}>
+              <span className="opacity-30">/</span>
+              <button
+                onClick={() => handleBack(i + 1)}
+                className={cn(
+                  "hover:text-white transition-colors",
+                  i === drillPath.length - 1 && "text-white font-medium"
+                )}
+              >
+                {formatHierarchicalName(p.split(':').pop()!)}
+              </button>
+            </Fragment>
+          ))}
+        </div>
+      )}
+
+      <div className="flex flex-col lg:flex-row flex-1 gap-8">
+        <div className="flex-1 min-h-[380px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={visibleData}
+                cx="50%" cy="50%"
+                innerRadius={60} outerRadius={110}
+                paddingAngle={2}
+                dataKey="value"
+                stroke="rgba(0,0,0,0.5)" strokeWidth={2}
+              >
+                {visibleData.map((entry, index) => (
+                  <Cell
+                    key={`cell-${entry.fullName}`}
+                    fill={COLORS[index % COLORS.length]}
+                    className="hover:opacity-80 transition-opacity cursor-pointer"
+                    onClick={() => handleClick(entry)}
+                  />
+                ))}
+              </Pie>
+              <Tooltip
+                contentStyle={{ backgroundColor: 'rgba(0,0,0,0.9)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(20px)' }}
+                formatter={(value: any) => `R$ ${Number(value).toLocaleString()}`}
+              />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="w-full lg:w-64 overflow-y-auto max-h-[400px] pr-4 space-y-2 custom-scrollbar">
+          <h4 className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold mb-4">
+            {drillPath.length > 0 ? formatHierarchicalName(drillPath[drillPath.length - 1].split(':').pop()!) : 'Top Categories'}
+          </h4>
+          {visibleData.map((entry, index) => (
+            <div
+              key={entry.fullName}
+              className={cn(
+                "flex items-center justify-between group cursor-pointer p-2 rounded-xl transition-all",
+                categoryFilter === entry.fullName ? "bg-white/10" : "hover:bg-white/5"
+              )}
+              onClick={() => handleClick(entry)}
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
+                <span className="text-xs font-medium truncate w-24 text-white/80">{entry.name}</span>
+                {hasChildren(entry) && (
+                  <span className="text-[9px] text-muted-foreground opacity-60">›</span>
+                )}
+              </div>
+              <span className="text-[10px] font-mono text-muted-foreground group-hover:text-white transition-colors">
+                R$ {entry.value.toLocaleString()}
+              </span>
             </div>
-            <span className="text-[10px] font-mono text-muted-foreground group-hover:text-white transition-colors">
-              R$ {entry.value.toLocaleString()}
-            </span>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   );

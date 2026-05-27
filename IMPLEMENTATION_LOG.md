@@ -1,5 +1,27 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-05-27 — Dashboard: Expense Chart — Single Ring + Drill-Down
+
+### Tasks
+- [x] **Single ring**: Removed the multi-`<Pie>` concentric rendering (inner solid disc + outer donut). The chart now renders a single donut (`innerRadius=60, outerRadius=110`) regardless of data depth, matching the Income Sources chart style.
+- [x] **Drill-down navigation**: `ExpenseBreakdownChart` now has local `drillPath: string[]` state. Starting at L1, clicking a category that has children drills into it (replaces the ring with its subcategories). Clicking again drills to L3. Clicking a leaf category toggles the global `categoryFilter` for the rest of the dashboard.
+- [x] **Breadcrumb**: A breadcrumb row above the chart (visible when `drillPath.length > 0`) shows "All Expenses / Category / Subcategory" with each segment clickable to navigate back to that level.
+- [x] **Reset on clear**: A `useEffect` resets `drillPath` when the external "Viewing: X | Clear" button nulls `categoryFilter`.
+- [x] **Legend drill indicator**: Legend entries that have children show a "›" indicator; the legend header updates to show the current drill level name.
+- [x] **Display names**: Fixed `formatPie` to use the last path segment as the display name (was stripping only the first segment, causing L3 names like `basica:mercado` instead of `mercado`).
+
+### Decisions
+- `drillPath` is local to `ExpenseBreakdownChart` — no need to lift it to Dashboard since `setCategoryFilter` is called on each drill to keep the rest of the dashboard in sync.
+- Leaf-category click still toggles `categoryFilter` (not drill) so the existing "Viewing: X | Clear" affordance is preserved for leaf nodes.
+- Single donut style chosen for visual consistency with the Income Sources chart.
+
+### Files Modified
+- `app/src/components/Dashboard.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
+
 ## 2026-05-27 — Dashboard: Budget Highlights Panel + Section Reorder
 
 ### Tasks
