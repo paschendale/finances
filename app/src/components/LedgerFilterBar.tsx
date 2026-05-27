@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchAccounts } from '@/lib/api';
 import { MultiSearchableSelect } from './MultiSearchableSelect';
@@ -17,6 +17,7 @@ interface LedgerFilterBarProps {
 }
 
 export function LedgerFilterBar({ filters, onChange }: LedgerFilterBarProps) {
+  const startDateRef = useRef<HTMLInputElement>(null);
   const { data: accounts = [] } = useQuery({
     queryKey: ['accounts'],
     queryFn: fetchAccounts,
@@ -75,8 +76,11 @@ export function LedgerFilterBar({ filters, onChange }: LedgerFilterBarProps) {
         </div>
 
         <div className="flex items-center gap-2 bg-white/[0.03] border border-white/10 rounded-xl px-2.5 py-1 backdrop-blur-md">
-            <Calendar className="w-3 h-3 text-white/30" />
-            <input 
+            <button type="button" onClick={() => startDateRef.current?.showPicker()} className="cursor-pointer">
+              <Calendar className="w-3 h-3 text-white/30 hover:text-white/60 transition-colors" />
+            </button>
+            <input
+                ref={startDateRef}
                 type="date"
                 value={filters.startDate}
                 onChange={(e) => handleDateChange('startDate', e.target.value)}

@@ -1,5 +1,25 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-05-27 — UX Fix: Calendar Icons Open Date Picker
+
+### Tasks
+- [x] **QuickEntryInput.tsx** — Added `dateInputRef` and wrapped Calendar icon in a `<button>` that calls `dateInputRef.current?.showPicker()` to open the native date picker on click.
+- [x] **LedgerFilterBar.tsx** — Added `startDateRef`; Calendar icon now opens the start-date picker on click.
+- [x] **ExportWizard.tsx** — Same pattern: `startDateRef` + Calendar icon button opens the start-date picker.
+
+### Decisions
+- Used `HTMLInputElement.showPicker()` — the standard programmatic API for opening the native date picker; no new dependencies needed.
+- Calendar icon in Dashboard.tsx is already part of a functional button (custom range toggle) — no change needed there.
+- LedgerTable.tsx and BudgetPlanWizard.tsx have date inputs without calendar icons — no change needed.
+
+### Files Modified
+- `app/src/components/QuickEntryInput.tsx`
+- `app/src/components/LedgerFilterBar.tsx`
+- `app/src/components/ExportWizard.tsx`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
 ## 2026-05-27 — Dashboard: Expense Chart — Single Ring + Drill-Down
 
 ### Tasks
