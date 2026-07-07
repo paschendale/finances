@@ -93,6 +93,49 @@ Meaning:
 
 ---
 
+# Installments
+
+Credit card purchases can be split into installments using the `amountxN` shorthand in Quick Entry, or by resuming a series mid-way with `(N de M)` in the description.
+
+Example:
+
+```
+compra 120x12
+```
+
+Creates 12 independent transactions, one per month, each dated on the 1st of its target month. Series membership is identified purely by a description convention:
+
+```
+Compra (1 de 12)
+Compra (2 de 12)
+...
+Compra (12 de 12)
+```
+
+There is no dedicated database schema for installment series — each installment is a normal transaction, and the ledger view groups them by matching this description pattern.
+
+---
+
+# Adiantar Parcela (Advance Installment)
+
+Future installments can be pulled forward to an earlier date, optionally with a discount for early settlement (mirrors the "antecipar parcelas" feature offered by some credit cards).
+
+A back-arrow-over-a-dot button appears next to the amount of any future installment. Clicking it opens a modal to:
+
+- pick a new date (defaults to today, cannot be later than the installment's original date)
+- enter a fixed discount amount (optional)
+- pick an income category to book the discount against (required only when a discount is entered)
+
+The original expense entry is left unchanged; the discount is recorded as a separate income entry, and the asset/liability entry is reduced by the discount amount. This keeps category and budget totals for the original purchase historically accurate, while the discount shows up as its own income line.
+
+The date-only move works for any future installment, regardless of entry shape. The discount input is only enabled when the transaction has exactly one asset/liability entry (so there's an unambiguous account to credit the discount back into) — split-category installments are still supported as long as there's a single account being debited.
+
+Advancing an installment also sweeps in any earlier, still-pending installments in the same series (e.g. anticipating 6 de 6 also pulls in 4 de 6 and 5 de 6 if they haven't happened yet) — you can't settle a later installment early while an earlier one is still sitting unpaid in the future. Swept installments move to the same new date at their full amount; the discount only applies to the installment you actually opened the modal on.
+
+The discount itself is booked as a brand-new, separate income transaction — not an extra entry on the installment — dated the same as the new date, described as `Desconto - <original installment description>`, with two entries: the chosen income category (negative, "earned") and the installment's own asset/liability account (positive, crediting the discount back). The installment transaction itself is never altered beyond its date.
+
+---
+
 # Account Display
 
 Account visualization depends on the transaction type.

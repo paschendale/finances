@@ -4,9 +4,10 @@ import { useMemo, useEffect, useRef, useState } from 'react';
 import { cn, formatHierarchicalName } from '@/lib/utils';
 import { SearchableSelect } from './SearchableSelect';
 import { AccountIcon } from './AccountIcon';
-import { Wallet, Tag, Trash2, Plus, Check, Loader2, X, Download } from 'lucide-react';
+import { Wallet, Tag, Trash2, Plus, Check, Loader2, X, Download, UndoDot } from 'lucide-react';
 import { type LedgerFilters } from './LedgerFilterBar';
 import { ExportWizard } from './ExportWizard';
+import { AdvanceInstallmentModal } from './AdvanceInstallmentModal';
 
 interface TransactionItem {
   type: 'transaction';
@@ -38,6 +39,14 @@ function getInstallmentNumber(desc: string): number {
   return m ? parseInt(m[1]) : 0;
 }
 
+function getTodayLocalISO(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function TransactionRow({
   item,
   isExpanded,
@@ -53,6 +62,7 @@ function TransactionRow({
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editState, setEditState] = useState<Transaction | null>(null);
+  const [advanceTarget, setAdvanceTarget] = useState<TransactionItem | null>(null);
   const queryClient = useQueryClient();
 
   const { data: accounts } = useQuery({
@@ -119,14 +129,6 @@ function TransactionRow({
 
   const deleteMutation = useMutation({
     mutationFn: deleteTransaction,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-    },
-  });
-
-  const anticipateMutation = useMutation({
-    mutationFn: updateTransaction,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
@@ -292,16 +294,9 @@ function TransactionRow({
     currency: item.currency || 'BRL',
   });
 
-  const anticipateInstallment = (t: TransactionItem) => {
-    const newDate = item.date.slice(0, 7) + '-01';
-    anticipateMutation.mutate({
-      id: t.id,
-      date: newDate,
-      description: t.description,
-      entries: t.entries,
-      account_ids: t.entries.map(e => e.account_id),
-    });
-  };
+  const canAdvance = (t: TransactionItem) =>
+    !!t.description.match(/^(.+) \((\d+) de (\d+)\)$/)
+    && t.date > getTodayLocalISO();
 
   return (
     <div className={cn(
@@ -409,10 +404,19 @@ function TransactionRow({
             );
           })()}
           
-          <div className="text-right font-mono font-bold text-[14px]">
+          <div className="flex items-center justify-end gap-1 font-mono font-bold text-[14px]">
+            {canAdvance(item) && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setAdvanceTarget(item); }}
+                title="Adiantar parcela"
+                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-white/10 text-blue-400/70 hover:text-blue-400 transition-all shrink-0"
+              >
+                <UndoDot className="w-3.5 h-3.5" />
+              </button>
+            )}
             <span className={cn(
-              item.primaryType === 'expense' ? "text-destructive/90" : 
-              item.primaryType === 'income' ? "text-green-500/90" : 
+              item.primaryType === 'expense' ? "text-destructive/90" :
+              item.primaryType === 'income' ? "text-green-500/90" :
               "text-foreground/70"
               )}>
               {item.primaryType === 'expense' ? '-' : ''}
@@ -664,12 +668,12 @@ function TransactionRow({
                                 <span className={cn("font-mono shrink-0 mr-2", isCurrentItem ? "text-muted-foreground/60" : "text-muted-foreground/40")}>{t.date}</span>
                                 <span className={cn("font-medium flex-1 truncate", isCurrentItem ? "text-foreground/80" : "text-foreground/60")}>{t.description}</span>
                                 <span className={cn("font-mono ml-2", isCurrentItem ? "font-bold text-primary/70" : "text-muted-foreground/60")}>{relFormatter.format(Math.abs(t.amount))}</span>
-                                {!isCurrentItem && isFuture && (
+                                {!isCurrentItem && isFuture && canAdvance(t) && (
                                   <button
-                                    onClick={(e) => { e.stopPropagation(); anticipateInstallment(t); }}
-                                    className="ml-2 text-[9px] font-bold text-blue-400/60 hover:text-blue-400 uppercase tracking-wider shrink-0 transition-colors"
+                                    onClick={(e) => { e.stopPropagation(); setAdvanceTarget(t); }}
+                                    className="ml-2 flex items-center gap-1 text-[9px] font-bold text-blue-400/60 hover:text-blue-400 uppercase tracking-wider shrink-0 transition-colors"
                                   >
-                                    Anticipate
+                                    <UndoDot className="w-3 h-3" /> Adiantar
                                   </button>
                                 )}
                               </div>
@@ -714,6 +718,13 @@ function TransactionRow({
           )}
         </div>
       </div>
+      {advanceTarget && (
+        <AdvanceInstallmentModal
+          transaction={advanceTarget}
+          siblings={allSeriesItems}
+          onClose={() => setAdvanceTarget(null)}
+        />
+      )}
     </div>
   );
 }

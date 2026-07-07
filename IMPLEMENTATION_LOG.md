@@ -1,5 +1,47 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-07-06 — Advance Installment with Discount ("Adiantar Parcelas")
+
+### Tasks
+- [x] **`AdvanceInstallmentModal.tsx`** (new) — Modal for pulling a future installment forward: new date (defaults to today, capped at the installment's original date), fixed discount amount, income-category picker (required only when discount > 0), live before/after preview, reuses `updateTransaction`.
+- [x] **`LedgerTable.tsx`** — Added a `UndoDot` icon button next to the amount on the collapsed row for any future, single-currency, 2-entry expense installment (`canAdvance` guard). Repointed the existing series-panel "Anticipate" link to open the same modal (via shared `advanceTarget` state) instead of mutating instantly. Removed the old no-discount `anticipateInstallment`/`anticipateMutation` path entirely — one confirmed, discount-aware flow replaces it.
+- [x] **`docs/PRODUCT.md`** — Added "Installments" and "Adiantar Parcela" sections; the installment feature previously had zero documentation despite being shipped.
+
+### Decisions
+- Discount is booked as its own entry on an income-type account, not a reduction of the expense category entry — keeps the original expense/category/budget totals historically accurate; the discount shows up as separate income, matching how card issuers actually credit early-settlement discounts.
+- Math: given original entries `categoryEntry (+A)` / `assetEntry (-A)` and discount `D` (`0 ≤ D < A`), new entries are `categoryEntry` unchanged, `assetEntry` amount shrunk toward zero by `D` (sign-aware), and a discount entry of the complementary sign on the chosen income account — sum stays 0 for any `D`. When `D = 0` the discount entry is omitted (identical to the old plain anticipate).
+- No DB migration or new RPC needed — same as the feature it replaces, this is purely a frontend recomputation of entries passed to the existing `update_transaction` RPC.
+
+### Fix (same day) — regression from over-strict button guard
+- Initial version gated the button on `primaryType === 'expense' && entries.length === 2 && matching currency`, which was **stricter than the old "Anticipate" button** (which had no shape restrictions at all) — on real data this hid the button entirely for any installment that didn't fit that narrow shape, a regression.
+- Fixed: button visibility now only requires the series-description regex match and a future date (parity with the old behavior). Discount math was generalized to only require a single asset/liability entry (any number of category entries pass through untouched); when a transaction doesn't have exactly one such entry, the modal still allows the plain date-only move but disables the discount input with an explanatory note instead of hiding the whole feature.
+
+### Follow-up (same day) — sweep earlier pending installments
+- `AdvanceInstallmentModal` now takes a `siblings` prop (fed from `LedgerTable.tsx`'s existing `allSeriesItems`). Any sibling with a lower installment number that's still dated after today is swept into the same action, moved to the same target date at full amount (no discount) — you can't anticipate a later installment while an earlier one is still pending. The discount only applies to the installment the modal was opened on. Confirm now issues one `updateTransaction` call per affected transaction via `Promise.all`, matching the concurrency pattern already used for installment creation in `QuickEntryInput.tsx`.
+- The date field's upper bound is now `min(anchor's original date, all swept siblings' original dates)` rather than just the anchor's date, so a chosen date can never accidentally delay an earlier sibling instead of advancing it.
+
+### Fix (same day) — floating-point balance error
+- `update_transaction` rejected the recomputed entries with `SUM(amount_base) = 0.00000000000001` — the `update_transaction`/`create_transaction` RPCs check exact `NUMERIC` equality with no epsilon (`migrations/0015_update_transaction_rpc.sql`), and JS double subtraction (e.g. `-117.67 - (-14.57)`) doesn't land exactly on `-103.10`.
+- Added a `round2()` helper in `AdvanceInstallmentModal.tsx` that snaps the recomputed asset and discount entries' `amount`/`amount_base` to cents before submission, eliminating the residual.
+
+### Fix (same day) — real residual from uneven installment division, not just float noise
+- The `round2()` fix wasn't enough: real installment amounts come from `amount / N` (e.g. `706/6 = 117.66666666666667`, per `QuickEntryInput.tsx`'s installment split), so the untouched category entry is genuinely *not* cent-precise — rounding only the asset/discount side left a real ~0.0017 mismatch, not just float dust.
+- Replaced the float-based "solve for the last entry" math with **integer-cents arithmetic**: every entry touched by this feature (including previously-untouched category entries) is normalized to `Math.round(amount_base * 100)` cents, the new asset leg is solved for as `-(sum of all other entries in cents)`, then divided back by 100. Integer addition cancels exactly, and dividing an integer by 100 reliably round-trips to a clean 2-decimal JS number (verified numerically), so the decimal strings Postgres receives sum to exactly zero.
+- This means advancing an installment with a discount now normalizes that transaction's amounts to 2-decimal precision going forward — an intentional, minor deviation from `docs/LEDGER_RULES.md`'s "keep full precision" guidance, scoped only to transactions this feature actually touches, since sub-cent precision from an uneven split isn't meaningful for a personal-finance ledger and can't be reconciled with an added discount without a big-decimal library.
+
+### Redesign (same day) — discount as a separate income transaction
+- Reworked per feedback: the discount is no longer a 3rd entry bolted onto the anticipated installment's own transaction. It's now a brand-new, standalone transaction created via `createTransaction` — description `Desconto - <installment description>` (referencing the anticipated one), dated the same as the new date, with exactly 2 entries: the chosen income category (negative) and the installment's own asset/liability account (positive, crediting the discount back).
+- This makes the installment's own transaction untouched beyond its date (`updateTransaction` with its original `entries` unchanged) — the previous integer-cents balancing gymnastics are gone entirely, since a fresh 2-entry transaction is trivially balanced (`D + -D = 0`) with no dependency on the original entries' precision.
+- `mutationFn` now batches up to 3 kinds of calls via `Promise.all`: the anchor's date-only update, each swept sibling's date-only update, and (if a discount was entered) the one new discount transaction.
+
+### Files Modified
+- `app/src/components/AdvanceInstallmentModal.tsx` (new)
+- `app/src/components/LedgerTable.tsx`
+- `docs/PRODUCT.md`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
 ## 2026-05-27 — UX Fix: Calendar Icons Open Date Picker
 
 ### Tasks
