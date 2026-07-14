@@ -41,7 +41,7 @@ export function QuickEntryInput({ filters }: { filters?: LedgerFilters }) {
   const [input, setInput] = useState('');
   const [selectedDate, setSelectedDate] = useState(() => {
     try {
-      const saved = localStorage.getItem('quick_entry_last');
+      const saved = sessionStorage.getItem('quick_entry_last');
       if (saved) return JSON.parse(saved).date || new Date().toISOString().split('T')[0];
     } catch {}
     return new Date().toISOString().split('T')[0];
@@ -109,23 +109,6 @@ export function QuickEntryInput({ filters }: { filters?: LedgerFilters }) {
     globalSettings?.find(s => s.key === 'base_currency')?.value || 'BRL',
   [globalSettings]);
 
-  const lastUsedAccountId = useMemo(() => 
-    globalSettings?.find(s => s.key === 'last_used_account_id')?.value,
-  [globalSettings]);
-
-  const lastUsedAccount = useMemo(() => {
-    if (lastUsedAccountId && accounts) {
-      const match = accounts.find(a => a.account_id === lastUsedAccountId);
-      if (match) return match.account_name;
-    }
-    // Fallback to most recent transaction's asset account if global settings are empty
-    if (transactions && transactions.length > 0) {
-      const recentAsset = transactions[0].entries.find(e => ['asset', 'liability', 'equity'].includes(e.account_type));
-      if (recentAsset) return recentAsset.account_name;
-    }
-    // Final fallback to first available asset/liability account
-    return accountOptions[0]?.value || '';
-  }, [lastUsedAccountId, accounts, transactions, accountOptions]);
 
   const installmentPlan = useMemo(() => {
     if (!parsedInstallments || !preview || !createInstallments) return [];
@@ -190,22 +173,20 @@ export function QuickEntryInput({ filters }: { filters?: LedgerFilters }) {
     return Array.from(new Set(transactions.map(t => t.description)));
   }, [transactions]);
 
-  // Sync default account from localStorage, then global settings
+  // Sync default account from this browser session only — no cross-session fallback
   useEffect(() => {
-    if (!selectedAccount && (lastUsedAccount || accounts)) {
+    if (!selectedAccount && accounts) {
       try {
-        const saved = localStorage.getItem('quick_entry_last');
+        const saved = sessionStorage.getItem('quick_entry_last');
         if (saved) {
           const { account } = JSON.parse(saved);
-          if (account && accounts?.some(a => a.account_name === account && !a.hidden)) {
+          if (account && accounts.some(a => a.account_name === account && !a.hidden)) {
             setSelectedAccount(account);
-            return;
           }
         }
       } catch {}
-      if (lastUsedAccount) setSelectedAccount(lastUsedAccount);
     }
-  }, [lastUsedAccount, selectedAccount, accounts]);
+  }, [selectedAccount, accounts]);
 
   useEffect(() => {
     if (!input.trim()) {
@@ -397,7 +378,7 @@ export function QuickEntryInput({ filters }: { filters?: LedgerFilters }) {
         }
         await Promise.all(txns.map(createTransaction));
         if (!isTransfer) {
-          localStorage.setItem('quick_entry_last', JSON.stringify({ date: preview.date, account: selectedAccount }));
+          sessionStorage.setItem('quick_entry_last', JSON.stringify({ date: preview.date, account: selectedAccount }));
         }
         setInput('');
         setPreview(null);
@@ -413,7 +394,7 @@ export function QuickEntryInput({ filters }: { filters?: LedgerFilters }) {
         if (inputRef.current) inputRef.current.focus();
       } else {
         if (!isTransfer) {
-          localStorage.setItem('quick_entry_last', JSON.stringify({ date: preview.date, account: selectedAccount }));
+          sessionStorage.setItem('quick_entry_last', JSON.stringify({ date: preview.date, account: selectedAccount }));
         }
         mutation.mutate(buildTx(preview.date, preview.description));
       }
@@ -561,13 +542,15 @@ export function QuickEntryInput({ filters }: { filters?: LedgerFilters }) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="New transaction..."
+          placeholder={selectedAccount ? "New transaction..." : "Select an account to begin..."}
+          disabled={!selectedAccount}
           className={cn(
             "w-full bg-input/40 text-foreground px-4 py-3 rounded-xl border border-border/40 backdrop-blur-md",
             "focus:outline-none focus:border-primary/40 focus:bg-input/60 transition-all text-lg font-semibold shadow-[0_4px_20px_rgba(0,0,0,0.08)]",
-            "placeholder:text-muted-foreground/20"
+            "placeholder:text-muted-foreground/20",
+            "disabled:opacity-40 disabled:cursor-not-allowed"
           )}
-          autoFocus
+          autoFocus={!!selectedAccount}
         />
         
         {suggestion && (

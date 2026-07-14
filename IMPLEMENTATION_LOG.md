@@ -1,5 +1,30 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-07-14 — Session-Scoped Quick Entry Defaults (Reset on Fresh URL)
+
+### Problem
+Quick Entry's default date/account was stored in `localStorage` (`quick_entry_last`), which is origin-wide and durable — it survived brand-new tabs and browser restarts, so a genuinely fresh visit silently reused whatever account/date was last used, even when the user wanted a clean slate. `selectedAccount` also had a second durable fallback to `global_settings.last_used_account_id` when `localStorage` was empty.
+
+### Investigation
+Audited every persistence mechanism used by the Ledger/Dashboard (`App.tsx`, `QuickEntryInput.tsx`, `LedgerFilterBar.tsx`, `Dashboard.tsx`). The Ledger filters + view (`App.tsx`'s `filters`/`view` state) are driven purely by URL query params with hard defaults when params are absent — this already resets correctly on a fresh, param-less URL while still hydrating from a shared URL and persisting across view switches via lifted React state. No bug there; left unchanged (confirmed with user to keep the existing year-to-date default range as-is).
+
+### Tasks
+- [x] **`QuickEntryInput.tsx`** — Swapped the `quick_entry_last` read/write sites (lazy `selectedDate` init, account-sync effect, both `executeTransaction` write sites) from `localStorage` to `sessionStorage`. `sessionStorage` is scoped to the tab's lifetime, which is exactly what's needed: it survives the component's unmount/remount when switching away from and back to the Ledger view (same session), but is empty on a genuinely new tab/session.
+- [x] **`QuickEntryInput.tsx`** — Removed the `lastUsedAccount`/`lastUsedAccountId` fallback (derived from `global_settings.last_used_account_id`) entirely — deleted the now-dead memos. A fresh session no longer auto-selects an account.
+- [x] **`QuickEntryInput.tsx`** — Main transaction text input now `disabled` until `selectedAccount` is set, with placeholder switching to "Select an account to begin...". No other gating needed — the Confirm button was already disabled whenever `preview` is null, and `preview` can never populate while the (disabled) input can't be typed into.
+- [x] **`docs/PRODUCT.md`** — Rewrote the "Default account" section to describe the new session-scoped behavior instead of the old durable "last used account" default.
+
+### Decisions
+- `sessionStorage` over `localStorage` is the direct fix: it's the native browser primitive for "persist within this tab session, reset on a fresh one," which is precisely the desired behavior — no custom expiry/timestamp logic needed.
+- Ledger filters/Dashboard date range persistence (`App.tsx`) needed no code change — its URL-param-driven mechanism already satisfied "same session persists, shared URL hydrates, fresh URL resets."
+
+### Files Modified
+- `app/src/components/QuickEntryInput.tsx`
+- `docs/PRODUCT.md`
+- `IMPLEMENTATION_LOG.md`
+
+---
+
 ## 2026-07-06 — Advance Installment with Discount ("Adiantar Parcelas")
 
 ### Tasks

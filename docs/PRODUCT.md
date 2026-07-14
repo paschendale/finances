@@ -203,15 +203,9 @@ Users can manually override the type if needed.
 
 ### Default account
 
-The system assumes the user is entering transactions for the **last used account**.
+There is **no default account** at the start of a browser session. Quick Entry's transaction input stays disabled until the user explicitly picks an account.
 
-Example:
-
-```
-last account used: Nubank
-```
-
-New entries will default to Nubank unless explicitly changed.
+Once picked, the account (and the entry date) is remembered for the rest of that browser session — switching between Ledger, Dashboard, Accounts, and Budget tabs keeps it selected. A fresh session (new tab, browser restart, or a plain URL with no filters) always starts with no account selected, so the user consciously chooses where they're entering transactions rather than silently reusing wherever they left off.
 
 ---
 
