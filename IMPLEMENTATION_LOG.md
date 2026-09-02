@@ -1,5 +1,49 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-09-02 — MCP Server for PostgREST API (mcp-server/)
+
+### Problem
+The user wants his wife (and himself) to be able to talk to the ledger through a chatbot (Claude, ChatGPT, etc.). Rather than building a new backend, PostgREST's existing public RPC/view surface (`docs/API_CONTRACT.md`) can be wrapped as MCP tools.
+
+### Tasks
+- [x] New standalone `mcp-server/` Cloudflare Worker package (TypeScript) exposing the finances PostgREST API as 21 MCP tools covering transactions CRUD, lookups, all read views, and the budget module.
+- [x] Built on `createMcpHandler` (`agents/mcp/server`, MCP SDK v2) — **not** `McpAgent`. Verified directly against current Cloudflare docs that `McpAgent` (Durable-Object-backed) is deprecated and feature-frozen as of Agents SDK v0.20.0; `createMcpHandler` needs no Durable Object since every tool call here is an independent, stateless PostgREST proxy call.
+- [x] Implemented raw-token → JWT exchange against `POST /rpc/login_with_token` (`src/auth.ts`), with an isolate-lifetime, sha256-keyed in-memory JWT cache and a single-retry-on-401 re-exchange, mirroring the frontend's reactive-only re-login pattern (`app/src/lib/api.ts`).
+- [x] Implemented a small typed PostgREST client (`src/postgrest-client.ts`: `callRpc`/`getView` + `op.*` operator helpers matching `app/src/lib/api.ts`'s existing query-string conventions exactly), including PostgREST `{code, message, details, hint}` error mapping into MCP `isError: true` tool results.
+- [x] `src/index.ts`'s `fetch` is the entire security boundary: a request to `/mcp` without a well-formed `Authorization: Bearer <token>` header is rejected with 401 before any MCP or PostgREST logic runs. Env and the raw token are threaded into the per-request `McpServer` factory via closure (env isn't part of `McpRequestContext`, and `requestInfo` on it isn't guaranteed present).
+- [x] 20 unit tests (`vitest`) covering `auth.ts` (cache hit/miss/expiry, retry-once-no-loop), `postgrest-client.ts` (operator strings, URL building, error mapping), `register.ts` (exact 21-tool-name set), and `index.ts`'s 401 gate. Tool bodies themselves are intentionally untested (thin zod-validate → call → wrap, no branching).
+- [x] Manually smoke-tested via `wrangler dev` against the live `https://api-finances-dev.marotta.dev` deployment: `initialize` handshake, `tools/list` (confirmed exactly 21 tools), and a `tools/call` with a deliberately invalid token (confirmed graceful `isError: true` — "Authentication failed: Invalid or revoked access token" — no crash).
+
+### Decisions
+- Chose the stateless `createMcpHandler` architecture over the initially-discussed `McpAgent`/Durable-Object approach, based on current Cloudflare guidance (verified directly, not just via research agent) — avoids a Durable Object whose only job would have been session-scoped JWT caching.
+- Auth reuses the app's existing single-token mechanism verbatim: each household member gets their own raw token from `auth_tokens` (`scripts/generate_token.py`), passed as the MCP connection's bearer header. No OAuth, no Cloudflare Access, no shared static token — deliberately as simple as the frontend's own login.
+- JWT caching is best-effort and isolate-scoped (a module-level `Map`), not backed by KV/DO — acceptable at 2-user personal-app volume; worst case is one extra `login_with_token` round-trip per tool call.
+- Scope limited to exactly the RPC/view catalog in `docs/API_CONTRACT.md` (21 tools) — `app/src/lib/api.ts`'s additional endpoints (accounts/aliases CRUD, `global_settings`, `budget_plans` listing, `get_category_monthly_history`) are intentionally out of scope for v1.
+- Tool results omit `structuredContent` (only `content: [{type:'text', ...}]` plus `isError`) — none of the 21 tools declare an `outputSchema`, so a hand-typed `structuredContent` shape isn't needed and would have fought the SDK's strict `CallToolResult` typing for no benefit.
+- No secrets are held by the Worker — `POSTGREST_URL` is a plain (public) `vars` entry; the only credential in play is the caller-supplied raw bearer token, never persisted beyond the in-memory JWT cache.
+- Deployment is via Cloudflare's Git integration (Workers Builds), not manual `wrangler deploy` from a terminal — matches the existing deploy pattern for other projects in the "Marotta e Territorial" Cloudflare account (confirmed via `territorial-maps`' build history). Root directory `mcp-server` in this repo.
+
+### Follow-up (same day) — dev/production environment split
+Split `wrangler.jsonc` into two named Wrangler environments instead of one implicit default, so the Worker can be deployed twice from the same codebase against the two existing PostgREST deployments:
+- `env.production` → Worker `finances-mcp-production`, `POSTGREST_URL=https://api-finances.marotta.dev`.
+- `env.dev` → Worker `finances-mcp-dev`, `POSTGREST_URL=https://api-finances-dev.marotta.dev`.
+
+Both are named environments (no bare top-level deploy target) because Wrangler itself warns against deploying the implicit top-level config once multiple environments are defined — verified via `wrangler deploy --dry-run` (warns) vs `--env production`/`--env dev` (clean, correct `POSTGREST_URL` resolved for each). `vars` does not inherit between Wrangler environments, so each environment fully redeclares `POSTGREST_URL` rather than relying on a shared top-level value.
+
+Each environment is its own Cloudflare "Workers & Pages" Git-connected project (same repo + root directory `mcp-server`), distinguished only by the dashboard's per-project **Deploy command** setting (`npx wrangler deploy --env production` vs `--env dev`).
+
+### Files Modified (follow-up)
+- `mcp-server/wrangler.jsonc`
+- `mcp-server/README.md`
+
+### Files Created/Modified
+- `mcp-server/` (new package: `package.json`, `tsconfig.json`, `wrangler.jsonc`, `vitest.config.ts`, `.dev.vars.example`, `.gitignore`, `README.md`, `src/index.ts`, `src/server.ts`, `src/auth.ts`, `src/postgrest-client.ts`, `src/errors.ts`, `src/tool-result.ts`, `src/types.ts`, `src/tools/{transactions,lookups,views,budget,register}.ts`, corresponding `*.test.ts`)
+- `docs/API_CONTRACT.md` — fixed stale `upsert_budget_item` arg table (was missing `p_sort_order`/`p_category_type`, added in migrations `0042`/`0044`)
+- `IMPLEMENTATION_LOG.md`
+- `LEDGER.md` (new)
+
+---
+
 ## 2026-07-14 — Session-Scoped Quick Entry Defaults (Reset on Fresh URL)
 
 ### Problem

@@ -402,6 +402,8 @@ Inserts or updates a budget item for a `(plan_id, account_id)` pair. The account
 | `p_period_amount` | `NUMERIC` | Total budget for the entire plan period. |
 | `p_min_pct` | `NUMERIC` | Minimum monthly % of adjusted target (e.g. 60). |
 | `p_max_pct` | `NUMERIC` | Maximum monthly % of adjusted target (e.g. 140). |
+| `p_sort_order` | `INTEGER` | Display order within the plan (default `0`). |
+| `p_category_type` | `TEXT` | `'yearly'` or `'monthly'` (default `'yearly'`). |
 
 **Response:** The upserted `budget_items` row.
 

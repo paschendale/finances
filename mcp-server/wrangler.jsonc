@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Base config: never deployed directly (both real deploys pass an explicit --env,
+  // per Wrangler's own recommendation once multiple environments are defined — see
+  // env.production / env.dev below).
+  "name": "finances-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  // `vars` is NOT inherited from the top level into named environments — each env
+  // below must fully redeclare its own `vars`.
+  "env": {
+    // `wrangler deploy --env production` → Worker "finances-mcp-production"
+    // (Wrangler's <name>-<environment> auto-naming).
+    "production": {
+      "vars": {
+        "POSTGREST_URL": "https://api-finances.marotta.dev"
+      }
+    },
+    // `wrangler deploy --env dev` → Worker "finances-mcp-dev".
+    "dev": {
+      "vars": {
+        "POSTGREST_URL": "https://api-finances-dev.marotta.dev"
+      }
+    }
+  }
+}
