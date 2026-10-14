@@ -15,12 +15,21 @@ const log = scoped('http');
 
 type Env = { Variables: { actor: Actor } };
 
+/** PUBLIC_WEB_ORIGINS entries: exact origins, `*`, or `https://*.example.pages.dev` (one wildcard label). */
+export function originMatcher(pattern: string): (origin: string) => boolean {
+  if (pattern === '*') return () => true;
+  if (!pattern.includes('*')) return (o) => o === pattern;
+  const re = new RegExp('^' + pattern.split('*').map((p) => p.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[a-z0-9-]+') + '$', 'i');
+  return (o) => re.test(o);
+}
+
 export function createHttpApp(ctx: AppContext): Hono<Env> {
   const app = new Hono<Env>();
+  const allowed = ctx.config.webOrigins.map((o) => originMatcher(o));
   app.use(
     '*',
     cors({
-      origin: (origin) => (ctx.config.webOrigins.includes(origin) ? origin : ctx.config.webOrigins.includes('*') ? '*' : ''),
+      origin: (origin) => (allowed.some((m) => m(origin)) ? origin : ''),
       allowHeaders: ['Authorization', 'Content-Type'],
       allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
       maxAge: 600,

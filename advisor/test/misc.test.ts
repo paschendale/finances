@@ -4,6 +4,7 @@ import { assertDatabaseMatchesEnv, databaseNameOf, loadConfig } from '../src/con
 import { detectCheckin, parseBrazilianAmount } from '../src/jobs/checkin.js';
 import { APPROVE_WORDS, REJECT_WORDS, chunkMessage, discordify } from '../src/discord/poster.js';
 import { humanizeError, describeTool } from '../src/claude/session.js';
+import { originMatcher } from '../src/http/server.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -138,5 +139,17 @@ describe('session helpers', () => {
   it('describes tool calls briefly', () => {
     expect(describeTool('mcp__advisor__ledger_balance_as_of', { date: '2026-09-30' })).toBe('checking balance as of 2026-09-30');
     expect(describeTool('Bash', { command: 'python3 -c "print(1)"' })).toMatch(/^running python3/);
+  });
+});
+
+describe('originMatcher', () => {
+  it('matches exact, wildcard-label and star patterns', () => {
+    expect(originMatcher('https://a.example')('https://a.example')).toBe(true);
+    expect(originMatcher('https://a.example')('https://b.example')).toBe(false);
+    const m = originMatcher('https://*.finances-94t.pages.dev');
+    expect(m('https://8bdff01c.finances-94t.pages.dev')).toBe(true);
+    expect(m('https://advisor.finances-94t.pages.dev')).toBe(true);
+    expect(m('https://evil.com/?x=.finances-94t.pages.dev')).toBe(false);
+    expect(originMatcher('*')('anything')).toBe(true);
   });
 });
