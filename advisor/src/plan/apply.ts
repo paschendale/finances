@@ -3,7 +3,7 @@ import { many, maybeOne } from '../db/client.js';
 import type { PlanItem, PlanWithCounts, Statement, StatementLine } from '../db/types.js';
 import { getPlan, listPlanItems, updatePlan, updatePlanItem } from '../db/repo/plans.js';
 import { getStatement, updateStatement } from '../db/repo/statements.js';
-import { loadAccounts, reconcileAfterApply, type ReconcileOutcome } from './reconcile.js';
+import { ensureStatementAccount, loadAccounts, reconcileAfterApply, type ReconcileOutcome } from './reconcile.js';
 import { validatePlanItems, type PlanItemInputShape } from './schema.js';
 import { scoped } from '../log.js';
 
@@ -92,7 +92,8 @@ export async function approveAndApply(ctx: AppContext, planId: string, opts: { a
   await updatePlan(ctx.db, planId, { status: 'applying', approved_by: opts.actor, approved_at: 'now' });
   ctx.bus.emitConversation(plan.conversation_id, { type: 'plan', planId, status: 'applying', version: plan.version });
 
-  const statement = plan.statement_id ? await getStatement(ctx.db, plan.statement_id) : null;
+  let statement = plan.statement_id ? await getStatement(ctx.db, plan.statement_id) : null;
+  if (statement) statement = await ensureStatementAccount(ctx.db, statement, items);
   const result: ApplyResult = { plan_id: planId, status: 'applied', applied: 0, failed: 0, skipped: 0, items: [], reconciliation: null };
 
   for (const item of items) {

@@ -6,7 +6,7 @@ import { getPlan, getPlanItem, listPlanItems, listPlans, updatePlan, updatePlanI
 import { getStatement } from '../../db/repo/statements.js';
 import { getConversation } from '../../db/repo/conversations.js';
 import { approveAndApply, ApplyError, rejectPlan } from '../../plan/apply.js';
-import { computePlanBalance, loadAccounts } from '../../plan/reconcile.js';
+import { computePlanBalance, ensureStatementAccount, loadAccounts } from '../../plan/reconcile.js';
 import { planEntrySchema, validatePlanItems, type PlanItemInputShape } from '../../plan/schema.js';
 
 type Env = { Variables: { actor: Actor } };
@@ -36,7 +36,8 @@ export function planRoutes(ctx: AppContext): Hono<Env> {
     const plan = await getPlan(ctx.db, c.req.param('id'));
     if (!plan) return c.json({ error: 'not found' }, 404);
     const items = await listPlanItems(ctx.db, plan.id);
-    const statement = plan.statement_id ? await getStatement(ctx.db, plan.statement_id) : null;
+    let statement = plan.statement_id ? await getStatement(ctx.db, plan.statement_id) : null;
+    if (statement) statement = await ensureStatementAccount(ctx.db, statement, items);
     const balance = statement ? await computePlanBalance(ctx.db, plan, items, statement) : null;
     const lines = new Map((statement?.lines ?? []).map((l) => [l.hash, l]));
     const accounts = await loadAccounts(ctx.db);

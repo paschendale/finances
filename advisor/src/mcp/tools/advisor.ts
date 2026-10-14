@@ -9,7 +9,7 @@ import { addNote, listNotes } from '../../db/repo/misc.js';
 import { createPlan, getPlan, listPlanItems, replacePlanItems, updatePlan } from '../../db/repo/plans.js';
 import { getConversation, updateConversation } from '../../db/repo/conversations.js';
 import { planItemInputSchema, validatePlanItems } from '../../plan/schema.js';
-import { computePlanBalance, loadAccounts, reconciliationDetail, reconciliationHistory } from '../../plan/reconcile.js';
+import { computePlanBalance, ensureStatementAccount, loadAccounts, reconciliationDetail, reconciliationHistory } from '../../plan/reconcile.js';
 
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD');
 
@@ -217,8 +217,11 @@ export function registerAdvisorTools(server: McpServer, ctx: AppContext, session
         if (items.length === 0) throw new Error('plan has no items');
         let balance = null;
         if (plan.statement_id) {
-          const st = await getStatement(db, plan.statement_id);
-          if (st) balance = await computePlanBalance(db, plan, items, st);
+          let st = await getStatement(db, plan.statement_id);
+          if (st) {
+            st = await ensureStatementAccount(db, st, items);
+            balance = await computePlanBalance(db, plan, items, st);
+          }
         }
         const updated = await updatePlan(db, plan_id, { status: 'pending_approval', summary, result: balance ? { balance } : null });
         const withCounts = (await getPlan(db, plan_id))!;

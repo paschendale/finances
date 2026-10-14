@@ -1,6 +1,7 @@
 import type { Db, Queryable } from '../db/client.js';
 import { many, maybeOne, one } from '../db/client.js';
 import type { Plan, PlanItem, Reconciliation, Statement } from '../db/types.js';
+import { updateStatement } from '../db/repo/statements.js';
 import type { PostgrestClient } from '../postgrest/client.js';
 import { balanceCheck, planDeltasByAccount, round2, type AccountInfo, type BalanceCheck } from './schema.js';
 
@@ -10,6 +11,46 @@ export async function loadAccounts(q: Queryable): Promise<Map<string, AccountInf
     `SELECT h.id, h.full_name, h.type, a.hidden FROM account_names_hierarchical h JOIN accounts a ON a.id = h.id`,
   );
   return new Map(rows.map((r) => [r.id, r]));
+}
+
+/**
+ * The statement's ledger account is the asset/liability account shared by the plan's items: the
+ * most frequent such account across create/update/adjust entries and skip items' transactions.
+ */
+export async function inferStatementAccount(q: Queryable, items: PlanItem[]): Promise<string | null> {
+  const accounts = await loadAccounts(q);
+  const votes = new Map<string, number>();
+  const vote = (id: string) => votes.set(id, (votes.get(id) ?? 0) + 1);
+  const skipTx: string[] = [];
+  for (const it of items) {
+    if (it.status === 'removed') continue;
+    if (it.kind === 'skip' && it.transaction_id) skipTx.push(it.transaction_id);
+    for (const e of it.entries) {
+      const a = accounts.get(e.account_id);
+      if (a && (a.type === 'asset' || a.type === 'liability')) vote(e.account_id);
+    }
+  }
+  if (skipTx.length > 0) {
+    const rows = await many<{ account_id: string }>(
+      q,
+      `SELECT e.account_id FROM entries e JOIN accounts a ON a.id = e.account_id
+       WHERE e.transaction_id = ANY($1::uuid[]) AND a.type IN ('asset','liability')`,
+      [skipTx],
+    );
+    for (const r of rows) vote(r.account_id);
+  }
+  let best: string | null = null;
+  let bestN = 0;
+  for (const [id, n] of votes) if (n > bestN) [best, bestN] = [id, n];
+  return best;
+}
+
+/** Fills statement.account_id from the plan when ingestion could not resolve it. */
+export async function ensureStatementAccount(q: Queryable, statement: Statement, items: PlanItem[]): Promise<Statement> {
+  if (statement.account_id) return statement;
+  const inferred = await inferStatementAccount(q, items);
+  if (!inferred) return statement;
+  return updateStatement(q, statement.id, { account_id: inferred });
 }
 
 export async function ledgerBalanceAsOf(q: Queryable, accountId: string, date: string): Promise<number> {
@@ -147,7 +188,10 @@ export async function reconcileAfterApply(
       vouchedTx.add(it.applied_transaction_id);
       if (it.source_ref?.line_hash) lineByTx.set(it.applied_transaction_id, it.source_ref.line_hash);
     }
-    if (it.kind === 'skip' && it.transaction_id) vouchedTx.add(it.transaction_id);
+    if (it.kind === 'skip' && it.transaction_id) {
+      vouchedTx.add(it.transaction_id);
+      if (it.source_ref?.line_hash && !lineByTx.has(it.transaction_id)) lineByTx.set(it.transaction_id, it.source_ref.line_hash);
+    }
   }
   const period = await entriesInPeriod(db, accountId, statement.period_start, statement.period_end);
   const recItems: Array<Record<string, unknown>> = [];

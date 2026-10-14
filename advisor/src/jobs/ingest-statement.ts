@@ -64,9 +64,10 @@ export function statementsStorageDir(dataDir: string): string {
  * (scope account) first; then a single visible checking account for the institution by name match.
  */
 export async function resolveStatementAccount(ctx: AppContext, institution: string | null, kind: StatementKind, accountRef: string | null): Promise<string | null> {
+  const norm = (s: string) => s.replace(/[^a-z0-9]/gi, '').toLowerCase();
   if (institution && accountRef) {
-    const notes = await findNoteByPrefix(ctx.db, 'account', `statement_source=${institution}:${accountRef}`);
-    const withRef = notes.find((n) => n.ref_id);
+    const notes = await findNoteByPrefix(ctx.db, 'account', `statement_source=${institution}:`);
+    const withRef = notes.find((n) => n.ref_id && norm(n.note.split(':').slice(1).join(':').split(/\s/)[0] ?? '') === norm(accountRef));
     if (withRef) return withRef.ref_id;
   }
   if (institution) {

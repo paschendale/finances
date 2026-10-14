@@ -72,6 +72,22 @@ export async function matchLines(db: Queryable, lines: StatementLine[], accountI
     }
   }
 
+  // 1b. Lines a reconciliation already vouched for (statement_line_hash on a cleared item)
+  const hashes = rows.map((r) => r.hash);
+  const vouched = await db.query<{ hash: string; id: string }>(
+    `SELECT ri.statement_line_hash AS hash, e.transaction_id AS id
+     FROM reconciliation_items ri JOIN entries e ON e.id = ri.entry_id
+     WHERE ri.kind = 'cleared' AND ri.statement_line_hash = ANY($1::text[])`,
+    [hashes],
+  );
+  for (const v of vouched.rows) {
+    const l = byHash.get(v.hash);
+    if (l && !l.already_in_ledger) {
+      l.already_in_ledger = true;
+      l.ledger_transaction_id = v.id;
+    }
+  }
+
   // 2. Likely duplicates for the rest
   const pending = rows.filter((r) => !byHash.get(r.hash)!.already_in_ledger);
   if (pending.length > 0) {
