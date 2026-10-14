@@ -20,6 +20,7 @@ interface BudgetExecutionViewProps {
   periodView: 'monthly' | 'period';
   onNavigateToLedger: (accountId: string, startDate: string, endDate: string, accountFullName?: string) => void;
   onCreatePlan?: () => void;
+  onPlanWithAdvisor?: () => void;
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -162,6 +163,7 @@ export function BudgetExecutionView({
   periodView,
   onNavigateToLedger,
   onCreatePlan,
+  onPlanWithAdvisor,
 }: BudgetExecutionViewProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [insightsItem, setInsightsItem] = useState<{
@@ -221,6 +223,14 @@ export function BudgetExecutionView({
             className="mt-2 px-5 py-2.5 rounded-xl bg-white text-black text-[13px] font-semibold hover:bg-white/90 active:scale-[0.98] transition-all"
           >
             Create Budget Plan
+          </button>
+        )}
+        {onPlanWithAdvisor && (
+          <button
+            onClick={onPlanWithAdvisor}
+            className="px-5 py-2.5 rounded-xl border border-white/[0.12] bg-white/[0.04] text-[13px] font-semibold hover:bg-white/[0.08] active:scale-[0.98] transition-all"
+          >
+            ✦ Plan with the advisor
           </button>
         )}
       </div>

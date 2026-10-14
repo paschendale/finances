@@ -95,6 +95,13 @@ export interface Entry {
   amount_base: number;
 }
 
+export interface TransactionClearing {
+  reconciliation_id: string;
+  period_end: string;
+  account_id: string;
+  statement_ref: string | null;
+}
+
 export interface Transaction {
   id: string;
   date: string;
@@ -102,6 +109,7 @@ export interface Transaction {
   metadata?: Record<string, any>;
   entries: Entry[];
   account_ids?: string[];
+  clearing?: TransactionClearing | null;
 }
 
 export async function fetchAccounts(): Promise<Account[]> {

@@ -6,7 +6,8 @@ COPY app/package.json app/package-lock.json ./
 RUN npm ci
 COPY app/ ./
 ARG VITE_APP_API_URL=http://localhost:3000
-ENV VITE_APP_API_URL=${VITE_APP_API_URL}
+ARG VITE_APP_ADVISOR_URL=http://localhost:3100
+ENV VITE_APP_API_URL=${VITE_APP_API_URL} VITE_APP_ADVISOR_URL=${VITE_APP_ADVISOR_URL}
 RUN npm run build
 
 FROM python:3.12-slim-bookworm
