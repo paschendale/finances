@@ -17,9 +17,12 @@ environment variables; the maintainer's own instance is described only as an exa
 
 # 0. Start here (implementing agent)
 
-**Status: build-ready as of 2026-10-14.** All product and UI decisions are taken; the mockup is approved
-(§20). Do not reopen decisions marked "decided"; append questions to `LEDGER.md` and keep building under
-the stated assumption.
+**Status: implemented on 2026-10-14 (phases 0–3, branch `advisor`).** The daemon lives in `advisor/`,
+the migrations are 0047–0051, the web slice is under `app/src/components/advisor/`. This document stays
+the design contract; `advisor/README.md` is the operator manual and `IMPLEMENTATION_LOG.md` records the
+acceptance checks. Open follow-ups are in `LEDGER.md` (classifier threshold tuning, Gmail OAuth client,
+split action, shared login). Do not reopen decisions marked "decided"; append questions to `LEDGER.md`
+and keep building under the stated assumption.
 
 **Order of work.** Phases 0 → 3 in §17, each phase a reviewable unit. Inside a phase: migrations and
 SQL tests first, then the daemon module with its vitest suite, then the frontend slice, then the

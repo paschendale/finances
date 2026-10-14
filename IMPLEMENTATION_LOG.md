@@ -1,5 +1,30 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-10-14 — AI Finances Advisor: implementation (phases 0–3) and dev deployment
+
+### What was implemented
+Everything in `docs/ADVISOR.md` §17 phases 0–3, on branch `advisor`, as one PR to `main`.
+
+- **Migrations 0047–0051.** `create_transaction`/`update_transaction` accept `p_metadata` (provenance, FITID/source indexes); `advisor_*` tables; `ajustes` suspense account; derived classification (`merchant_aliases`, `normalize_merchant`, `transaction_lines`, `classify_candidates`; `match_description_memory` and `description_memories_with_names` keep their shapes and are now derived; `learn_from_transaction` replaces the memory block); reconciliations (`reconciliations`, `reconciliation_items`, `entry_clearings`, `account_reconciliation_status`, `open_/set_/close_/reopen_reconciliation`, `ledger_balance_as_of`, `uncleared_entries`; `account_balances.reconciled_through/cleared_balance`; `transactions_with_entries.clearing`).
+- **`advisor/` daemon** (Node 22, Hono, pg, zod, discord.js, pino): config with the prod/dev database guard, Claude credentials/usage/gate (routine only), `claude -p` runner with stream-json parser and fake-claude tests, session pool (interactive slots, one yielding background slot) and per-conversation locks, local Streamable-HTTP MCP server with per-run bearer tokens (read tools mirroring `mcp-server/` plus `classify_candidates`, `merchant_alias_*`, `statement_*`, `reconciliation_*`, `uncleared_entries`, `note_*`, `plan_*`, `conversation_summary_set`), ingestion (own OFX SGML/XML parser, Nubank account/card CSV, pdftotext fallback, detection, matcher with FITID/likely-duplicate/alias/candidates), plan schema + version-checked applier with provenance and cleared-entry locking, reconciliation around apply, HTTP API (SSE chat, uploads, plans, reconciliation reads, health), Discord bot (threads, ✅/word approvals on the latest summary, attachments, catch-up, nudges), Gmail history walker with Nubank rules + Sonnet routing (gated), stale-account / pending-plan / Claude-health jobs, prompts, Dockerfile (Claude Code CLI inside), GHCR workflow, compose service, README.
+- **Web app.** Advisor tab (conversation list, streaming chat, uploads, plan cards, plan review with inline edits and live balance check), pending-plans banner, budget health card replacing the piggy bank, "Plan with the advisor", cleared glyph + raw statement text on Ledger rows (confirm before editing a reconciled row), reconciled-through and suspense lines on Accounts cards, `VITE_APP_ADVISOR_URL`.
+- **Docs.** `API_CONTRACT.md` (new RPCs/views), `advisor/README.md`, `CLAUDE.md` commands, `compose.yaml` banner, `LEDGER.md` follow-ups.
+
+### Tests
+`advisor/`: 63 tests (vitest) incl. the SQL suite run with `TEST_DATABASE_URL` against a throwaway database created from all 51 migrations (normalize_merchant fixtures, alias learning, the Tampopo classification case, reconciliation equation/continuity/locking, cleared glyph data). `app/`: 58 tests, `npm run build` clean, lint parity with `main`.
+
+### Acceptance checks (dev database = copy of production taken 2026-10-14)
+- Phase 0: `finances-advisor-dev` boots with web+discord; `GET /health` green (db, Claude login via the host's `~/.claude`, Discord connected, haiku health ping ok). A web conversation "Qual o saldo atual da conta Nubank…" was answered from `list_account_balances` in ~10 s (Opus session, logged in `advisor_claude_calls` with cost); Quick Entry suggestions keep working through the redefined RPC/view (`classify_candidates('Tampopo')` returns the household category first on the real history).
+- Phase 1: the real Nubank OFX for September 2026 (37 lines, closing R$ 663,78) was uploaded through `POST /uploads`; parsed, 4 lines flagged as likely duplicates of existing entries, planning turn started. Result recorded below once the plan is reviewed.
+- Phase 2: Discord bot connected; the stale-accounts nudge (24 accounts) posted once on first boot; approvals by ✅/"aprova" implemented (not yet exercised on a real plan).
+- Phase 3: nudges, Claude health job, notes memory, conversation titles/summaries (the session set "Saldo Nubank" itself), budget plan items, suspense review in the prompt; §19 legacy cleanup: piggy bank removed, agent-first entries added, centro de custo needed no migration.
+
+### Deployment (maintainer, non-normative)
+Dev instance in the infra stack next to PostgREST dev, image built on the host from the branch, Claude login shared through a bind mount, public route with `flush_interval -1`, Cloudflare Pages preview of the branch with `VITE_APP_ADVISOR_URL` set for the preview environment. Gmail off until an OAuth client exists.
+
+### Files
+`migrations/0047…0051`, `advisor/**`, `app/src/components/advisor/**`, `app/src/components/BudgetHealthCard.tsx`, `app/src/lib/advisor-api.ts`, `app/src/lib/markdown.ts`, `app/src/lib/plan-utils.ts`, `app/src/App.tsx`, `Dashboard.tsx`, `BudgetPage.tsx`, `BudgetExecutionView.tsx`, `LedgerTable.tsx`, `AccountsPage.tsx`, `api.ts`, `Dockerfile`, `compose.yaml`, `compose.env.example`, `.env.example`, `.dockerignore`, `.github/workflows/advisor-image.yml`, `CLAUDE.md`, `docs/API_CONTRACT.md`, `LEDGER.md`.
+
 ## 2026-10-14 — AI Finances Advisor: investigation and implementation spec (docs/ADVISOR.md)
 
 ### Problem
