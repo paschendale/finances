@@ -13,6 +13,14 @@ npm run test       # Vitest
 npm run preview    # Preview production build
 ```
 
+### Advisor daemon (run from `advisor/`)
+```bash
+npm run dev        # tsx watch (needs DATABASE_URL, POSTGREST_URL, FINANCES_TOKEN, JWT_SECRET; ADVISOR_CHANNELS=web)
+npm run build      # tsc → dist/
+npm run typecheck  # tsc --noEmit
+npm test           # Vitest; set TEST_DATABASE_URL to also run the SQL suite against a migrated throwaway DB
+```
+
 ### Database (Python, run from repo root)
 ```bash
 python scripts/migrate.py              # Apply pending migrations

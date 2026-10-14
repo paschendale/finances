@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "decision": { "type": "string", "enum": ["statement", "invoice", "ignore"] },
+    "institution": { "type": ["string", "null"] },
+    "kind": { "type": "string", "enum": ["account", "card", "investment", "other"] },
+    "reason": { "type": "string" }
+  },
+  "required": ["decision", "institution", "kind", "reason"]
+}

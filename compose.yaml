@@ -30,6 +30,17 @@
 #  COMPOSE_VITE_APP_API_URL       Baked into the Docker UI build (browser → API)
 #  APP_ORIGIN                     PostgREST CORS allowlist (comma-separated)
 #
+#  Advisor (AI assistant, see docs/ADVISOR.md and advisor/README.md)
+#  ADVISOR_PORT                   Published port for the advisor HTTP API (3100)
+#  ADVISOR_CHANNELS               web | web,discord | web,discord,gmail
+#  COMPOSE_VITE_APP_ADVISOR_URL   Baked into the UI build (browser → advisor), default http://localhost:3100
+#  DISCORD_BOT_TOKEN, DISCORD_GUILD_ID, DISCORD_CHANNEL_ID, DISCORD_OBEYED_USER_IDS   when discord is enabled
+#  GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN                          when gmail is enabled
+#  TZ                             Time zone for the advisor (dates in prompts and nudges)
+#
+#  First run of the advisor: `docker compose exec -it advisor claude login`, then check
+#  http://localhost:3100/health.
+#
 # =============================================================================
 
 name: finances
@@ -91,5 +102,37 @@ services:
       app:
         condition: service_healthy
 
+  advisor:
+    build:
+      context: .
+      dockerfile: advisor/Dockerfile
+    environment:
+      TZ: ${TZ:-UTC}
+      ADVISOR_ENV: dev
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/finances
+      PROD_DATABASE_NAME: __none__
+      POSTGREST_URL: http://postgrest:3000
+      FINANCES_TOKEN: ${FINANCES_BOOTSTRAP_TOKEN:-local-dev-login}
+      JWT_SECRET: ${JWT_SECRET:-local-docker-jwt-not-for-production}
+      PUBLIC_WEB_ORIGINS: ${APP_ORIGIN:-http://localhost:8080,http://127.0.0.1:8080}
+      ADVISOR_CHANNELS: ${ADVISOR_CHANNELS:-web}
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:-}
+      DISCORD_CHANNEL_ID: ${DISCORD_CHANNEL_ID:-}
+      DISCORD_OBEYED_USER_IDS: ${DISCORD_OBEYED_USER_IDS:-}
+      GMAIL_CLIENT_ID: ${GMAIL_CLIENT_ID:-}
+      GMAIL_CLIENT_SECRET: ${GMAIL_CLIENT_SECRET:-}
+      GMAIL_REFRESH_TOKEN: ${GMAIL_REFRESH_TOKEN:-}
+    ports:
+      - "${ADVISOR_PORT:-3100}:3100"
+    volumes:
+      - advisor_claude:/home/advisor/.claude   # Claude Code login + sessions
+      - advisor_data:/data                     # statements, workspaces
+    depends_on:
+      postgrest:
+        condition: service_started
+
 volumes:
   postgres_data:
+  advisor_claude:
+  advisor_data:
