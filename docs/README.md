@@ -25,6 +25,7 @@ The recommended reading order is:
 4. LEDGER_RULES.md
 5. ARCHITECTURE.md
 6. MIGRATION_STRATEGY.md
+7. ADVISOR.md (only when working on the AI advisor)
 
 This order moves from **user behavior → domain model → implementation architecture**.
 
@@ -179,6 +180,21 @@ This document describes:
 - usage examples with `curl`
 
 This document defines **how to interact with the system API**.
+
+---
+
+## ADVISOR.md
+
+Implementation specification for the **AI finances advisor** (`advisor/` daemon on Disbelief):
+
+- decisions and scope (plan-then-apply, Claude Code sessions, web + Discord)
+- advisor tables and transaction provenance (migrations 0047–0049)
+- statement ingestion (Gmail, uploads), matching, reconciliation policy
+- approval and apply flow, web Advisor view, Discord bot, Gmail watcher
+- deployment on the `finances` Portainer stack, Caddy, runbook
+- delivery phases with acceptance checks
+
+This document defines **how the advisor is built and operated**.
 
 ---
 

@@ -87,3 +87,4 @@ Read these in order when working on new features:
 4. `LEDGER_RULES.md` — accounting invariants, sign conventions, multi-currency rules
 5. `ARCHITECTURE.md` — system layers and design principles
 6. `API_CONTRACT.md` — RPC schemas and view definitions with curl examples
+7. `ADVISOR.md` — implementation spec for the AI finances advisor (`advisor/` daemon, migrations 0047–0051, web Advisor view). Start at its §0 when building it.

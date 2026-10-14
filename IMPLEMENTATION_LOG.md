@@ -1,5 +1,41 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-10-14 — AI Finances Advisor: investigation and implementation spec (docs/ADVISOR.md)
+
+### Problem
+Turn the ledger into an AI-assisted advisor/bookkeeper: ingest statements and receipts from Gmail and uploads, build editable insertion plans, reconcile balances with history, plan budgets by natural language, nudge on Discord. Runtime: one Docker service using the Claude Code CLI under the operator's subscription.
+
+### Investigation
+- Repo, migrations (at 0046), `mcp-server/` (21 tools) and `ADVISOR_PROMPT.md`.
+- The maintainer's deployment (Postgres + three PostgREST containers behind a reverse proxy, app on Cloudflare Pages) and host resources; no Claude binary installed there.
+- Data profile: ~9.7k transactions since 2022, `metadata` empty everywhere (no provenance/dedup), "Ajuste" is the 3rd most used description (booked to `sem-categoria`), `last_checked` goes stale for weeks, entry happens in bursts.
+- Mailbox: Nubank emails account statements on request as OFX/PDF/CSV and card bills as CSV; no other bank emails statements.
+- Sibling project (territorial-assistant): subscription-usage gating of background Claude work, single-shot `claude -p` with JSON schemas, closed action sets applied by code after ✅, runs on a Mac because of the keychain login. Pluggy/Open Finance was tried there and abandoned.
+
+### Decisions (maintainer interview, options-based)
+One Docker service with Claude Code OAuth only (no API fallback in v1) · plan-then-apply (Claude never writes to the ledger) · agentic resumable sessions with read-only tools · web app Advisor view first, Discord for notifications/approvals · ingestion: Gmail (Nubank), uploads, casual balance check-ins; no Pluggy · both household members, shared approvals · investigate gaps first, adjust only when told, every reconciliation recorded · nudges only on arrival or 30+ day staleness · code in `advisor/` in this repo · mirror user language · Opus for sessions, Sonnet for routine · Discord guild/bot/mailbox are operator env, nothing hard-coded (the app is open source) · legacy cleanup + agent-first budgeting (§19) · UI designed as a mockup for approval before implementation (§20).
+
+### UI/UX approval
+Designed the Advisor view as a clickable Design-canvas mockup (conversation with plan card, plan review table, dashboard hooks, empty/offline/waiting states, two mobile screens) before any code. Approved as designed by the maintainer the same day; the contract is `docs/ADVISOR.md` §20. The Dashboard piggy-bank indicator is replaced by a budget health card.
+
+### Follow-up (same day) — classification, gate, reconciliation
+Three adjustments from the maintainer folded into the spec:
+- **Derived classification (§21, migration 0050).** `description_memories` was built for hand-typed short names and degraded once agents wrote raw statement text alongside household names (one merchant, two memories, wrong trigram matches). Replaced by `classify_candidates`, computed at query time over `transaction_lines` with factors name, raw statement text, amount, account, weekday/day-of-month/hour and recency, returning evidence and a margin-based confidence. The only stored, learned fact is `merchant_aliases` (raw text → household name). `match_description_memory` and `description_memories_with_names` are redefined over derived data so Quick Entry keeps working.
+- **Gate.** Interactive messages are never gated or queued behind background work; the usage gate governs routine jobs only, and background work yields one slot to people.
+- **Reconciliation as a core resource (§8, migration 0051).** `reconciliations` + `reconciliation_items` per account and statement period, with cleared/outstanding/missing/duplicate vocabulary, the equation `difference = statement_closing − (ledger_opening + Σ cleared)`, continuity between periods, locking of cleared entries, `ajustes` treated as a suspense account, and `reconciled_through` exposed on `account_balances`.
+
+### Build-ready (same day)
+Added §0 "Start here" to `docs/ADVISOR.md`: fixed implementation choices (Hono, pg, zod, discord.js, own OFX parser, pdftotext, pino, vitest incl. SQL tests against a throwaway Postgres, ghcr image), local dev loop, safety rails (prod/dev database guard), definition of done per phase. The two reconciliation UI touches (Ledger cleared glyph, Accounts reconciled-through + suspense) were added to the mockup as a seventh board so nothing is left "before implementing". `CLAUDE.md` now points at the spec.
+
+### Files Created/Modified
+- `docs/ADVISOR.md` (new): full implementation spec (architecture, migrations 0047–0051, Claude runner/gate/MCP tools, ingestion, reconciliation, approval/apply, web view, Discord, Gmail, self-hosting via compose, phases with acceptance checks, legacy cleanup, UI contract, maintainer appendix).
+- `docs/README.md`: added ADVISOR.md to the index.
+- `CLAUDE.md`: pointer to `docs/ADVISOR.md`.
+- `LEDGER.md`: open items from the spec.
+- `IMPLEMENTATION_LOG.md`
+
+---
+
 ## 2026-09-02 — MCP Server for PostgREST API (mcp-server/)
 
 ### Problem
