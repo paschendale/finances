@@ -31,3 +31,23 @@ The Gmail watcher reads one operator mailbox. Statements from other household me
 ## Advisor: classifier weights need tuning on real history
 
 `classify_candidates` (docs/ADVISOR.md §21) starts with reasoned default weights (name 0.40, raw 0.20, amount 0.15, account 0.10, time 0.10). They can only be tuned once transactions carry `metadata.statement_line.raw`. After a few statements are applied, evaluate against the maintainer's known categorisations and store the chosen weights in `global_settings.classifier_weights`.
+
+## Advisor: classifier noise on short raw text
+
+On the maintainer's history `classify_candidates('TAMPOPO ALIMENTOS LTDA', …)` ranks the right category first (41 matches) but with confidence ≈ 0.5 because unrelated categories with many recent transactions pass the `name ≥ 0.25` eligibility bar through weak trigram overlap (`alimentos` vs `rendimentos`). Options: raise the eligibility threshold to 0.35, require `word_similarity` rather than `similarity` for the bar, or down-weight categories whose evidence is name-only. Decide after a few applied statements; the weights and thresholds live in `global_settings.classifier_weights`.
+
+## Advisor: Gmail channel needs a Google OAuth client
+
+The watcher is implemented (`advisor/src/gmail`) but no Google Cloud desktop OAuth client exists yet, so the maintainer's dev instance runs `ADVISOR_CHANNELS=web,discord`. Run `node advisor/ops/gmail-auth.mjs <client_id> <client_secret>` once a client is created and add `gmail` to the channels.
+
+## Advisor: second household member on Discord
+
+`DISCORD_OBEYED_USER_IDS` on the dev instance lists one user id. Add the second member's id so both can approve from Discord (web approvals already work for any finances token).
+
+## Advisor: plan review has no "split item" action
+
+The mockup shows a split action on a plan row; the implementation covers it through the "ask the advisor to change this plan" box (the advisor rewrites the items). A direct split needs an "insert item" API on the plan.
+
+## Advisor: shared Claude login between host and container
+
+The dev instance bind-mounts the host user's `~/.claude` so the container and the host share one OAuth login. If both refresh the token concurrently one side may be logged out; watch `GET /health` → `claude.loggedIn` and the daily health ping. A dedicated named volume with its own `claude login` avoids this if it bites.
