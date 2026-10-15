@@ -132,6 +132,11 @@ client: a *Desktop app* client works as is; a *Web application* client must list
 `http://127.0.0.1:8765/callback` under its authorized redirect URIs. Put the three values in the
 daemon's environment and add `gmail` to `ADVISOR_CHANNELS`.
 
+Skipping the gate (web token): `POST /conversations/:id/plan-now` runs the planning turn of a Gmail
+statement that is waiting for the usage gate, right away and as an interactive turn;
+`POST /conversations/plan-now` does it for every waiting conversation. Conversation rows carry
+`waiting_turn` so the app can offer the button ("Planejar agora").
+
 Manual pick-up (web token): `GET /gmail/messages?q=<gmail query>&limit=20` lists mails with their
 attachments, detected institution/kind and whether the sync already handled them;
 `POST /gmail/messages/:id/ingest` (`{"force":true}` to redo one) ingests that mail and starts the

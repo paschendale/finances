@@ -12,6 +12,7 @@ import {
 } from '../../db/repo/conversations.js';
 import { listPlans } from '../../db/repo/plans.js';
 import { listStatements } from '../../db/repo/statements.js';
+import { findWaitingStatements, groupByConversation, startPlanningTurn } from '../../jobs/background-turns.js';
 
 type Env = { Variables: { actor: Actor } };
 
@@ -73,6 +74,25 @@ export function chatRoutes(ctx: AppContext): Hono<Env> {
     const outcome = ctx.sessions.sendUserMessage(conv.id, body.content, { actor: actor.id, kind: 'interactive' });
     outcome.catch(() => undefined);
     return c.json({ accepted: true, queued: ctx.sessions.isBusy(conv.id) }, 202);
+  });
+
+  /** "Planejar agora": run the planning turn of every waiting Gmail statement now, skipping the usage gate. */
+  app.post('/conversations/plan-now', async (c) => {
+    const actor = c.get('actor');
+    const byConv = groupByConversation(await findWaitingStatements(ctx));
+    for (const [conversationId, statements] of byConv) {
+      void startPlanningTurn(ctx, conversationId, statements, { actor: actor.id, kind: 'interactive' }).catch(() => undefined);
+    }
+    return c.json({ started: byConv.size, conversation_ids: [...byConv.keys()] }, byConv.size ? 202 : 200);
+  });
+
+  app.post('/conversations/:id/plan-now', async (c) => {
+    const actor = c.get('actor');
+    const id = c.req.param('id');
+    const statements = await findWaitingStatements(ctx, id);
+    if (statements.length === 0) return c.json({ error: 'Nada esperando nesta conversa.' }, 404);
+    void startPlanningTurn(ctx, id, statements, { actor: actor.id, kind: 'interactive' }).catch(() => undefined);
+    return c.json({ started: 1 }, 202);
   });
 
   app.post('/conversations/:id/stop', async (c) => {

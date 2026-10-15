@@ -7,6 +7,8 @@ import {
   createConversation,
   fetchConversations,
   patchConversation,
+  planAllNow,
+  planNow,
   rejectPlan,
   sendMessage,
   stopConversation,
@@ -74,6 +76,16 @@ export function AdvisorPage({ conversationId, planId, onNavigate }: { conversati
   });
   const reject = useMutation({ mutationFn: (p: Plan) => rejectPlan(p.id), onSuccess: () => { void conv.refetch(); void qc.invalidateQueries({ queryKey: ['advisorPendingPlans'] }); } });
   const rename = useMutation({ mutationFn: (title: string) => patchConversation(conversationId!, { title }), onSuccess: () => { void conv.refetch(); void qc.invalidateQueries({ queryKey: ['advisorConversations'] }); } });
+  const planOne = useMutation({
+    mutationFn: (id: string) => planNow(id),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['advisorConversations'] }); void conv.refetch(); },
+    onError: (e: Error) => window.alert(e.message),
+  });
+  const planAll = useMutation({
+    mutationFn: () => planAllNow(),
+    onSuccess: (r) => { void qc.invalidateQueries({ queryKey: ['advisorConversations'] }); if (r.started === 0) window.alert('Nenhum extrato está esperando.'); },
+    onError: (e: Error) => window.alert(e.message),
+  });
   const archive = useMutation({ mutationFn: (status: 'active' | 'archived') => patchConversation(conversationId!, { status }), onSuccess: () => { void conv.refetch(); void qc.invalidateQueries({ queryKey: ['advisorConversations'] }); } });
 
   const gateClosed = health?.gate ? !health.gate.open : false;
@@ -85,6 +97,9 @@ export function AdvisorPage({ conversationId, planId, onNavigate }: { conversati
       gateClosed={gateClosed}
       onSelect={select}
       onNew={() => { select(null); }}
+      onPlanNow={(id) => planOne.mutate(id)}
+      onPlanAllNow={() => planAll.mutate()}
+      planningAll={planAll.isPending}
     />
   );
 
@@ -107,6 +122,8 @@ export function AdvisorPage({ conversationId, planId, onNavigate }: { conversati
       onArchive={() => archive.mutate(conv.conversation?.status === 'archived' ? 'active' : 'archived')}
       planBusy={approve.isPending || reject.isPending}
       onOpenList={mobile ? () => setListOpen(true) : undefined}
+      onPlanNow={rows.find((r) => r.id === conversationId)?.waiting_turn ? () => planOne.mutate(conversationId) : undefined}
+      planningNow={planOne.isPending}
     />
   ) : conversationId && conv.isLoading ? (
     <div className="flex items-center justify-center h-full text-muted-foreground/50 text-[13px]"><Loader2 className="w-4 h-4 animate-spin mr-2" /> Carregando…</div>

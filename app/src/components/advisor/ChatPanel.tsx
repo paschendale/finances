@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Paperclip, ArrowUp, Square, ChevronRight, Loader2, FileText, MoreHorizontal, Archive, Pencil } from 'lucide-react';
+import { Paperclip, ArrowUp, Square, ChevronRight, Loader2, FileText, MoreHorizontal, Archive, Pencil, Zap, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type Conversation, type Plan, type StatementSummary } from '@/lib/advisor-api';
 import { Markdown } from './Markdown';
@@ -47,6 +47,8 @@ export function ChatPanel({
   onArchive,
   planBusy,
   onOpenList,
+  onPlanNow,
+  planningNow,
 }: {
   conversation: Conversation;
   messages: LiveMessage[];
@@ -63,6 +65,9 @@ export function ChatPanel({
   onArchive: () => void;
   planBusy: boolean;
   onOpenList?: () => void;
+  /** Present when a Gmail statement is waiting for the usage gate: runs its planning turn now */
+  onPlanNow?: () => void;
+  planningNow?: boolean;
 }) {
   const [text, setText] = useState('');
   const [menu, setMenu] = useState(false);
@@ -173,7 +178,21 @@ export function ChatPanel({
         {plansByAnchor.tail.map((p) => (
           <div key={p.id} className="max-w-[640px]"><PlanCard plan={p} busy={planBusy} onReview={() => onReviewPlan(p.id)} onApprove={() => onApprovePlan(p)} onReject={() => onRejectPlan(p)} /></div>
         ))}
-        {messages.length === 0 && <p className="text-[13px] text-muted-foreground/50 text-center py-10">Diga oi, ou solte um extrato aqui.</p>}
+        {messages.length === 0 && onPlanNow && statements.length > 0 && !busy && (
+          <div className="max-w-[560px] mx-auto mt-6 rounded-2xl border border-amber-400/20 bg-amber-500/[0.06] p-4 space-y-3">
+            <div className="flex items-start gap-2 text-[13px]">
+              <Clock className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" />
+              <div>
+                <div className="font-semibold text-amber-100">Este extrato está esperando uma folga do Claude</div>
+                <div className="text-[12px] text-amber-200/70 mt-0.5">{statements.map((s) => s.filename).join(', ')}. O plano é montado sozinho quando o uso do Claude baixar, ou agora se você pedir.</div>
+              </div>
+            </div>
+            <button onClick={onPlanNow} disabled={planningNow} className="w-full h-9 rounded-xl bg-amber-400 text-[#1a1200] text-[13px] font-semibold hover:bg-amber-300 disabled:opacity-60 flex items-center justify-center gap-1.5 transition-all active:scale-[0.99]">
+              {planningNow ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />} Planejar agora
+            </button>
+          </div>
+        )}
+        {messages.length === 0 && !(onPlanNow && statements.length > 0) && <p className="text-[13px] text-muted-foreground/50 text-center py-10">Diga oi, ou solte um extrato aqui.</p>}
       </div>
 
       {/* Composer */}

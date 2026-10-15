@@ -19,6 +19,8 @@ export interface Conversation {
 }
 
 export interface ConversationListRow extends Conversation {
+  /** A Gmail statement is parsed here and its planning turn has not run yet (waiting for the usage gate) */
+  waiting_turn: boolean;
   pending_plans: number;
   last_message: string | null;
   last_message_role: 'user' | 'assistant' | null;
@@ -240,6 +242,8 @@ export const patchConversation = (id: string, patch: { title?: string; status?: 
   request<Conversation>(`/conversations/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
 export const sendMessage = (id: string, content: string) =>
   request<{ accepted: boolean; queued: boolean }>(`/conversations/${id}/messages`, { method: 'POST', body: JSON.stringify({ content }) });
+export const planNow = (id: string) => request<{ started: number }>(`/conversations/${id}/plan-now`, { method: 'POST' });
+export const planAllNow = () => request<{ started: number; conversation_ids: string[] }>('/conversations/plan-now', { method: 'POST' });
 export const stopConversation = (id: string) => request<{ stopped: boolean }>(`/conversations/${id}/stop`, { method: 'POST' });
 export const fetchPlans = (status?: string) => request<Plan[]>(`/plans${status ? `?status=${encodeURIComponent(status)}` : ''}`);
 export const fetchPlan = (id: string) => request<PlanDetail>(`/plans/${id}`);

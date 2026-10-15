@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { formatDistanceToNowStrict } from 'date-fns';
-import { ChevronRight, Plus, Clock } from 'lucide-react';
+import { ChevronRight, Plus, Clock, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { channelLabel, type ConversationListRow } from '@/lib/advisor-api';
 
@@ -31,7 +31,7 @@ export function ChannelBadge({ row, className }: { row: Pick<ConversationListRow
   );
 }
 
-function Row({ row, active, waiting, onClick }: { row: ConversationListRow; active: boolean; waiting: boolean; onClick: () => void }) {
+function Row({ row, active, waiting, onClick, onPlanNow }: { row: ConversationListRow; active: boolean; waiting: boolean; onClick: () => void; onPlanNow?: () => void }) {
   const preview = row.last_message?.replace(/\s+/g, ' ').slice(0, 70) ?? (row.statement_count ? `${row.statement_count} extrato${row.statement_count === 1 ? '' : 's'}` : 'Sem mensagens ainda');
   return (
     <button
@@ -49,7 +49,10 @@ function Row({ row, active, waiting, onClick }: { row: ConversationListRow; acti
       <div className="flex items-center gap-1.5 mt-1 pl-3.5 min-w-0">
         <ChannelBadge row={row} />
         {waiting ? (
-          <span className="flex items-center gap-1 text-[11px] text-amber-300/80 truncate"><Clock className="w-3 h-3" /> esperando uma folga para processar</span>
+          <span className="flex items-center gap-1 text-[11px] text-amber-300/80 truncate min-w-0">
+            <Clock className="w-3 h-3 shrink-0" /> <span className="truncate">esperando uma folga do Claude</span>
+            {onPlanNow && <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); onPlanNow(); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onPlanNow(); } }} className="ml-1 shrink-0 px-1.5 py-[1px] rounded-md border border-amber-400/30 text-amber-200 hover:bg-amber-400/10 font-semibold">agora</span>}
+          </span>
         ) : (
           <span className="text-[11px] text-muted-foreground/60 truncate">{preview}</span>
         )}
@@ -58,13 +61,13 @@ function Row({ row, active, waiting, onClick }: { row: ConversationListRow; acti
   );
 }
 
-function Section({ title, items, activeId, isWaiting, onSelect }: { title: string; items: ConversationListRow[]; activeId: string | null; isWaiting: (r: ConversationListRow) => boolean; onSelect: (id: string) => void }) {
+function Section({ title, items, activeId, isWaiting, onSelect, onPlanNow }: { title: string; items: ConversationListRow[]; activeId: string | null; isWaiting: (r: ConversationListRow) => boolean; onSelect: (id: string) => void; onPlanNow?: (id: string) => void }) {
   if (items.length === 0) return null;
   return (
     <div className="mb-2">
       {title && <div className="px-3 pt-3 pb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/40">{title}</div>}
       <div className="space-y-0.5">
-        {items.map((r) => <Row key={r.id} row={r} active={r.id === activeId} waiting={isWaiting(r)} onClick={() => onSelect(r.id)} />)}
+        {items.map((r) => <Row key={r.id} row={r} active={r.id === activeId} waiting={isWaiting(r)} onClick={() => onSelect(r.id)} onPlanNow={onPlanNow && isWaiting(r) ? () => onPlanNow(r.id) : undefined} />)}
       </div>
     </div>
   );
@@ -76,12 +79,18 @@ export function ConversationList({
   gateClosed,
   onSelect,
   onNew,
+  onPlanNow,
+  onPlanAllNow,
+  planningAll,
 }: {
   rows: ConversationListRow[];
   activeId: string | null;
   gateClosed: boolean;
   onSelect: (id: string) => void;
   onNew: () => void;
+  onPlanNow?: (id: string) => void;
+  onPlanAllNow?: () => void;
+  planningAll?: boolean;
 }) {
   const [showArchived, setShowArchived] = useState(false);
   const groups = useMemo(() => {
@@ -90,7 +99,8 @@ export function ConversationList({
     const archived = rows.filter((r) => r.status === 'archived');
     return { needs, recent, archived };
   }, [rows]);
-  const isWaiting = (r: ConversationListRow) => gateClosed && channelLabel(r) === 'Gmail' && r.last_message_role !== 'assistant';
+  const isWaiting = (r: ConversationListRow) => r.waiting_turn === true || (gateClosed && channelLabel(r) === 'Gmail' && r.last_message_role == null && r.statement_count > 0);
+  const waitingCount = rows.filter((r) => r.status === 'active' && isWaiting(r)).length;
 
   return (
     <div className="flex flex-col h-full">
@@ -101,10 +111,20 @@ export function ConversationList({
         >
           <Plus className="w-3.5 h-3.5" /> Nova conversa
         </button>
+        {waitingCount > 0 && onPlanAllNow && (
+          <button
+            onClick={onPlanAllNow}
+            disabled={planningAll}
+            className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-amber-400/25 bg-amber-500/[0.08] hover:bg-amber-500/[0.14] text-[12px] font-semibold text-amber-100 transition-all active:scale-[0.99] disabled:opacity-60"
+            title="Monta os planos dos extratos que estão esperando o limite do Claude, agora"
+          >
+            <Zap className="w-3.5 h-3.5" /> {planningAll ? 'Começando…' : `Planejar ${waitingCount === 1 ? '1 extrato' : `${waitingCount} extratos`} agora`}
+          </button>
+        )}
       </div>
       <div className="flex-1 overflow-y-auto px-1 pb-4 scroll-smooth">
-        <Section title="Precisa de você" items={groups.needs} activeId={activeId} isWaiting={isWaiting} onSelect={onSelect} />
-        <Section title="Recentes" items={groups.recent} activeId={activeId} isWaiting={isWaiting} onSelect={onSelect} />
+        <Section title="Precisa de você" items={groups.needs} activeId={activeId} isWaiting={isWaiting} onSelect={onSelect} onPlanNow={onPlanNow} />
+        <Section title="Recentes" items={groups.recent} activeId={activeId} isWaiting={isWaiting} onSelect={onSelect} onPlanNow={onPlanNow} />
         {groups.archived.length > 0 && (
           <>
             <button onClick={() => setShowArchived((v) => !v)} className="w-full flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold text-muted-foreground/50 hover:text-muted-foreground/80 transition-colors">

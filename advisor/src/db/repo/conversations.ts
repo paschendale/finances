@@ -30,6 +30,8 @@ export interface ConversationListRow extends Conversation {
   last_message: string | null;
   last_message_role: MessageRole | null;
   statement_count: number;
+  /** A Gmail statement is parsed here and its planning turn has not run yet */
+  waiting_turn: boolean;
 }
 
 export async function listConversations(q: Queryable, opts: { includeArchived?: boolean; limit?: number } = {}): Promise<ConversationListRow[]> {
@@ -39,7 +41,11 @@ export async function listConversations(q: Queryable, opts: { includeArchived?: 
             (SELECT count(*) FROM advisor_plans p WHERE p.conversation_id = c.id AND p.status = 'pending_approval')::int AS pending_plans,
             (SELECT m.content FROM advisor_messages m WHERE m.conversation_id = c.id AND m.role IN ('user','assistant') ORDER BY m.created_at DESC LIMIT 1) AS last_message,
             (SELECT m.role FROM advisor_messages m WHERE m.conversation_id = c.id AND m.role IN ('user','assistant') ORDER BY m.created_at DESC LIMIT 1) AS last_message_role,
-            (SELECT count(*) FROM advisor_statements s WHERE s.conversation_id = c.id)::int AS statement_count
+            (SELECT count(*) FROM advisor_statements s WHERE s.conversation_id = c.id)::int AS statement_count,
+            EXISTS (
+              SELECT 1 FROM advisor_statements s WHERE s.conversation_id = c.id AND s.source = 'gmail' AND s.status IN ('parsed','failed')
+                AND NOT EXISTS (SELECT 1 FROM advisor_plans p WHERE p.statement_id = s.id)
+            ) AND NOT EXISTS (SELECT 1 FROM advisor_messages m WHERE m.conversation_id = c.id AND m.role = 'user') AS waiting_turn
      FROM advisor_conversations c
      WHERE ($1::bool OR c.status = 'active')
      ORDER BY c.last_activity_at DESC

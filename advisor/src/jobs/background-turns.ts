@@ -39,28 +39,25 @@ export async function ignoreDuplicateStatements(ctx: AppContext): Promise<number
   return dup.length;
 }
 
-export async function backgroundTurnsJob(ctx: AppContext): Promise<void> {
-  await ignoreDuplicateStatements(ctx);
-  const waiting = await many<Statement & { conversation_created_by: string | null }>(
+type WaitingStatement = Statement & { conversation_created_by: string | null };
+
+/** Gmail statements parsed but not planned yet, in conversations nobody has written to. */
+export async function findWaitingStatements(ctx: AppContext, conversationId?: string): Promise<WaitingStatement[]> {
+  return many<WaitingStatement>(
     ctx.db,
     `SELECT s.*, c.created_by AS conversation_created_by FROM advisor_statements s
      JOIN advisor_conversations c ON c.id = s.conversation_id
      WHERE s.source = 'gmail' AND s.status IN ('parsed','failed') AND s.conversation_id IS NOT NULL
+       AND ($1::uuid IS NULL OR s.conversation_id = $1::uuid)
        AND NOT EXISTS (SELECT 1 FROM advisor_plans p WHERE p.statement_id = s.id)
        AND NOT EXISTS (SELECT 1 FROM advisor_messages m WHERE m.conversation_id = s.conversation_id AND m.role = 'user')
-     ORDER BY s.created_at ASC LIMIT 5`,
+     ORDER BY s.created_at ASC LIMIT 50`,
+    [conversationId ?? null],
   );
-  if (waiting.length === 0) return;
-  // One turn per conversation: group statements of the same conversation into one message.
-  const byConv = new Map<string, typeof waiting>();
-  for (const s of waiting) byConv.set(s.conversation_id!, [...(byConv.get(s.conversation_id!) ?? []), s]);
-  const [conversationId, statements] = [...byConv.entries()][0]!;
+}
 
-  const gate = await routineGate(ctx);
-  if (!gate.open) {
-    log.info({ reason: gate.reason, waiting: byConv.size }, 'gate closed; background turn deferred');
-    return;
-  }
+/** Starts the planning turn for one conversation's waiting statements (the OFX is primary). */
+export function startPlanningTurn(ctx: AppContext, conversationId: string, statements: WaitingStatement[], opts: { actor: string | null; kind: 'interactive' | 'background' }): Promise<unknown> {
   const primary = statements.find((s) => s.format === 'ofx') ?? statements[0]!;
   const lines = primary.lines ?? [];
   const text = buildIngestMessage(
@@ -83,11 +80,36 @@ export async function backgroundTurnsJob(ctx: AppContext): Promise<void> {
     },
     statements.length > 1 ? `The same email carried ${statements.length} files (${statements.map((s) => `${s.id} ${s.filename}`).join('; ')}); the OFX is primary, use the others to cross-check.` : null,
   );
-  log.info({ conversationId, statementId: primary.id, reason: gate.reason }, 'starting background planning turn');
-  await ctx.sessions.sendUserMessage(conversationId, text, {
-    actor: 'gmail',
-    kind: 'background',
+  log.info({ conversationId, statementId: primary.id, kind: opts.kind, actor: opts.actor }, 'starting planning turn');
+  return ctx.sessions.sendUserMessage(conversationId, text, {
+    actor: opts.actor,
+    kind: opts.kind,
     attachments: statements.map((s) => ({ statement_id: s.id, filename: s.filename, format: s.format })),
     display: `📎 ${statements.map((s) => s.filename).join(', ')} (Gmail)`,
   });
+}
+
+/** Groups waiting statements by conversation, oldest first. */
+export function groupByConversation(waiting: WaitingStatement[]): Map<string, WaitingStatement[]> {
+  const byConv = new Map<string, WaitingStatement[]>();
+  for (const s of waiting) byConv.set(s.conversation_id!, [...(byConv.get(s.conversation_id!) ?? []), s]);
+  return byConv;
+}
+
+/**
+ * Claude tick: statements that arrived through routine channels (Gmail) and have no plan yet get
+ * their planning turn when the usage gate is open. One per tick; the pool gives background work a
+ * single slot and yields to people. A person can skip the wait with "Planejar agora" (interactive).
+ */
+export async function backgroundTurnsJob(ctx: AppContext): Promise<void> {
+  await ignoreDuplicateStatements(ctx);
+  const byConv = groupByConversation(await findWaitingStatements(ctx));
+  if (byConv.size === 0) return;
+  const [conversationId, statements] = [...byConv.entries()][0]!;
+  const gate = await routineGate(ctx);
+  if (!gate.open) {
+    log.info({ reason: gate.reason, waiting: byConv.size }, 'gate closed; background turn deferred');
+    return;
+  }
+  await startPlanningTurn(ctx, conversationId, statements, { actor: 'gmail', kind: 'background' });
 }
