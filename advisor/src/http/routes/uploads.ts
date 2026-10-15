@@ -2,7 +2,7 @@ import { Hono, type Context } from 'hono';
 import type { AppContext } from '../../context.js';
 import type { Actor } from '../auth.js';
 import { createConversation, getConversation } from '../../db/repo/conversations.js';
-import { ingestBuffer, IngestError } from '../../jobs/ingest-statement.js';
+import { ingestFiles, IngestError } from '../../jobs/ingest-statement.js';
 
 type Env = { Variables: { actor: Actor } };
 
@@ -32,19 +32,20 @@ export function uploadRoutes(ctx: AppContext): Hono<Env> {
       return c.json({ error: 'conversation not found' }, 404);
     }
 
-    const results = [];
+    const buffers: Array<{ buffer: Buffer; filename: string }> = [];
     for (const f of files) {
-      const buf = Buffer.from(await f.arrayBuffer());
-      if (buf.length > maxBytes) return c.json({ error: `${f.name} exceeds ${ctx.config.UPLOAD_MAX_MB} MB` }, 413);
-      try {
-        const r = await ingestBuffer(ctx, { buffer: buf, filename: f.name, source: 'upload', conversationId: convId, actor: actor.id, message: message || null, kind: 'interactive' });
-        results.push(r);
-      } catch (err) {
-        if (err instanceof IngestError) return c.json({ error: err.message }, err.status as 400);
-        throw err;
-      }
+      const buffer = Buffer.from(await f.arrayBuffer());
+      if (buffer.length > maxBytes) return c.json({ error: `${f.name} exceeds ${ctx.config.UPLOAD_MAX_MB} MB` }, 413);
+      buffers.push({ buffer, filename: f.name });
     }
-    return c.json({ conversation_id: convId, statements: results }, 201);
+    try {
+      // One turn for all the files, with the message as the person's text.
+      const results = await ingestFiles(ctx, buffers, { source: 'upload', conversationId: convId, actor: actor.id, message: message || null, kind: 'interactive' });
+      return c.json({ conversation_id: convId, statements: results }, 201);
+    } catch (err) {
+      if (err instanceof IngestError) return c.json({ error: err.message }, err.status as 400);
+      throw err;
+    }
   }
 
   app.post('/uploads', (c) => handle(c, null));

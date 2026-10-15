@@ -19,7 +19,7 @@ import { createConversation, findConversationByExternalRef, getConversation, upd
 import { getPlan, listPlanItems, listPlans } from '../db/repo/plans.js';
 import { claimEvent, getState, setState } from '../db/repo/misc.js';
 import { approveAndApply, ApplyError, rejectPlan } from '../plan/apply.js';
-import { ingestBuffer } from '../jobs/ingest-statement.js';
+import { ingestFiles } from '../jobs/ingest-statement.js';
 import { detectCheckin, checkinInstruction } from '../jobs/checkin.js';
 import { APPROVE_WORDS, REJECT_WORDS, chunkMessage, fmtBRL, fmtDay, formatReply, headline, mobileify, trackerText, type TrackerState } from './poster.js';
 import { setChannelStatus } from '../http/routes/health.js';
@@ -177,18 +177,18 @@ export class DiscordBot implements NotifyTarget {
 
     // Attachments → uploads into the conversation (15 MB cap)
     const maxBytes = this.ctx.config.UPLOAD_MAX_MB * 1024 * 1024;
-    let ingested = 0;
+    const files: Array<{ buffer: Buffer; filename: string }> = [];
     for (const att of m.attachments.values()) {
       if (att.size > maxBytes) {
         await target.send(`Arquivo ${att.name} excede ${this.ctx.config.UPLOAD_MAX_MB} MB; ignorado.`);
         continue;
       }
       const res = await fetch(att.url);
-      const buf = Buffer.from(await res.arrayBuffer());
-      await ingestBuffer(this.ctx, { buffer: buf, filename: att.name ?? 'attachment', source: 'upload', conversationId, actor, message: text || null, kind: 'interactive' });
-      ingested++;
+      files.push({ buffer: Buffer.from(await res.arrayBuffer()), filename: att.name ?? 'attachment' });
     }
-    if (ingested > 0) {
+    if (files.length > 0) {
+      // One turn for the post: the text plus every attachment.
+      await ingestFiles(this.ctx, files, { source: 'upload', conversationId, actor, message: text || null, kind: 'interactive' });
       await target.sendTyping().catch(() => undefined);
       return; // the ingest already started the turn with the text as the user's message
     }

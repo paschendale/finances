@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { AppContext } from '../context.js';
 import type { Statement, StatementKind } from '../db/types.js';
-import { createStatement, findStatementBySha, updateStatement } from '../db/repo/statements.js';
+import { createStatement, findStatementBySha, getStatement, updateStatement } from '../db/repo/statements.js';
 import { findNoteByPrefix } from '../db/repo/misc.js';
 import { many, maybeOne } from '../db/client.js';
 import { detectFormat, detectInstitution, parseStatementFile } from '../ingest/detect.js';
@@ -201,6 +201,39 @@ export async function ingestBuffer(ctx: AppContext, input: IngestInput): Promise
     });
   }
   return outcome;
+}
+
+/**
+ * Several files handed in with one message (web composer, a Discord post with attachments): every file
+ * is stored and parsed, then a single turn starts with the person's text and one paragraph per file.
+ */
+export async function ingestFiles(
+  ctx: AppContext,
+  files: Array<{ buffer: Buffer; filename: string }>,
+  common: { source: 'upload'; conversationId: string; actor: string | null; message: string | null; kind: 'interactive' | 'background' },
+): Promise<IngestOutcome[]> {
+  if (files.length === 1) {
+    return [await ingestBuffer(ctx, { ...common, buffer: files[0]!.buffer, filename: files[0]!.filename })];
+  }
+  const outcomes: IngestOutcome[] = [];
+  const paragraphs: string[] = [];
+  for (const f of files) {
+    const o = await ingestBuffer(ctx, { ...common, buffer: f.buffer, filename: f.filename, startTurn: false });
+    outcomes.push(o);
+    const st = await getStatement(ctx.db, o.statement_id);
+    if (st) paragraphs.push(buildIngestMessage(st, o, null));
+  }
+  if (outcomes.length === 0) return outcomes;
+  const message = common.message?.trim() ?? '';
+  const text = [message, `${files.length} files were handed in together with the message above; treat them as one request.`, ...paragraphs].filter(Boolean).join('\n\n');
+  const names = files.map((f) => f.filename).join(', ');
+  void ctx.sessions.sendUserMessage(common.conversationId, text, {
+    actor: common.actor,
+    kind: common.kind,
+    attachments: outcomes.map((o, i) => ({ statement_id: o.statement_id, filename: files[i]!.filename, format: o.format, size: files[i]!.buffer.length })),
+    display: message ? `${message}\n\n📎 ${names}` : `📎 ${names}`,
+  });
+  return outcomes;
 }
 
 async function rememberAccountRef(ctx: AppContext, institution: string, accountRef: string, accountId: string | null): Promise<void> {
