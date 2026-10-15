@@ -36,10 +36,9 @@ The Gmail watcher reads one operator mailbox. Statements from other household me
 
 On the maintainer's history `classify_candidates('TAMPOPO ALIMENTOS LTDA', …)` ranks the right category first (41 matches) but with confidence ≈ 0.5 because unrelated categories with many recent transactions pass the `name ≥ 0.25` eligibility bar through weak trigram overlap (`alimentos` vs `rendimentos`). Options: raise the eligibility threshold to 0.35, require `word_similarity` rather than `similarity` for the bar, or down-weight categories whose evidence is name-only. Decide after a few applied statements; the weights and thresholds live in `global_settings.classifier_weights`.
 
-## Advisor: Gmail channel needs a Google OAuth client
+## Advisor: Gmail watcher enabled on the dev instance (2026-10-15)
 
-The watcher is implemented (`advisor/src/gmail`) but no Google Cloud desktop OAuth client exists yet, so the maintainer's dev instance runs `ADVISOR_CHANNELS=web,discord`. Steps: create a project, enable the Gmail API, configure the OAuth consent screen (External) and **publish** it (an app left in "Testing" gets refresh tokens that expire after 7 days), create an OAuth client (Desktop app, or Web application with `http://127.0.0.1:8765/callback` as an authorized redirect URI), run `node advisor/ops/gmail-auth.mjs --client-json <downloaded json>` on a machine with a browser logged into the mailbox, put the three values in the daemon's environment and add `gmail` to `ADVISOR_CHANNELS`. The unverified-app warning during consent is expected for a personal client.
-
+The maintainer's personal mailbox is connected (Desktop OAuth client, scope `gmail.readonly`, consent screen published so the refresh token does not expire). The three `GMAIL_*` values live only in the private infra compose and in `~/.config/finances-advisor/gmail.env` on the maintainer's machine. Production cutover must copy them to the prod service. Labels on processed mail need the `gmail.modify` scope (`--modify` on the helper); not enabled.
 ## Advisor: second household member on Discord
 
 `DISCORD_OBEYED_USER_IDS` on the dev instance lists one user id. Add the second member's id so both can approve from Discord (web approvals already work for any finances token).

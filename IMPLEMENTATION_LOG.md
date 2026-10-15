@@ -16,6 +16,9 @@ Review of the first day on the dev instance: Discord messages were long walls of
 ### Tests
 `advisor/`: 70 tests (new: account item validation and placeholders, `mobileify`/`headline`/tracker build+parse, clearings carried across `update_transaction` + re-close decision in the SQL suite). `app/`: 60 tests (new: `advisorReasons`), build clean, lint parity.
 
+### Gmail
+`advisor/ops/gmail-auth.mjs` now reads the downloaded client JSON (`--client-json`), prints the redirect URI a Web client would need, and writes the three variables to `~/.config/finances-advisor/gmail.env` (mode 600) instead of the terminal. The maintainer's mailbox was connected with a Desktop client; the dev advisor runs `ADVISOR_CHANNELS=web,discord,gmail` and its first sync (25 messages, 14-day lookback) picked up a Nubank account statement mail (OFX + CSV attachments) into a system conversation for a gated background planning turn.
+
 ### Acceptance on the dev copy
 Fresh web conversation "Conta do imóvel" → one plan with `account_create casa-imovel (asset/property)` + three `update` items referencing `new:casa`; Discord got the tracker ("🟡 Plano aguardando aprovação · 3 alterações · 1 conta", deep link) with the compact summary in its thread; approval through the API created the account (subtype `property`, not hidden, 3 entries) and moved the three transactions. The September reconciliation had been left open by the earlier Hussein recategorisation (the clearings bug above); it was repaired on the dev data and the fix ships with this entry.
 
