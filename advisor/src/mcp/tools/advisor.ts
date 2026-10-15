@@ -21,7 +21,7 @@ import { computePlanBalance, ensureStatementAccount, loadAccounts, periodContext
  * with the system prompt it forms the conversation's `prompt_hash`; a mismatch on resume tells the
  * assistant its capabilities changed.
  */
-export const CAPABILITIES_VERSION = '2026-10-15.7';
+export const CAPABILITIES_VERSION = '2026-10-15.8';
 
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD');
 
@@ -400,7 +400,7 @@ export function registerAdvisorTools(server: McpServer, ctx: AppContext, session
     {
       title: 'Plan Set Items',
       description:
-        'Replace all items of a draft or pending plan. Each item: kind (create|update|delete|adjust|budget_upsert|budget_delete|mark_checked|skip|account_create|account_update), date, description, entries [{account_id, amount, currency, exchange_rate, amount_base}] balancing to zero, payload (kind-specific), source_ref {statement_id, line_hash, fitid}, confidence 0..1, rationale. account_create payload: {ref, name, type, subtype?, parent_id?, hidden?}; later items may use account_id "new:<ref>". account_update payload: {account_id, name?, subtype?, parent_id?, icon?, color?, hidden?}. Validation errors are returned with the item index; fix and call again.',
+        'Replace all items of a draft or pending plan. Each item: kind (create|update|delete|adjust|budget_upsert|budget_delete|mark_checked|skip|account_create|account_update), date, description, entries [{account_id, amount, currency, exchange_rate, amount_base}] balancing to zero, payload (kind-specific), source_ref {statement_id, line_hash, fitid}, confidence 0..1, rationale. account_create payload: {ref, name, type, subtype?, parent_id?, hidden?}; later items may use account_id "new:<ref>". account_update payload: {account_id, name?, subtype?, parent_id?, icon?, color?, hidden?, check_every_days? (null automatic, 0 never, N days)}. Validation errors are returned with the item index; fix and call again.',
       inputSchema: z.object({ plan_id: z.string().uuid(), items: z.array(planItemInputSchema).max(2000) }),
     },
     async ({ plan_id, items }) =>

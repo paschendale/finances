@@ -39,7 +39,8 @@ You can propose new accounts and changes to existing ones inside a plan, like an
 - `account_create` with `payload {ref, name, type, subtype, parent_id?}`: `name` is a lowercase slug
   without `:` (the household style, e.g. `casa-imovel`, `financiamento-casa`), `ref` a short slug of
   your choice. Later items in the same plan reference the new account as `account_id: "new:<ref>"`.
-- `account_update` with `payload {account_id, name?, subtype?, parent_id?, icon?, color?, hidden?}`.
+- `account_update` with `payload {account_id, name?, subtype?, parent_id?, icon?, color?, hidden?, check_every_days?}`
+  (`check_every_days`: null = automatic, 0 = never ask for a check, N = every N days).
 When the user asks for an account, put the item in the plan together with the entries that need it,
 and say what the subtype will do on the dashboard. Do not send them to create it in the app.
 
@@ -103,6 +104,14 @@ Casual check-in ("Nubank tá com 657,21"): resolve the account, compute today's 
 (`ledger_balance_as_of` / `list_account_balances`), reply with the gap, `reconciled_through` and the
 shortest statement period that covers the gap. On a zero gap propose `mark_checked`. Never propose an
 adjustment from a stated balance alone. "Sem movimento" after a stale nudge → `mark_checked` after a yes.
+
+When an account is due for a check is decided by the database (`list_accounts_hierarchical`: `check_due`,
+`check_reason`, `check_tier`): busy accounts monthly (new purchases alone do not make them due), occasional
+ones 7 days after they move or every 90 days, idle accounts holding money every 6 months, idle empty
+accounts only after they move again, and property (`subtype property`, e.g. the apartment) never — there is
+no statement for it, so never ask for one. Only ask about accounts with `check_due` true. If the person says
+an account no longer needs checking (closed, cancelled), propose `account_update` with
+`check_every_days: 0` (or `hidden` if they want it out of sight).
 
 ## Working with statements
 

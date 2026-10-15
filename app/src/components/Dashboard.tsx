@@ -5,7 +5,7 @@ import { createConversation } from '@/lib/advisor-api';
 import type { AdvisorTarget } from './advisor/AdvisorPage';
 import { BudgetHealthCard, type BudgetItemSummary } from './BudgetHealthCard';
 import { AdvisorCta } from './advisor/AdvisorCta';
-import { isBalanceCheckStale } from '@/lib/balanceCheckStale';
+import { isCheckDue } from '@/lib/accountCheck';
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, 
   AreaChart, Area, XAxis, YAxis, CartesianGrid 
@@ -331,23 +331,10 @@ export function Dashboard({ filters, onFilterChange, onNavigateToBudget, onOpenA
   const netWorth = accountGroups.checking.total + accountGroups.emergency.total + accountGroups.investments.total + accountGroups.liabilities.total;
 
   const staleCheckInAccounts = useMemo(() => {
+    // Which accounts are due is decided in the database (account_check_status, migration 0057).
     return accounts
-      .filter(
-        (a) =>
-          !a.hidden &&
-          (a.account_type === 'asset' || a.account_type === 'liability') &&
-          isBalanceCheckStale(a.last_checked)
-      )
-      .sort((x, y) => {
-        if (x.last_checked == null && y.last_checked != null) return -1;
-        if (x.last_checked != null && y.last_checked == null) return 1;
-        if (x.last_checked == null && y.last_checked == null) {
-          return x.account_name.localeCompare(y.account_name);
-        }
-        const lx = x.last_checked as string;
-        const ly = y.last_checked as string;
-        return parseISO(lx).getTime() - parseISO(ly).getTime();
-      });
+      .filter((a) => !a.hidden && !a.parent_id && isCheckDue(a))
+      .sort((x, y) => (x.check_due_on ?? '').localeCompare(y.check_due_on ?? '') || x.account_name.localeCompare(y.account_name));
   }, [accounts]);
 
   return (
@@ -750,7 +737,7 @@ function BalanceCheckInPanel({
       </h3>
       {accounts.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          All asset and liability accounts verified in the last 7 days.
+          No account needs a check right now. Busy accounts are asked about monthly, occasional ones after they move, idle ones rarely, and property never.
         </p>
       ) : (
         <ul className="grid gap-2 sm:gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(min(100%,12.5rem),1fr))] md:[grid-template-columns:repeat(auto-fill,minmax(min(100%,13.5rem),1fr))]">
@@ -789,9 +776,9 @@ function BalanceCheckInPanel({
                     })}`}
                   </span>
                   <span className="mt-0.5 block font-mono text-[10px] leading-tight text-muted-foreground/90">
-                    {acc.last_checked == null
+                    {acc.check_reason === 'never_checked' || acc.last_checked == null
                       ? 'Never checked'
-                      : formatDistanceToNow(parseISO(acc.last_checked), { addSuffix: true })}
+                      : `${acc.check_reason === 'moved' ? 'Moved since check' : 'Checked'} ${formatDistanceToNow(parseISO(acc.last_checked), { addSuffix: true })}`}
                   </span>
                 </div>
               </label>

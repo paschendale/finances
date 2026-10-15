@@ -1,5 +1,15 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-10-15 — Balance checks follow how each account is used
+
+The maintainer was asked to check accounts that were empty and idle for months, and the new `apartamento` (property, no statement) showed as "nunca conferida" everywhere. Three rules disagreed: the dashboard check-in list (7 days, `balanceCheckStale.ts`), the advisor chips (30 days, plus "any entry after the last check") and the daily advisor nudge (`STALE_DAYS` = 30). Decisions from a short interview: idle empty accounts only after they move; idle accounts holding money every 6 months; property never; the nudge posts when an account newly becomes due, plus weekly.
+
+- Migration 0057: `accounts.check_every_days` (NULL automatic, 0 never, N days) and view `account_check_status` (tiers `never`/`fixed`/`active`/`occasional`/`dormant`/`dormant_empty`, `check_due_on`, `check_due`, `check_reason`, `moved_since_check`), appended to `account_balances`. Last check = later of `last_checked` (São Paulo date) and `reconciled_through`. Rules in API_CONTRACT.md "Balance-check cadence".
+- App: `lib/accountCheck.ts` replaces `balanceCheckStale.ts`; the dashboard check-in list shows top-level accounts with `check_due`; the advisor chips collapse "moved"/"stale" into one "N contas para conferir"; account cards say when the next check is (or "bem sem extrato · não precisa conferir", "parada e zerada · …") and only warn when due; the account modal has "Pedir conferência" (Automático / 30 dias / 90 dias / 6 meses / Nunca).
+- Advisor: `findDueAccounts` + `shouldNudge` (new account due → post; same list → weekly; never twice a day; old state without `posted_at` read from `day`), `STALE_DAYS` removed; `account_update` accepts `check_every_days` (asset/liability only); `list_accounts_hierarchical` returns the check fields; prompt explains the cadence and never to ask for a property statement (`CAPABILITIES_VERSION` 2026-10-15.8).
+- Tests: `accountCheck.test.ts`, `advisor-reasons.test.ts`, nudge decision and schema tests, and `test/sql-check-cadence.test.ts` (one account per tier, against the throwaway DB).
+- On production data the dashboard list drops from 23 accounts to 2 (Ju Itaú, whose −R$ 14.290 balance deserves a look, and Victor caixinha); apartamento and the seven idle empty accounts are never asked about.
+
 ## 2026-10-15 — Advisor: BRB statement PDF
 
 First non-Nubank/Itaú statement: the PDF the BRB app exports (iOS share sheet, often just "Extrato.pdf"). Its text never names the bank, has no year on the rows, prints month headers out of place and no balance at all.

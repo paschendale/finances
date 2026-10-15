@@ -26,7 +26,10 @@ export function accountItemLabel(item: Pick<PlanItem, 'kind' | 'payload' | 'desc
     return `Nova conta ${String(p.name ?? '?')} (${String(p.type ?? '?')}${sub})`;
   }
   if (item.kind === 'account_update') {
-    const fields = ['name', 'subtype', 'parent_id', 'icon', 'color', 'hidden'].filter((k) => p[k] !== undefined).map((k) => `${k} → ${k === 'subtype' && typeof p[k] === 'string' ? SUBTYPE_LABEL[p[k] as string] ?? String(p[k]) : String(p[k])}`);
+    const fields = ['name', 'subtype', 'parent_id', 'icon', 'color', 'hidden', 'check_every_days'].filter((k) => p[k] !== undefined).map((k) => {
+      if (k === 'check_every_days') return `conferência → ${p[k] === null ? 'automática' : p[k] === 0 ? 'nunca' : `a cada ${String(p[k])} dias`}`;
+      return `${k} → ${k === 'subtype' && typeof p[k] === 'string' ? SUBTYPE_LABEL[p[k] as string] ?? String(p[k]) : String(p[k])}`;
+    });
     return `Alterar conta ${item.description ?? String(p.account_id ?? '').slice(0, 8)}: ${fields.join(', ')}`;
   }
   return null;

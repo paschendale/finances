@@ -103,7 +103,7 @@ Decided constraints:
 | Reconciliation | First-class resource per account and statement period (cleared / outstanding / missing / difference, continuity between periods). **Investigate first**, adjust only when told, adjustments to a suspense account. |
 | Classification | **Derived, multi-factor** (`classify_candidates`: name, raw statement text, amount, account, weekday/day-of-month/hour, recency) replacing stored description memories; the only learned fact is raw text → household name. |
 | Gate | Usage gate applies to routine work only. Interactive messages are never gated or queued behind background work. |
-| Proactivity | Only when something arrives or an account is stale (30+ days). No fixed digest. |
+| Proactivity | Only when something arrives or an account becomes due for a check (cadence by usage, migration 0057). No fixed digest. |
 | Code location | `advisor/` package in this repo. Image published by this repo's CI (`ghcr.io/<owner>/finances-advisor`, overridable). |
 | Language | Mirror the user's language. Ledger data stays as entered. |
 | Models | Opus for sessions (chat, reconciliation, budgeting). Sonnet for routine calls (Gmail routing, statement verification, nudges). Both configurable. |
@@ -718,9 +718,11 @@ ids, household of two) and add:
   started in the channel. Messages in a thread are session turns of that conversation. Attachments are
   downloaded (15 MB cap) into the conversation as uploads. Replies are chunked at 2000 chars; long
   tables go as files.
-- Nudges: `jobs/stale-accounts.ts` posts at most once per day, only when at least one non-hidden
-  asset/liability account has `last_checked` older than 30 days or null, listing them with last entry
-  date and balance. `jobs/pending-plans.ts` reminds once a day about plans pending more than 24 h.
+- Nudges: `jobs/nudges.ts` lists the top-level, non-hidden accounts with `check_due` (view
+  `account_check_status`, migration 0057 — see "Balance-check cadence" in API_CONTRACT.md) with balance and
+  why each is due. It posts when an account newly becomes due (not in the previous nudge), otherwise at
+  most once a week while accounts stay due, never twice a day. (Superseded the flat 30-day `STALE_DAYS`
+  rule on 2026-10-15.) `jobs/pending-plans.ts` reminds once a day about plans pending more than 24 h.
 - `catchUp()` on boot replays obeyed-user messages and reactions missed while down (query channel and
   thread history since `advisor_state.discord_last_seen`).
 
@@ -835,7 +837,7 @@ All required unless defaulted: `DATABASE_URL`, `POSTGREST_URL`, `FINANCES_TOKEN`
 `ADVISOR_CHANNELS` (default `web,discord,gmail`), `ADVISOR_ENV`, `PORT` (3100), `MCP_PORT` (3101),
 `DATA_DIR` (`/data`), `CLAUDE_BIN` (`claude`), `SESSION_MODEL` (`opus`), `ROUTINE_MODEL` (`sonnet`),
 `SESSION_EFFORT` (`high`), `SESSION_TIMEOUT_MS` (900000), `MAX_CONCURRENT_SESSIONS` (2), gate thresholds
-(§6.1), `STALE_DAYS` (30), `UPLOAD_MAX_MB` (15), `TZ`. Discord and Gmail variables are required only when
+(§6.1), `UPLOAD_MAX_MB` (15), `TZ`. Discord and Gmail variables are required only when
 their channel is listed in `ADVISOR_CHANNELS`; `config.ts` enforces that conditionally.
 
 ---

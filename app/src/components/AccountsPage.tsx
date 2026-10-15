@@ -10,6 +10,7 @@ import type { AdvisorTarget } from './advisor/AdvisorPage';
 import { AccountIcon } from './AccountIcon';
 import { INSTITUTION_ICONS, CATEGORY_ICONS } from '@/lib/account-icons';
 import { cn } from '@/lib/utils';
+import { CHECK_CADENCE_OPTIONS, checkStatusLabel, isCheckDue } from '@/lib/accountCheck';
 import { X, Check, Plus, Trash2, Loader2, Eye, EyeOff, ArrowUp, ArrowDown, Clock, CheckCheck } from 'lucide-react';
 import { SearchableSelect } from './SearchableSelect';
 
@@ -200,6 +201,7 @@ function AccountModal({
   const [icon, setIcon] = useState<string | null>(account?.icon ?? null);
   const [color, setColor] = useState<string | null>(account?.color ?? null);
   const [hidden, setHidden] = useState<boolean>(account?.hidden ?? false);
+  const [checkEvery, setCheckEvery] = useState<number | null>(account?.check_every_days ?? null);
   const queryClient = useQueryClient();
 
   const parentOptions = useMemo(() => {
@@ -212,7 +214,7 @@ function AccountModal({
   const saveMut = useMutation<void, Error, void>({
     mutationFn: () =>
       account
-        ? updateAccount(account.id, { name, type, subtype, parent_id: parentId, icon, color, hidden })
+        ? updateAccount(account.id, { name, type, subtype, parent_id: parentId, icon, color, hidden, ...(type === 'asset' || type === 'liability' ? { check_every_days: checkEvery } : {}) })
         : createAccount({ name, type, subtype, parent_id: parentId, icon: icon ?? null, color: color ?? null, hidden }).then(() => undefined),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accountsTree'] });
@@ -332,6 +334,36 @@ function AccountModal({
             </div>
           )}
 
+          {/* Balance check cadence — for asset and liability accounts */}
+          {account && (type === 'asset' || type === 'liability') && (
+            <div className="space-y-2">
+              <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/60">Pedir conferência</p>
+              <div className="flex rounded-xl border border-white/[0.08] bg-white/[0.02] p-0.5 w-fit">
+                {CHECK_CADENCE_OPTIONS.map((o) => (
+                  <button
+                    key={o.value ?? 'auto'}
+                    onClick={() => setCheckEvery(o.value)}
+                    className={cn(
+                      "px-3 py-1 rounded-lg text-[12px] font-medium transition-colors",
+                      checkEvery === o.value
+                        ? "bg-white/10 text-foreground shadow-sm"
+                        : "text-muted-foreground/50 hover:text-foreground/70"
+                    )}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] text-muted-foreground/50">
+                {checkEvery === null
+                  ? 'Pelo uso: contas do dia a dia todo mês, as de vez em quando depois que mexem, as paradas raramente, imóveis nunca.'
+                  : checkEvery === 0
+                    ? 'Nunca pede para conferir esta conta.'
+                    : `Pede para conferir a cada ${checkEvery} dias.`}
+              </p>
+            </div>
+          )}
+
           {/* Parent */}
           <div className="space-y-2">
             <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/60">Parent</p>
@@ -412,12 +444,20 @@ function ReconciliationLines({ account, status, onReconcile }: { account: Accoun
   const openGap = status?.last_status === 'open' && Math.abs(status.open_difference) >= 0.005;
   const suspense = status?.suspense_balance ?? 0;
   const fmt = (n: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
+  // Accounts the cadence never asks about (property, switched off, idle and empty) show no warning.
+  const quiet = account.check_tier === 'never' || account.check_tier === 'dormant_empty';
+  const checkLine = checkStatusLabel(account);
   return (
     <div className="mt-2 space-y-0.5 text-[10px]" onClick={(e) => e.stopPropagation()}>
-      <div className={cn('flex items-center gap-1', fresh ? 'text-emerald-400/80' : 'text-amber-400/80')}>
-        {fresh ? <CheckCheck className="w-3 h-3 shrink-0" /> : <Clock className="w-3 h-3 shrink-0" />}
-        <span className="truncate">{through ? `extrato conferido até ${reconciledThroughLabel(through)}` : 'extrato nunca conferido'}{openGap ? ` · falta explicar ${fmt(status!.open_difference)}` : ''}</span>
-      </div>
+      {(through || !quiet) && (
+        <div className={cn('flex items-center gap-1', fresh ? 'text-emerald-400/80' : quiet ? 'text-muted-foreground/50' : 'text-amber-400/80')}>
+          {fresh ? <CheckCheck className="w-3 h-3 shrink-0" /> : <Clock className="w-3 h-3 shrink-0" />}
+          <span className="truncate">{through ? `extrato conferido até ${reconciledThroughLabel(through)}` : 'extrato nunca conferido'}{openGap ? ` · falta explicar ${fmt(status!.open_difference)}` : ''}</span>
+        </div>
+      )}
+      {checkLine && (
+        <div className={cn('truncate', isCheckDue(account) ? 'text-amber-400/80' : 'text-muted-foreground/50')}>{checkLine}</div>
+      )}
       {Math.abs(suspense) >= 0.005 && (
         <div className="text-muted-foreground/50 truncate">parado em ajustes {fmt(suspense)}</div>
       )}
@@ -703,7 +743,7 @@ export function AccountsPage({ onOpenAdvisor }: { onOpenAdvisor?: (target: Advis
               account={account}
               onClick={() => setEditingAccount(account)}
               reconciliation={reconciliationById.get(account.id)}
-              onReconcile={onOpenAdvisor && (account.type === 'asset' || account.type === 'liability') ? () => void reconcileWithAdvisor(account) : undefined}
+              onReconcile={onOpenAdvisor && (account.type === 'asset' || account.type === 'liability') && account.check_tier !== 'never' ? () => void reconcileWithAdvisor(account) : undefined}
             />
           ))}
         </div>

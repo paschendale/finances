@@ -67,6 +67,15 @@ describe('validatePlanItems', () => {
     const unknown = planItemInputSchema.parse({ kind: 'account_update', payload: { account_id: '55555555-5555-4555-8555-555555555555', hidden: true } });
     expect(validatePlanItems([unknown], accounts).map((i) => i.message)[0]).toMatch(/known account_id/);
   });
+  it('accepts a balance-check cadence on asset and liability accounts only', () => {
+    for (const v of [null, 0, 90]) {
+      expect(validatePlanItems([planItemInputSchema.parse({ kind: 'account_update', payload: { account_id: A, check_every_days: v } })], accounts)).toEqual([]);
+    }
+    const bad = planItemInputSchema.parse({ kind: 'account_update', payload: { account_id: A, check_every_days: -3 } });
+    expect(validatePlanItems([bad], accounts).map((i) => i.message)[0]).toMatch(/whole number of days/);
+    const cat = planItemInputSchema.parse({ kind: 'account_update', payload: { account_id: CAT, check_every_days: 0 } });
+    expect(validatePlanItems([cat], accounts).map((i) => i.message)[0]).toMatch(/asset and liability/);
+  });
   it('tolerates floating point noise under half a cent', () => {
     const item = planItemInputSchema.parse({ kind: 'create', date: '2026-10-01', description: 'x', entries: [entry(CAT, 0.1 + 0.2), entry(A, -0.3)] });
     expect(validatePlanItems([item], accounts)).toEqual([]);

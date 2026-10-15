@@ -79,6 +79,8 @@ export interface AccountUpdatePayload {
   icon?: string | null;
   color?: string | null;
   hidden?: boolean;
+  /** Balance-check cadence: null = automatic, 0 = never ask, N = every N days. */
+  check_every_days?: number | null;
 }
 
 const ACCOUNT_NAME = /^[a-z0-9][a-z0-9_.-]*$/;
@@ -149,8 +151,14 @@ export function validatePlanItems(items: PlanItemInputShape[], accounts: Map<str
       const p = it.payload as Partial<AccountUpdatePayload>;
       const acc = typeof p.account_id === 'string' ? accounts.get(p.account_id) : undefined;
       if (!acc) issues.push({ index, message: 'account_update payload needs a known account_id' });
-      const fields = ['name', 'subtype', 'parent_id', 'icon', 'color', 'hidden'].filter((k) => (p as Record<string, unknown>)[k] !== undefined);
-      if (fields.length === 0) issues.push({ index, message: 'account_update changes nothing (name, subtype, parent_id, icon, color or hidden)' });
+      const fields = ['name', 'subtype', 'parent_id', 'icon', 'color', 'hidden', 'check_every_days'].filter((k) => (p as Record<string, unknown>)[k] !== undefined);
+      if (fields.length === 0) issues.push({ index, message: 'account_update changes nothing (name, subtype, parent_id, icon, color, hidden or check_every_days)' });
+      if (p.check_every_days !== undefined && p.check_every_days !== null && !(Number.isInteger(p.check_every_days) && p.check_every_days >= 0)) {
+        issues.push({ index, message: 'check_every_days must be null (automatic), 0 (never) or a whole number of days' });
+      }
+      if (p.check_every_days !== undefined && acc && acc.type !== 'asset' && acc.type !== 'liability') {
+        issues.push({ index, message: 'check_every_days only applies to asset and liability accounts' });
+      }
       checkAccountFields(index, 'account_update', p as Partial<AccountCreatePayload>, issues, acc?.type);
       if (p.parent_id) {
         const parent = accounts.get(p.parent_id);

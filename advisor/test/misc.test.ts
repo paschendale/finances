@@ -4,7 +4,7 @@ import { assertDatabaseMatchesEnv, databaseNameOf, loadConfig } from '../src/con
 import { detectCheckin, parseBrazilianAmount } from '../src/jobs/checkin.js';
 import { APPROVE_WORDS, REJECT_WORDS, chunkMessage, discordify, headline, mobileify, trackerText } from '../src/discord/poster.js';
 import { parseTracker } from '../src/discord/bot.js';
-import { isoDay, movedSinceCheck } from '../src/jobs/nudges.js';
+import { dueReason, shouldNudge } from '../src/jobs/nudges.js';
 import { humanizeError, describeTool } from '../src/claude/session.js';
 import { originMatcher } from '../src/http/server.js';
 import { accountConversationKey, accountConversationTitle } from '../src/gmail/grouping.js';
@@ -173,16 +173,26 @@ describe('originMatcher', () => {
 });
 
 describe('nudges', () => {
-  it('compares last entry and last check whether pg returns Dates or strings', () => {
-    expect(isoDay(new Date('2026-10-12T03:00:00Z'))).toBe('2026-10-12');
-    expect(isoDay('2026-10-12T03:00:00.000Z')).toBe('2026-10-12');
-    expect(isoDay(null)).toBeNull();
-    const rows = [
-      { account_name: 'a', last_checked: new Date('2026-09-11T00:00:00Z'), last_entry_date: '2026-09-18' },
-      { account_name: 'b', last_checked: '2026-09-11T00:00:00Z', last_entry_date: '2026-09-10' },
-      { account_name: 'c', last_checked: null, last_entry_date: '2026-09-10' },
-    ];
-    expect(movedSinceCheck(rows).map((r) => r.account_name)).toEqual(['a']);
+  const now = Date.parse('2026-10-15T15:00:00Z');
+  it('posts the first time and whenever a new account becomes due', () => {
+    expect(shouldNudge([], null, '2026-10-15', now)).toBe(false);
+    expect(shouldNudge(['a'], null, '2026-10-15', now)).toBe(true);
+    expect(shouldNudge(['a', 'b'], { day: '2026-10-14', accounts: ['a'], posted_at: '2026-10-14T15:00:00Z' }, '2026-10-15', now)).toBe(true);
+  });
+  it('repeats the same list only after a week, never twice a day', () => {
+    const last = { day: '2026-10-12', accounts: ['a', 'b'], posted_at: '2026-10-12T15:00:00Z' };
+    expect(shouldNudge(['a'], last, '2026-10-15', now)).toBe(false);
+    expect(shouldNudge(['a'], { ...last, day: '2026-10-08', posted_at: '2026-10-08T15:00:00Z' }, '2026-10-15', now)).toBe(true);
+    expect(shouldNudge(['c'], { ...last, day: '2026-10-15' }, '2026-10-15', now)).toBe(false);
+  });
+  it('reads the state written before posted_at existed', () => {
+    expect(shouldNudge(['a'], { day: '2026-10-01', accounts: ['a'] }, '2026-10-15', now)).toBe(true);
+    expect(shouldNudge(['a'], { day: '2026-10-14', accounts: ['a'] }, '2026-10-15', now)).toBe(false);
+  });
+  it('says why an account is due', () => {
+    expect(dueReason({ check_reason: 'moved', days_since_check: 34 })).toBe('teve movimento depois da última conferência');
+    expect(dueReason({ check_reason: 'cadence', days_since_check: 35 })).toBe('conferida há 35 dias');
+    expect(dueReason({ check_reason: 'never_checked', days_since_check: null })).toBe('nunca conferida');
   });
 });
 

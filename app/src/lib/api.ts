@@ -1,3 +1,4 @@
+import type { CheckReason, CheckTier } from './accountCheck';
 const API_URL = import.meta.env.VITE_APP_API_URL || 'http://localhost:3000';
 
 export const AUTH_TOKEN_KEY = 'finances_auth_token';
@@ -65,6 +66,12 @@ export interface Account {
   icon: string | null;
   color: string | null;
   hidden: boolean;
+  /** Balance-check cadence (migration 0057); absent on an older database. */
+  check_every_days?: number | null;
+  check_tier?: CheckTier | null;
+  check_due_on?: string | null;
+  check_due?: boolean | null;
+  check_reason?: CheckReason | null;
 }
 
 export interface AccountNode {
@@ -82,6 +89,11 @@ export interface AccountNode {
   icon: string | null;
   color: string | null;
   hidden: boolean;
+  check_every_days?: number | null;
+  check_tier?: CheckTier | null;
+  check_due_on?: string | null;
+  check_due?: boolean | null;
+  check_reason?: CheckReason | null;
 }
 
 export interface Entry {
@@ -446,11 +458,16 @@ export async function fetchAccountsTree(): Promise<AccountNode[]> {
     last_checked: a.last_checked ?? null,
     icon: a.icon,
     color: a.color,
-    hidden: a.hidden
+    hidden: a.hidden,
+    check_every_days: a.check_every_days ?? null,
+    check_tier: a.check_tier ?? null,
+    check_due_on: a.check_due_on ?? null,
+    check_due: a.check_due ?? null,
+    check_reason: a.check_reason ?? null,
   }));
 }
 
-export async function updateAccount(id: string, patch: Partial<Pick<AccountNode, 'icon' | 'color' | 'name' | 'type' | 'subtype' | 'parent_id' | 'hidden' | 'last_checked'>>): Promise<void> {
+export async function updateAccount(id: string, patch: Partial<Pick<AccountNode, 'icon' | 'color' | 'name' | 'type' | 'subtype' | 'parent_id' | 'hidden' | 'last_checked' | 'check_every_days'>>): Promise<void> {
   const response = await fetch(`${API_URL}/accounts?id=eq.${id}`, {
     method: 'PATCH',
     headers: getHeaders({ 'Prefer': 'return=minimal' }),

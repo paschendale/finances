@@ -149,12 +149,12 @@ export function registerLedgerReadTools(server: McpServer, pg: PostgrestClient):
     {
       title: 'List Accounts Hierarchical',
       description:
-        'All visible accounts with their full hierarchical name (e.g. alimentacao:basica), type, subtype, parent, balance. Subtypes checking/emergency/investments/liabilities are shown on the dashboard as money; property (a house, a car) and loan (a mortgage) are tracked but not shown as money; null is not grouped.',
+        'All visible accounts with their full hierarchical name (e.g. alimentacao:basica), type, subtype, parent, balance. Subtypes checking/emergency/investments/liabilities are shown on the dashboard as money; property (a house, a car) and loan (a mortgage) are tracked but not shown as money; null is not grouped. Balance-check fields: check_due (asked about now), check_due_on, check_reason (never_checked|moved|cadence), check_tier (active: monthly; occasional: 7 days after moving or every 90 days; dormant: idle with money, every 180 days; dormant_empty: idle and zero, never until it moves; never: property, hidden or switched off; fixed: check_every_days).',
       inputSchema: z.object({}),
     },
     async () =>
       runTool(() =>
-        pg.get('account_balances', new URLSearchParams({ select: 'id:account_id,full_name:account_name,type:account_type,subtype,parent_id,balance,last_checked', hidden: 'is.false', order: 'account_name.asc' })),
+        pg.get('account_balances', new URLSearchParams({ select: 'id:account_id,full_name:account_name,type:account_type,subtype,parent_id,balance,last_checked,reconciled_through,check_every_days,check_tier,check_due_on,check_due,check_reason', hidden: 'is.false', order: 'account_name.asc' })),
       ),
   );
 

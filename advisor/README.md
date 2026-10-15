@@ -61,7 +61,6 @@ npm run dev               # tsx watch, ADVISOR_CHANNELS=web by default
 | `SESSION_EFFORT`, `SESSION_TIMEOUT_MS`, `PLANNING_TURN_TIMEOUT_MS` | `high`, `900000`, `1800000` | Session effort, per-turn timeout for chat, and for a turn that plans a whole statement |
 | `MAX_CONCURRENT_SESSIONS` | `2` | Interactive slots; background work has one extra slot and yields |
 | `GATE_MAX_7D_PCT`, `GATE_MAX_5H_PCT`, `GATE_MAX_CALLS_PER_WINDOW`, `GATE_TAIL_MINUTES`, `GATE_IDLE_MINUTES` | `85`, `70`, `40`, `60`, `15` | Usage gate for routine work only |
-| `STALE_DAYS` | `30` | Accounts unchecked for longer get a nudge |
 | `UPLOAD_MAX_MB` | `15` | Upload cap |
 | `CHEAP_TICK_MS` / `CLAUDE_TICK_MS` / `GMAIL_TICK_MS` | `900000` / `300000` / `180000` | Scheduler intervals (nudges and pending-plan reminders / Claude background turns / mailbox checks) |
 | `TZ` | `UTC` | Time zone for dates in prompts and nudges |
@@ -106,7 +105,7 @@ edited in place as the topic moves along; everything else happens in the topic's
 - Plans drafted from the web or Gmail that need approval open a tracker + thread in the channel too.
 - Replies are reformatted for mobile (one paragraph per line, tables as code blocks) and the assistant is
   told to keep Discord answers to a few lines, offering detail on request.
-- Daily notices (accounts unchecked for > `STALE_DAYS`, plans pending > 24 h) are a tracker with a
+- Notices (accounts due for a balance check per the view `account_check_status` — posted when an account newly becomes due, else weekly — and plans pending > 24 h, daily) are a tracker with a
   one-line status plus the list in the thread; replying in that thread ("Nubank tá com 657,21", "sem
   movimento") runs the check-in. The same notice on the same day edits the tracker instead of posting again.
 - Operational alerts (Claude re-auth) are a single short message.

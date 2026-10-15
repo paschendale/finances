@@ -543,6 +543,26 @@ Views: `entry_clearings` (cleared entry → reconciliation), `account_reconcilia
 `account_balances` gained `reconciled_through` and `cleared_balance`; `transactions_with_entries` gained
 `clearing` (`{reconciliation_id, period_end, account_id, statement_ref}` or null).
 
+### Balance-check cadence (migration 0057)
+
+`accounts.check_every_days` (`NULL` automatic, `0` never ask, `N` every N days; PATCH `/accounts`). View
+`account_check_status`, also appended to `account_balances` as `check_every_days`, `check_tier`,
+`check_due_on`, `check_due`, `check_reason` (`never_checked` | `moved` | `cadence`), `moved_since_check`.
+The last check is the later of `last_checked` (São Paulo date) and `reconciled_through`; parents count
+their descendants' entries. Tiers for asset/liability accounts (others get `NULL`):
+
+| `check_tier` | When | Due |
+|---|---|---|
+| `never` | hidden, subtype `property`, or `check_every_days = 0` | never |
+| `fixed` | `check_every_days = N > 0` | N days after the last check |
+| `active` | ≥ 9 transactions in 90 days and one in the last 30 | 30 days after the last check (new entries alone don't count) |
+| `occasional` | an entry in the last 90 days | 7 days after the first entry since the last check, else 90 days after it |
+| `dormant` | no entry in 90 days, balance ≠ 0 | 7 days after a new entry, else 180 days after the last check |
+| `dormant_empty` | no entry in 90 days, balance 0 | never (a new entry makes it `occasional`) |
+
+A never-checked account is due as soon as its tier asks. The dashboard check-in list, the advisor chips
+and the advisor's nudge all read `check_due`.
+
 ### `accounts.subtype` (migration 0052)
 
 `subtype` accepts `checking | emergency | investments | liabilities | category | property | loan`. The

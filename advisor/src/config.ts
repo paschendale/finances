@@ -39,7 +39,6 @@ const schema = z.object({
   GATE_MAX_CALLS_PER_WINDOW: intEnv(40),
   GATE_TAIL_MINUTES: intEnv(60),
   GATE_IDLE_MINUTES: intEnv(15),
-  STALE_DAYS: intEnv(30),
   UPLOAD_MAX_MB: intEnv(15),
   CHEAP_TICK_MS: intEnv(15 * 60_000),
   /** Mailbox checks are cheap (one history call); keep them frequent so mailed statements show up within minutes. */

@@ -296,7 +296,7 @@ async function createAccount(ctx: AppContext, p: AccountCreatePayload): Promise<
 
 async function updateAccount(ctx: AppContext, p: AccountUpdatePayload): Promise<void> {
   const patch: Record<string, unknown> = {};
-  for (const k of ['name', 'subtype', 'parent_id', 'icon', 'color', 'hidden'] as const) if (p[k] !== undefined) patch[k] = p[k];
+  for (const k of ['name', 'subtype', 'parent_id', 'icon', 'color', 'hidden', 'check_every_days'] as const) if (p[k] !== undefined) patch[k] = p[k];
   await ctx.pg.patch('accounts', new URLSearchParams({ id: `eq.${p.account_id}` }), patch);
 }
 
