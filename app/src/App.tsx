@@ -115,7 +115,8 @@ function AppContent() {
 
   return (
     <div className="dark min-h-screen bg-[#050505] text-foreground flex flex-col items-center px-4">
-      <header className="w-full max-w-5xl mb-6 flex flex-row justify-between items-center border-b border-white/[0.06] pb-3 py-3 shrink-0">
+      {/* The Advisor is a workspace: it takes the whole width and most of the height on desktop. */}
+      <header className={cn("w-full flex flex-row justify-between items-center border-b border-white/[0.06] pb-3 py-3 shrink-0", view === 'advisor' ? 'mb-3' : 'max-w-5xl mb-6')}>
         <h1 className="logo-glassy text-xl font-semibold tracking-tight antialiased flex items-center gap-2.5">
           <Wallet className="h-6 w-6 opacity-90 shrink-0" />
           <span className="tracking-[-0.03em]">Finances</span>
@@ -151,7 +152,7 @@ function AppContent() {
 
       {view !== 'advisor' && <PendingPlansBanner onOpen={(planId, conversationId) => openAdvisor({ planId, conversationId })} />}
 
-      <main className="w-full max-w-5xl flex-1 pb-20 sm:pb-0">
+      <main className={cn("w-full flex-1 pb-20 sm:pb-0", view !== 'advisor' && 'max-w-5xl')}>
         {view === "advisor" ? (
           <AdvisorPage
             conversationId={advisorTarget.conversationId ?? null}

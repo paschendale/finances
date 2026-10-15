@@ -165,12 +165,12 @@ export function AdvisorPage({ conversationId, planId, onNavigate }: { conversati
   );
 
   return (
-    <div className="w-full space-y-3 pb-6">
+    <div className="w-full space-y-3 pb-4">
       <OfflineBanner health={health} />
       <UploadDrop onFiles={attach} disabled={upload.isPending || send.isPending} className="rounded-2xl border border-white/[0.06] bg-white/[0.015] overflow-hidden" >
-        <div className="flex h-[calc(100dvh-150px)] sm:h-[calc(100vh-170px)] min-h-[420px] sm:min-h-[520px]">
+        <div className="flex h-[calc(100dvh-150px)] sm:h-[calc(100vh-112px)] min-h-[420px] sm:min-h-[520px]">
           {!mobile && (
-            <aside className="w-[280px] shrink-0 border-r border-white/[0.06] flex flex-col">
+            <aside className="w-[280px] xl:w-[320px] shrink-0 border-r border-white/[0.06] flex flex-col">
               {listLoading && rows.length === 0 ? <div className="p-4 text-[12px] text-muted-foreground/50">Carregando…</div> : list}
             </aside>
           )}

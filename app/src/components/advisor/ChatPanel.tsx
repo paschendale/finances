@@ -153,7 +153,8 @@ export function ChatPanel({
       </header>
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 space-y-5 scroll-smooth">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 scroll-smooth">
+       <div className="max-w-[920px] mx-auto space-y-5">
         {messages.map((m) => {
           const dayLabel = dayLabels.get(m.id);
           const time = (() => { try { return format(new Date(m.created_at), 'HH:mm'); } catch { return ''; } })();
@@ -200,10 +201,12 @@ export function ChatPanel({
           </div>
         )}
         {messages.length === 0 && !(onPlanNow && statements.length > 0) && <p className="text-[13px] text-muted-foreground/50 text-center py-10">Diga oi, ou solte um arquivo aqui.</p>}
+       </div>
       </div>
 
       {/* Composer */}
       <div className="shrink-0 px-3 sm:px-5 pb-4 pt-2 border-t border-white/[0.06] bg-[#050505]/95 backdrop-blur-md">
+       <div className="max-w-[920px] mx-auto">
         <AttachmentChips files={files} onRemove={onRemoveAttachment} />
         <div className="flex items-end gap-1.5 px-1.5 py-1.5 rounded-2xl border border-white/[0.12] bg-white/[0.03] focus-within:border-white/[0.25] transition-colors">
           <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { const fs = Array.from(e.target.files ?? []); if (fs.length) onAttach(fs); e.target.value = ''; }} />
@@ -224,6 +227,7 @@ export function ChatPanel({
             <button onClick={submit} disabled={!canSend} className="w-10 h-10 rounded-xl bg-white/[0.1] hover:bg-white/[0.18] disabled:opacity-30 flex items-center justify-center shrink-0 transition-colors" aria-label="Enviar"><ArrowUp className="w-4 h-4" /></button>
           )}
         </div>
+       </div>
       </div>
     </div>
   );

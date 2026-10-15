@@ -157,7 +157,8 @@ export function PlanItemRow({
         )}
       </div>
 
-      <div className={cn('transition-all duration-300 ease-in-out overflow-hidden', expanded ? 'max-h-[900px] opacity-100' : 'max-h-0 opacity-0')}>
+      {/* overflow is only clipped while collapsed: the account dropdowns inside must be able to spill out */}
+      <div className={cn('transition-all duration-300 ease-in-out', expanded ? 'max-h-[900px] opacity-100 overflow-visible' : 'max-h-0 opacity-0 overflow-hidden')}>
         <div className="mx-3 mb-3 grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="rounded-xl border border-white/[0.06] bg-black/30 p-3 space-y-2">
             <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50">De onde sai, para onde vai</div>
