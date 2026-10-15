@@ -1,7 +1,7 @@
 import type { AppContext } from '../context.js';
 import { many } from '../db/client.js';
 import type { Statement } from '../db/types.js';
-import { buildIngestMessage } from './ingest-statement.js';
+import { buildIngestMessage, type IngestOutcome } from './ingest-statement.js';
 import { routineGate } from './scheduler.js';
 import { scoped } from '../log.js';
 
@@ -33,16 +33,30 @@ export async function ignoreDuplicateStatements(ctx: AppContext): Promise<number
      RETURNING s.id, s.conversation_id`,
   );
   for (const d of dup) {
-    if (d.conversation_id) await ctx.db.query(`UPDATE advisor_conversations SET status = 'archived' WHERE id = $1`, [d.conversation_id]);
+    // The conversation is shared by the account's other statements; archive it only when nothing live is left.
+    if (d.conversation_id) {
+      await ctx.db.query(
+        `UPDATE advisor_conversations SET status = 'archived'
+         WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM advisor_statements x WHERE x.conversation_id = $1 AND x.status <> 'ignored')`,
+        [d.conversation_id],
+      );
+    }
   }
   if (dup.length) log.info({ count: dup.length }, 'duplicate statements ignored');
   return dup.length;
 }
 
-type WaitingStatement = Statement & { conversation_created_by: string | null };
+export type WaitingStatement = Statement & { conversation_created_by: string | null };
 
-/** Gmail statements parsed but not planned yet, in conversations nobody has written to. */
-export async function findWaitingStatements(ctx: AppContext, conversationId?: string): Promise<WaitingStatement[]> {
+/** Statements of one account keep arriving for a while (initial sync, re-sent mails); the background turn waits this long after the last one. */
+export const SETTLE_SECONDS = 180;
+
+/**
+ * Gmail statements parsed but not planned yet, in conversations nobody has written to. With
+ * `settleSeconds` a conversation whose newest statement is younger than that is left out, so a
+ * burst of mails for one account is planned in a single turn.
+ */
+export async function findWaitingStatements(ctx: AppContext, conversationId?: string, settleSeconds = 0): Promise<WaitingStatement[]> {
   return many<WaitingStatement>(
     ctx.db,
     `SELECT s.*, c.created_by AS conversation_created_by FROM advisor_statements s
@@ -51,41 +65,96 @@ export async function findWaitingStatements(ctx: AppContext, conversationId?: st
        AND ($1::uuid IS NULL OR s.conversation_id = $1::uuid)
        AND NOT EXISTS (SELECT 1 FROM advisor_plans p WHERE p.statement_id = s.id)
        AND NOT EXISTS (SELECT 1 FROM advisor_messages m WHERE m.conversation_id = s.conversation_id AND m.role = 'user')
-     ORDER BY s.created_at ASC LIMIT 50`,
-    [conversationId ?? null],
+       AND NOT EXISTS (SELECT 1 FROM advisor_statements n WHERE n.conversation_id = s.conversation_id AND n.created_at > now() - make_interval(secs => $2::float8))
+     ORDER BY s.period_start ASC NULLS LAST, s.created_at ASC LIMIT 50`,
+    [conversationId ?? null, settleSeconds],
   );
 }
 
-/** Starts the planning turn for one conversation's waiting statements (the OFX is primary). */
+export interface PeriodGroup {
+  key: string;
+  /** The OFX when the period came in several formats, else the first file */
+  primary: WaitingStatement;
+  others: WaitingStatement[];
+}
+
+/** One group per statement period, oldest first; several formats of one period (OFX + CSV + PDF) share a group. */
+export function groupByPeriod(statements: WaitingStatement[]): PeriodGroup[] {
+  const groups = new Map<string, WaitingStatement[]>();
+  for (const s of statements) {
+    const key = s.period_start || s.period_end ? `${s.period_start ?? '?'}..${s.period_end ?? '?'}` : `file:${s.id}`;
+    groups.set(key, [...(groups.get(key) ?? []), s]);
+  }
+  return [...groups.entries()]
+    .map(([key, list]) => {
+      const primary = list.find((s) => s.format === 'ofx') ?? list[0]!;
+      return { key, primary, others: list.filter((s) => s !== primary) };
+    })
+    .sort((a, b) => (a.primary.period_start ?? '9999').localeCompare(b.primary.period_start ?? '9999') || a.primary.created_at.localeCompare(b.primary.created_at));
+}
+
+const outcomeOf = (s: WaitingStatement): IngestOutcome => {
+  const lines = s.lines ?? [];
+  return {
+    statement_id: s.id,
+    conversation_id: s.conversation_id!,
+    status: s.status,
+    duplicate: false,
+    format: s.format,
+    institution: s.institution,
+    kind: s.kind,
+    account_id: s.account_id,
+    line_count: lines.length,
+    already_in_ledger: lines.filter((l) => l.already_in_ledger).length,
+    likely_duplicate: lines.filter((l) => l.likely_duplicate && !l.already_in_ledger).length,
+    period_start: s.period_start,
+    period_end: s.period_end,
+    closing_balance: s.closing_balance,
+    error: s.error,
+  };
+};
+
+/**
+ * The text that opens a planning turn. One period: the usual statement message (other formats of the
+ * same period are cross-check material). Several periods of one account: all of them, oldest first,
+ * with the instruction to plan them in order and check continuity between them.
+ */
+export function buildPlanningMessage(statements: WaitingStatement[]): { text: string; primary: WaitingStatement } {
+  const groups = groupByPeriod(statements);
+  if (groups.length === 1) {
+    const g = groups[0]!;
+    const note = g.others.length > 0 ? `The same email carried ${g.others.length + 1} files (${[g.primary, ...g.others].map((s) => `${s.id} ${s.filename}`).join('; ')}); the OFX is primary, use the others to cross-check.` : null;
+    return { text: buildIngestMessage(g.primary, outcomeOf(g.primary), note), primary: g.primary };
+  }
+  const first = groups[0]!.primary;
+  const parts = [
+    `${groups.length} statement periods of the same account arrived together (${first.institution ?? 'unknown institution'} / ${first.kind}).`,
+    first.account_id
+      ? `Ledger account: ${first.account_id}.`
+      : 'The ledger account is not known yet: resolve it with match_account from the statement metadata and the user, and record it with note_add (scope account, note "statement_source=<institution>:<acctid>").',
+    'Go through them in chronological order, oldest first, one plan per period: plan_create with that statement_id, plan_set_items, the balance check, plan_finalize, then the next period. Before anything else check continuity: the opening balance of each period must equal the closing balance of the one before, and the first opening must match the last balanced reconciliation (reconciliation_history); report breaks first. Lines already in the ledger get skip items.',
+    '',
+  ];
+  for (const g of groups) {
+    const o = outcomeOf(g.primary);
+    const s = g.primary;
+    if (o.status === 'failed') parts.push(`- Statement ${s.id} (${s.filename}): could not be parsed (${o.error}); the file is in the workspace.`);
+    else parts.push(`- Statement ${s.id} (${s.filename}, ${o.format}): ${o.period_start ?? '?'} to ${o.period_end ?? '?'}, ${o.line_count} lines, ${o.already_in_ledger} already in the ledger by FITID, ${o.likely_duplicate} likely duplicates, opening balance ${s.opening_balance ?? 'unknown'}, closing balance ${o.closing_balance ?? 'unknown'}.`);
+    if (g.others.length > 0) parts.push(`  Same period in other formats, cross-check only: ${g.others.map((x) => `${x.id} ${x.filename}`).join('; ')}.`);
+  }
+  return { text: parts.join('\n'), primary: first };
+}
+
+/** Starts the planning turn for one conversation's waiting statements. */
 export function startPlanningTurn(ctx: AppContext, conversationId: string, statements: WaitingStatement[], opts: { actor: string | null; kind: 'interactive' | 'background' }): Promise<unknown> {
-  const primary = statements.find((s) => s.format === 'ofx') ?? statements[0]!;
-  const lines = primary.lines ?? [];
-  const text = buildIngestMessage(
-    primary,
-    {
-      statement_id: primary.id,
-      status: primary.status,
-      duplicate: false,
-      format: primary.format,
-      institution: primary.institution,
-      kind: primary.kind,
-      account_id: primary.account_id,
-      line_count: lines.length,
-      already_in_ledger: lines.filter((l) => l.already_in_ledger).length,
-      likely_duplicate: lines.filter((l) => l.likely_duplicate && !l.already_in_ledger).length,
-      period_start: primary.period_start,
-      period_end: primary.period_end,
-      closing_balance: primary.closing_balance,
-      error: primary.error,
-    },
-    statements.length > 1 ? `The same email carried ${statements.length} files (${statements.map((s) => `${s.id} ${s.filename}`).join('; ')}); the OFX is primary, use the others to cross-check.` : null,
-  );
-  log.info({ conversationId, statementId: primary.id, kind: opts.kind, actor: opts.actor }, 'starting planning turn');
+  const { text, primary } = buildPlanningMessage(statements);
+  log.info({ conversationId, statementId: primary.id, statements: statements.length, kind: opts.kind, actor: opts.actor }, 'starting planning turn');
+  const names = statements.map((s) => s.filename);
   return ctx.sessions.sendUserMessage(conversationId, text, {
     actor: opts.actor,
     kind: opts.kind,
     attachments: statements.map((s) => ({ statement_id: s.id, filename: s.filename, format: s.format })),
-    display: `📎 ${statements.map((s) => s.filename).join(', ')} (Gmail)`,
+    display: `📎 ${names.length > 3 ? `${names.length} extratos: ${names.slice(0, 3).join(', ')}…` : names.join(', ')} (Gmail)`,
   });
 }
 
@@ -103,7 +172,7 @@ export function groupByConversation(waiting: WaitingStatement[]): Map<string, Wa
  */
 export async function backgroundTurnsJob(ctx: AppContext): Promise<void> {
   await ignoreDuplicateStatements(ctx);
-  const byConv = groupByConversation(await findWaitingStatements(ctx));
+  const byConv = groupByConversation(await findWaitingStatements(ctx, undefined, SETTLE_SECONDS));
   if (byConv.size === 0) return;
   const [conversationId, statements] = [...byConv.entries()][0]!;
   const gate = await routineGate(ctx);

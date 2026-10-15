@@ -547,7 +547,10 @@ difference follows §8.
 
 Attachments from Discord and web uploads follow the same path (`source = upload`), capped at 15 MB, and
 land in the conversation where they were posted. Images (receipts, app screenshots) are passed through
-untouched; Claude reads them with `Read` in the workspace.
+untouched; Claude reads them with `Read` in the workspace. Uploads accept any file: one that is not a
+parsed statement (a purchase list, an invoice, an unknown format) is stored with `format = other` and no
+lines, and the turn message asks the session to read it and check it against the ledger (prompt section
+"Other documents"). The empty Advisor screen offers a composer for this: text and files together.
 
 ---
 
@@ -737,6 +740,13 @@ ids, household of two) and add:
   or the card CSV filename, mapped through `advisor_notes` (scope `account`, note
   `statement_source=<institution>:<acctid>`); when unknown the session asks once and records the note.
   Only one mailbox is watched; statements from other household members arrive as uploads.
+- Mailed statements are grouped per account: the conversation is picked after parsing
+  (`external_ref` `gmail:<account_id>`, or `gmail:<institution>:<kind>` until the account is known) and
+  reused while no turn has run in it; its title spans the periods. The background job starts a
+  conversation's planning turn only when its newest statement is 3 minutes old, so an initial sync or a
+  burst of re-sent mails is planned in one turn that walks the periods oldest first, one plan per period,
+  checking continuity between consecutive periods (`buildPlanningMessage`). "Planejar agora" and the
+  manual pick-up skip the wait.
 - Idempotency by `gmail_message_id` + attachment `sha256`. Label processed messages
   `finances/processed` when `gmail.modify` is granted.
 

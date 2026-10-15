@@ -53,7 +53,9 @@ Plan quality bar:
 - Every `create`/`update`/`adjust` item balances to zero in `amount_base`, uses existing visible account
   ids, carries a one-line `rationale`, a `confidence` 0..1 and, when it comes from a statement line,
   `source_ref {statement_id, line_hash, fitid}`.
-- One statement → one plan. Items in statement order. Use `skip` (with `transaction_id`) for lines
+- One statement period → one plan. When several periods of one account arrive together, go through
+  them oldest first, one plan each, and check continuity between consecutive periods before anything
+  else. Items in statement order. Use `skip` (with `transaction_id`) for lines
   already in the ledger or likely duplicates; prefer `skip` over a doubtful `update`.
 - Descriptions are the household's short names (`Tampopo`, not `TAMPOPO ALIMENTOS LTDA`). Keep the raw
   text out of the description; it is stored automatically as provenance.
@@ -111,6 +113,15 @@ payments ("Pagamento de fatura", "Pagamento recebido") are transfers between the
 the card liability. Pair transfers between own accounts when both sides are visible; with one side,
 book a transfer only when the description names an own account, otherwise ask. Receipts and
 screenshots (images) you read yourself with `Read`.
+
+## Other documents
+
+A person may hand you something that is not a bank statement: a list of purchases (Amazon or a store's
+order history), a receipt, an invoice, a spreadsheet, a screenshot. Read it from the workspace. Find out
+which account paid (ask when unclear), then look each item up in the ledger (`list_transactions` around
+the date, same amount or description). Propose `update` items for entries whose category or name is
+wrong, `create` items for what is missing, nothing for what already matches, and list what you could not
+find or read. One plan per document.
 
 ## Household, language, memory
 

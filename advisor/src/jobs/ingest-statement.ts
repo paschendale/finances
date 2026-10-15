@@ -27,7 +27,10 @@ export interface IngestInput {
   buffer: Buffer;
   filename: string;
   source: 'upload' | 'gmail';
-  conversationId: string;
+  /** Conversation to attach to; null when `resolveConversation` picks it once the file is parsed. */
+  conversationId: string | null;
+  /** Picks the conversation from the parsed statement (account, institution, kind): mailed statements of one account share a conversation. */
+  resolveConversation?: (statement: Statement) => Promise<string>;
   actor: string | null;
   message?: string | null;
   kind: 'interactive' | 'background';
@@ -40,6 +43,7 @@ export interface IngestInput {
 
 export interface IngestOutcome {
   statement_id: string;
+  conversation_id: string;
   status: string;
   duplicate: boolean;
   format: string;
@@ -91,7 +95,8 @@ export async function ingestBuffer(ctx: AppContext, input: IngestInput): Promise
   const sha256 = createHash('sha256').update(input.buffer).digest('hex');
   const existing = await findStatementBySha(ctx.db, sha256);
   const format = detectFormat(input.filename, input.buffer);
-  if (format === 'other') throw new IngestError(`unsupported file type for ${input.filename}`, 415);
+  // A person may hand in any document (a purchase list, an invoice); the advisor reads it itself. Mail only carries statements.
+  if (format === 'other' && input.source !== 'upload') throw new IngestError(`unsupported file type for ${input.filename}`, 415);
 
   const dir = statementsStorageDir(ctx.config.DATA_DIR);
   await fs.mkdir(dir, { recursive: true });
@@ -105,9 +110,6 @@ export async function ingestBuffer(ctx: AppContext, input: IngestInput): Promise
     duplicate = true;
     statement = existing;
     log.info({ statementId: existing.id, filename: input.filename }, 'statement already known; re-attaching to conversation');
-    if (existing.conversation_id !== input.conversationId) {
-      statement = await updateStatement(ctx.db, existing.id, { conversation_id: input.conversationId });
-    }
   } else {
     const det = detectInstitution({ filename: input.filename, sender: input.sender ?? null, subject: input.subject ?? null });
     statement = await createStatement(ctx.db, {
@@ -160,12 +162,20 @@ export async function ingestBuffer(ctx: AppContext, input: IngestInput): Promise
     statement = await updateStatement(ctx.db, statement.id, { status: 'failed', error: (err as Error).message });
   }
 
-  await ctx.sessions.attachStatement(input.conversationId, statement, storagePath, linesCsv);
-  ctx.bus.emitGlobal({ type: 'statement', statementId: statement.id, conversationId: input.conversationId, status: statement.status });
+  let conversationId = input.conversationId;
+  if (!conversationId) {
+    if (!input.resolveConversation) throw new Error('ingestBuffer needs conversationId or resolveConversation');
+    conversationId = await input.resolveConversation(statement);
+  }
+  if (statement.conversation_id !== conversationId) statement = await updateStatement(ctx.db, statement.id, { conversation_id: conversationId });
+
+  await ctx.sessions.attachStatement(conversationId, statement, storagePath, linesCsv);
+  ctx.bus.emitGlobal({ type: 'statement', statementId: statement.id, conversationId, status: statement.status });
 
   const lines = statement.lines ?? [];
   const outcome: IngestOutcome = {
     statement_id: statement.id,
+    conversation_id: conversationId,
     status: statement.status,
     duplicate,
     format,
@@ -183,7 +193,7 @@ export async function ingestBuffer(ctx: AppContext, input: IngestInput): Promise
 
   if (input.startTurn !== false) {
     const text = buildIngestMessage(statement, outcome, input.message ?? null);
-    void ctx.sessions.sendUserMessage(input.conversationId, text, {
+    void ctx.sessions.sendUserMessage(conversationId, text, {
       actor: input.actor,
       kind: input.kind,
       attachments: [{ statement_id: statement.id, filename: statement.filename, format, size: input.buffer.length }],
@@ -200,15 +210,19 @@ async function rememberAccountRef(ctx: AppContext, institution: string, accountR
   if (!exists) await ctx.db.query('INSERT INTO advisor_notes (scope, ref_id, note, created_by) VALUES ($1, $2, $3, $4)', ['account', accountId, key, 'advisor']);
 }
 
+/** What to do with a file that is not a parsed bank statement (a purchase list, a receipt, an invoice, an unknown format). */
+export const DOCUMENT_HINT =
+  'The original file is in the workspace under statements/. Open it with Read, work out what it is (a statement in a format the system does not parse, a list of purchases such as Amazon orders, a receipt, an invoice, a spreadsheet) and do what the person asked. When it lists purchases or charges, find each one in the ledger (list_transactions around the date, same amount or description), propose `update` items for wrong categories or names, `create` items for what is missing and nothing for what already matches; say which lines you could not read or find.';
+
 export function buildIngestMessage(statement: Statement, o: IngestOutcome, userMessage: string | null): string {
   const parts: string[] = [];
   if (userMessage?.trim()) parts.push(userMessage.trim(), '');
   if (o.status === 'failed') {
-    parts.push(`Statement ${statement.id} (${statement.filename}) was received but could not be parsed: ${o.error}. The original file is in the workspace; read it and tell the user what you can do with it.`);
+    parts.push(`File ${statement.id} (${statement.filename}) was received but could not be read as a bank statement (${o.error}). ${DOCUMENT_HINT}`);
     return parts.join('\n');
   }
   if (o.line_count === 0) {
-    parts.push(`File ${statement.id} (${statement.filename}, ${o.format}) was received. It has no machine-readable lines; open it from the workspace with Read and extract the transactions yourself before building a plan.`);
+    parts.push(`File ${statement.id} (${statement.filename}, ${o.format}) was received; it has no machine-readable statement lines. ${DOCUMENT_HINT}`);
     return parts.join('\n');
   }
   parts.push(

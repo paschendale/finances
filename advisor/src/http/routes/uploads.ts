@@ -25,7 +25,8 @@ export function uploadRoutes(ctx: AppContext): Hono<Env> {
 
     let convId = conversationId;
     if (!convId) {
-      const conv = await createConversation(ctx.db, { channel: 'web', title: files[0]!.name.slice(0, 60), created_by: actor.id });
+      const title = (message.trim() ? message.trim().replace(/\s+/g, ' ') : files[0]!.name).slice(0, 60);
+      const conv = await createConversation(ctx.db, { channel: 'web', title, created_by: actor.id });
       convId = conv.id;
     } else if (!(await getConversation(ctx.db, convId))) {
       return c.json({ error: 'conversation not found' }, 404);

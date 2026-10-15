@@ -7,6 +7,8 @@ import { parseTracker } from '../src/discord/bot.js';
 import { isoDay, movedSinceCheck } from '../src/jobs/nudges.js';
 import { humanizeError, describeTool } from '../src/claude/session.js';
 import { originMatcher } from '../src/http/server.js';
+import { accountConversationKey, accountConversationTitle } from '../src/gmail/grouping.js';
+import { buildPlanningMessage, groupByPeriod, type WaitingStatement } from '../src/jobs/background-turns.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -181,5 +183,81 @@ describe('nudges', () => {
       { account_name: 'c', last_checked: null, last_entry_date: '2026-09-10' },
     ];
     expect(movedSinceCheck(rows).map((r) => r.account_name)).toEqual(['a']);
+  });
+});
+
+describe('gmail grouping', () => {
+  const base = { account_id: null, institution: 'nubank', kind: 'account' as const };
+  it('keys a conversation by the ledger account, else by institution and kind', () => {
+    expect(accountConversationKey({ ...base, account_id: 'acc-1' })).toBe('gmail:acc-1');
+    expect(accountConversationKey(base)).toBe('gmail:nubank:account');
+    expect(accountConversationKey({ account_id: null, institution: null, kind: 'card' })).toBe('gmail:desconhecido:card');
+  });
+
+  it('titles the conversation with the span of its periods', () => {
+    expect(accountConversationTitle(base, [])).toBe('Nubank conta');
+    expect(accountConversationTitle({ institution: 'nubank', kind: 'card' }, [{ period_start: '2026-09-01', period_end: '2026-09-30' }])).toBe('Nubank cartão · 01/09/2026 a 30/09/2026');
+    expect(
+      accountConversationTitle(base, [
+        { period_start: '2026-08-01', period_end: '2026-08-31' },
+        { period_start: '2026-07-01', period_end: '2026-07-31' },
+        { period_start: '2026-09-01', period_end: '2026-09-30' },
+      ]),
+    ).toBe('Nubank conta · 01/07/2026 a 30/09/2026');
+  });
+
+  const stmt = (over: Partial<WaitingStatement>): WaitingStatement =>
+    ({
+      id: 'id',
+      account_id: null,
+      source: 'gmail',
+      institution: 'nubank',
+      kind: 'account',
+      format: 'ofx',
+      filename: 'f.ofx',
+      sha256: 'x',
+      storage_path: null,
+      gmail_message_id: null,
+      period_start: '2026-07-01',
+      period_end: '2026-07-31',
+      currency: 'BRL',
+      opening_balance: 10,
+      closing_balance: 20,
+      lines: [{ hash: 'h', date: '2026-07-02', amount: -5, currency: 'BRL', raw: 'X', description_hint: 'X', kind: 'debit' }],
+      status: 'parsed',
+      error: null,
+      conversation_id: 'conv',
+      created_at: '2026-10-15T10:00:00Z',
+      conversation_created_by: 'gmail',
+      ...over,
+    }) as WaitingStatement;
+
+  it('groups several formats of one period together and sorts periods oldest first', () => {
+    const groups = groupByPeriod([
+      stmt({ id: 'sep-csv', format: 'csv', filename: 's.csv', period_start: '2026-09-01', period_end: '2026-09-30' }),
+      stmt({ id: 'sep-ofx', period_start: '2026-09-01', period_end: '2026-09-30' }),
+      stmt({ id: 'jul', period_start: '2026-07-01', period_end: '2026-07-31' }),
+    ]);
+    expect(groups.map((g) => g.primary.id)).toEqual(['jul', 'sep-ofx']);
+    expect(groups[1]!.others.map((s) => s.id)).toEqual(['sep-csv']);
+  });
+
+  it('writes the single-period message as before and a chronological list for several periods', () => {
+    const one = buildPlanningMessage([stmt({ id: 'jul' }), stmt({ id: 'jul-pdf', format: 'pdf', filename: 'f.pdf' })]);
+    expect(one.primary.id).toBe('jul');
+    expect(one.text).toContain('Statement jul received');
+    expect(one.text).toContain('cross-check');
+
+    const many = buildPlanningMessage([
+      stmt({ id: 'aug', period_start: '2026-08-01', period_end: '2026-08-31', account_id: 'acc-1' }),
+      stmt({ id: 'jul', account_id: 'acc-1' }),
+      stmt({ id: 'bad', status: 'failed', error: 'boom', period_start: '2026-09-01', period_end: '2026-09-30', lines: null }),
+    ]);
+    expect(many.primary.id).toBe('jul');
+    expect(many.text).toMatch(/^3 statement periods of the same account/);
+    expect(many.text).toContain('Ledger account: acc-1.');
+    expect(many.text.indexOf('Statement jul')).toBeLessThan(many.text.indexOf('Statement aug'));
+    expect(many.text).toContain('Statement bad (f.ofx): could not be parsed (boom)');
+    expect(many.text).toContain('continuity');
   });
 });

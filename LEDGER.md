@@ -47,6 +47,10 @@ The production bot runs with the token that sits in the infra repo's git history
 
 `DISCORD_OBEYED_USER_IDS` on the dev instance lists one user id. Add the second member's id so both can approve from Discord (web approvals already work for any finances token).
 
+## Advisor: documents the session cannot read
+
+Uploads accept any file now. The session reads text, CSV, PDF and images itself; a `.docx`/`.xls` or an archive is stored but unreadable, and the session can only say so. Converting those (or extracting text server-side) is not done.
+
 ## Advisor: empty draft plans linger
 
 When every line of a statement is already in the ledger the assistant sometimes calls `plan_create` and then leaves the draft empty (two such drafts on the dev copy from the re-sent September and the duplicate July mails). Harmless, but they show up in plan lists. Options: have `plan_create` require at least one item before it is listed, or a daily job that rejects empty drafts older than a day.

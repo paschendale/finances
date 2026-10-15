@@ -6,7 +6,9 @@ The AI advisor, bookkeeper and assistant for the finances ledger. One Node 22 da
   and plan-drafting tools over a local MCP server;
 - ingests bank statements (OFX, CSV, PDF, images) from uploads, Discord attachments and a Gmail
   mailbox into reviewable **insertion plans**; a person approves, the daemon applies through the
-  existing PostgREST RPCs with provenance;
+  existing PostgREST RPCs with provenance. Uploads take any file: something that is not a parsed
+  statement (a purchase list, an invoice, a spreadsheet) is stored as is and the session reads it and
+  checks it against the ledger;
 - keeps **reconciliations** per account and statement period (cleared / outstanding / missing /
   difference) and never books an adjustment without being told;
 - serves the web app's Advisor view (chat with streaming, plan review) and, optionally, a Discord
@@ -140,8 +142,16 @@ statement that is waiting for the usage gate, right away and as an interactive t
 Manual pick-up (web token): `GET /gmail/messages?q=<gmail query>&limit=20` lists mails with their
 attachments, detected institution/kind and whether the sync already handled them;
 `POST /gmail/messages/:id/ingest` (`{"force":true}` to redo one) ingests that mail and starts the
-planning turn right away as an interactive turn. Of several attachments of one statement (OFX + CSV +
-PDF) only the preferred one is ingested unless it yields no lines.
+planning turn right away as an interactive turn, together with whatever else of that account is still
+waiting. Of several attachments of one statement (OFX + CSV + PDF) only the preferred one is ingested
+unless it yields no lines.
+
+Mailed statements are grouped **per account**: a statement joins the conversation of its account
+(`external_ref` `gmail:<account_id>`, or `gmail:<institution>:<kind>` until the account is known) as long
+as no turn has run there yet, and the title spans the periods ("Nubank conta · 01/07/2026 a
+30/09/2026"). The background job starts a conversation's planning turn only once its newest statement
+is `SETTLE_SECONDS` (3 min) old, so the initial sync or a burst of re-sent mails is planned in one turn
+that walks the periods oldest first, one plan per period, checking continuity between them.
 
 Every cheap tick the daemon walks `users.history` from its cursor (first run: `GMAIL_LOOKBACK_DAYS`
 of mail with attachments). Known senders (Nubank account and card statements, Wise) are ingested by

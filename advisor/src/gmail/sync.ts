@@ -5,9 +5,13 @@ import type { AppContext } from '../context.js';
 import { GmailClient, attachments, header, senderAddress } from './client.js';
 import { claimEvent, getState, setEventOutcome, setState, recordClaudeCall } from '../db/repo/misc.js';
 import { createConversation } from '../db/repo/conversations.js';
+import { maybeOne } from '../db/client.js';
+import type { Statement } from '../db/types.js';
 import { detectInstitution } from '../ingest/detect.js';
 import { ingestBuffer } from '../jobs/ingest-statement.js';
+import { findWaitingStatements, startPlanningTurn } from '../jobs/background-turns.js';
 import { routineGate } from '../jobs/scheduler.js';
+import { accountConversationKey, accountConversationTitle, refreshAccountConversationTitle } from './grouping.js';
 import { runSingleShot } from '../claude/runner.js';
 import { setChannelStatus } from '../http/routes/health.js';
 import { scoped } from '../log.js';
@@ -106,6 +110,11 @@ export class GmailSync {
     }
     const r = await this.handleMessage(id, { interactive: true, actor: opts.actor });
     await setEventOutcome(this.ctx.db, 'gmail', id, r.outcome);
+    if (r.conversation_id) {
+      // Plan right away, together with whatever else of that account is still waiting.
+      const waiting = await findWaitingStatements(this.ctx, r.conversation_id);
+      if (waiting.length > 0) void startPlanningTurn(this.ctx, r.conversation_id, waiting, { actor: opts.actor, kind: 'interactive' });
+    }
     return r;
   }
 
@@ -141,11 +150,13 @@ export class GmailSync {
     if (decision !== 'statement') return done(`ignored (${decision})`);
 
     // Prefer OFX; the other formats of the same statement (banks attach OFX + CSV + PDF of one
-    // period) are only ingested when the preferred one yields no lines.
+    // period) are only ingested when the preferred one yields no lines. The conversation is picked
+    // once the first file is parsed, so every statement of one account lands in the same one; the
+    // planning turn starts later (gated job, "Planejar agora" or the manual pick-up).
     const sorted = [...atts].sort((a, b) => PREFERRED.indexOf(path.extname(a.filename).toLowerCase()) - PREFERRED.indexOf(path.extname(b.filename).toLowerCase()));
-    const title = `${det.institution ?? 'Extrato'} ${det.kind === 'card' ? 'cartão' : 'conta'} · ${subject.replace(/^.*?(\d{2}\/\d{2}\/\d{4}.*)$/, '$1').slice(0, 60)}`.trim();
-    const conv = await createConversation(this.ctx.db, { channel: 'system', title, created_by: turn ? turn.actor : 'gmail' });
+    const actor = turn ? turn.actor : 'gmail';
     const results: string[] = [];
+    let conversationId: string | null = null;
     let primaryLines = 0;
     for (const [i, a] of sorted.entries()) {
       if (i > 0 && primaryLines > 0) {
@@ -157,24 +168,41 @@ export class GmailSync {
         buffer: buf,
         filename: a.filename,
         source: 'gmail',
-        conversationId: conv.id,
-        actor: turn ? turn.actor : 'gmail',
+        conversationId,
+        resolveConversation: (s) => this.accountConversation(s, actor),
+        actor,
         kind: turn ? 'interactive' : 'background',
         gmailMessageId: id,
         sender: from,
         subject,
-        message: turn ? `Statement picked up from Gmail on request (${subject}).` : null,
-        startTurn: Boolean(turn) && i === 0, // background turns start from the gated job; a manual pick-up plans right away
+        startTurn: false,
       });
+      conversationId = r.conversation_id;
       results.push(`${a.filename}:${r.status}:${r.line_count}`);
-      if (i === 0) {
-        primaryLines = r.line_count;
-        await setState(this.ctx.db, `gmail_primary:${conv.id}`, { statement_id: r.statement_id });
-      }
+      if (i === 0) primaryLines = r.line_count;
     }
+    if (!conversationId) return done('no file ingested');
+    const title = await refreshAccountConversationTitle(this.ctx.db, conversationId);
+    if (title) this.ctx.bus.emitConversation(conversationId, { type: 'conversation', field: 'title', value: title });
     await this.label(id);
-    this.ctx.bus.emitGlobal({ type: 'statement', statementId: conv.id, conversationId: conv.id, status: 'received' });
-    return done(`ingested ${results.join(', ')}`, conv.id);
+    this.ctx.bus.emitGlobal({ type: 'statement', statementId: conversationId, conversationId, status: 'received' });
+    return done(`ingested ${results.join(', ')}`, conversationId);
+  }
+
+  /** The waiting conversation of this statement's account (no turn has run in it yet), or a new one. */
+  private async accountConversation(s: Statement, actor: string): Promise<string> {
+    const key = accountConversationKey(s);
+    const open = await maybeOne<{ id: string }>(
+      this.ctx.db,
+      `SELECT c.id FROM advisor_conversations c
+       WHERE c.channel = 'system' AND c.external_ref = $1 AND c.status = 'active'
+         AND NOT EXISTS (SELECT 1 FROM advisor_messages m WHERE m.conversation_id = c.id)
+       ORDER BY c.created_at DESC LIMIT 1`,
+      [key],
+    );
+    if (open) return open.id;
+    const conv = await createConversation(this.ctx.db, { channel: 'system', title: accountConversationTitle(s, []), external_ref: key, created_by: actor });
+    return conv.id;
   }
 
   private async label(messageId: string): Promise<void> {
