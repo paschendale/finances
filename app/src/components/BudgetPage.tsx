@@ -120,7 +120,7 @@ export function BudgetPage({ onNavigateToLedger, onOpenAdvisor }: BudgetPageProp
               onClick={() => void planWithAdvisor()}
               className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-white/[0.08] bg-white/[0.02] text-[13px] font-medium tracking-[-0.01em] text-muted-foreground hover:text-foreground/80 transition-colors backdrop-blur-md"
             >
-              <Sparkles className="w-3.5 h-3.5 opacity-80" /> Plan with the advisor
+              <Sparkles className="w-3.5 h-3.5 opacity-80" /> Planejar com o assistente
             </button>
           )}
 

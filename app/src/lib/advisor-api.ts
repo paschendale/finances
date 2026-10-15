@@ -271,10 +271,10 @@ export function canApproveFromCard(plan: Pick<Plan, 'status' | 'min_confidence' 
   return (plan.min_confidence ?? 1) >= APPROVE_MIN_CONFIDENCE;
 }
 
-export function channelLabel(c: Pick<Conversation, 'channel' | 'created_by'>): 'Web' | 'Discord' | 'Gmail' | 'System' {
+export function channelLabel(c: Pick<Conversation, 'channel' | 'created_by'>): 'Web' | 'Discord' | 'Gmail' | 'Automático' {
   if (c.channel === 'discord') return 'Discord';
   if (c.channel === 'web') return 'Web';
-  return c.created_by === 'gmail' ? 'Gmail' : 'System';
+  return c.created_by === 'gmail' ? 'Gmail' : 'Automático';
 }
 
 export const formatBRL = (n: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);

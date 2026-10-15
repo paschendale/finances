@@ -7,12 +7,12 @@ import { channelLabel, type ConversationListRow } from '@/lib/advisor-api';
 function relative(iso: string): string {
   try {
     return formatDistanceToNowStrict(new Date(iso), { addSuffix: false })
-      .replace(' seconds', 's').replace(' second', 's')
+      .replace(' seconds', ' s').replace(' second', ' s')
       .replace(' minutes', ' min').replace(' minute', ' min')
       .replace(' hours', ' h').replace(' hour', ' h')
       .replace(' days', ' d').replace(' day', ' d')
-      .replace(' months', ' mo').replace(' month', ' mo')
-      .replace(' years', ' y').replace(' year', ' y');
+      .replace(' months', ' m').replace(' month', ' m')
+      .replace(' years', ' a').replace(' year', ' a');
   } catch {
     return '';
   }
@@ -32,7 +32,7 @@ export function ChannelBadge({ row, className }: { row: Pick<ConversationListRow
 }
 
 function Row({ row, active, waiting, onClick }: { row: ConversationListRow; active: boolean; waiting: boolean; onClick: () => void }) {
-  const preview = row.last_message?.replace(/\s+/g, ' ').slice(0, 70) ?? (row.statement_count ? `${row.statement_count} statement(s)` : 'No messages yet');
+  const preview = row.last_message?.replace(/\s+/g, ' ').slice(0, 70) ?? (row.statement_count ? `${row.statement_count} extrato${row.statement_count === 1 ? '' : 's'}` : 'Sem mensagens ainda');
   return (
     <button
       onClick={onClick}
@@ -42,14 +42,14 @@ function Row({ row, active, waiting, onClick }: { row: ConversationListRow; acti
       )}
     >
       <div className="flex items-center gap-2">
-        <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', row.pending_plans > 0 ? 'bg-amber-400' : 'bg-transparent')} aria-label={row.pending_plans > 0 ? 'Plan awaiting approval' : undefined} />
+        <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', row.pending_plans > 0 ? 'bg-amber-400' : 'bg-transparent')} aria-label={row.pending_plans > 0 ? 'Plano esperando sua aprovação' : undefined} />
         <span className="text-[13px] font-semibold truncate flex-1 text-foreground/90">{row.title}</span>
         <span className="text-[10px] text-muted-foreground/50 tabular-nums shrink-0">{relative(row.last_activity_at)}</span>
       </div>
       <div className="flex items-center gap-1.5 mt-1 pl-3.5 min-w-0">
         <ChannelBadge row={row} />
         {waiting ? (
-          <span className="flex items-center gap-1 text-[11px] text-amber-300/80 truncate"><Clock className="w-3 h-3" /> waiting for a quiet window</span>
+          <span className="flex items-center gap-1 text-[11px] text-amber-300/80 truncate"><Clock className="w-3 h-3" /> esperando uma folga para processar</span>
         ) : (
           <span className="text-[11px] text-muted-foreground/60 truncate">{preview}</span>
         )}
@@ -99,16 +99,16 @@ export function ConversationList({
           onClick={onNew}
           className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-[13px] font-semibold transition-all active:scale-[0.99]"
         >
-          <Plus className="w-3.5 h-3.5" /> New conversation
+          <Plus className="w-3.5 h-3.5" /> Nova conversa
         </button>
       </div>
       <div className="flex-1 overflow-y-auto px-1 pb-4 scroll-smooth">
-        <Section title="Needs you" items={groups.needs} activeId={activeId} isWaiting={isWaiting} onSelect={onSelect} />
-        <Section title="Recent" items={groups.recent} activeId={activeId} isWaiting={isWaiting} onSelect={onSelect} />
+        <Section title="Precisa de você" items={groups.needs} activeId={activeId} isWaiting={isWaiting} onSelect={onSelect} />
+        <Section title="Recentes" items={groups.recent} activeId={activeId} isWaiting={isWaiting} onSelect={onSelect} />
         {groups.archived.length > 0 && (
           <>
             <button onClick={() => setShowArchived((v) => !v)} className="w-full flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold text-muted-foreground/50 hover:text-muted-foreground/80 transition-colors">
-              <ChevronRight className={cn('w-3 h-3 transition-transform', showArchived && 'rotate-90')} /> Archived · {groups.archived.length}
+              <ChevronRight className={cn('w-3 h-3 transition-transform', showArchived && 'rotate-90')} /> Arquivadas · {groups.archived.length}
             </button>
             {showArchived && <Section title="" items={groups.archived} activeId={activeId} isWaiting={isWaiting} onSelect={onSelect} />}
           </>

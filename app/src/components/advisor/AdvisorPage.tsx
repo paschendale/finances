@@ -102,21 +102,21 @@ export function AdvisorPage({ conversationId, planId, onNavigate }: { conversati
       onUpload={(files) => upload.mutate(files)}
       onReviewPlan={(id) => onNavigate({ conversationId, planId: id })}
       onApprovePlan={(p) => approve.mutate(p)}
-      onRejectPlan={(p) => { if (window.confirm('Reject this plan?')) reject.mutate(p); }}
-      onRename={() => { const t = window.prompt('Conversation title', conv.conversation?.title ?? ''); if (t && t.trim()) rename.mutate(t.trim()); }}
+      onRejectPlan={(p) => { if (window.confirm('Descartar este plano?')) reject.mutate(p); }}
+      onRename={() => { const t = window.prompt('Nome da conversa', conv.conversation?.title ?? ''); if (t && t.trim()) rename.mutate(t.trim()); }}
       onArchive={() => archive.mutate(conv.conversation?.status === 'archived' ? 'active' : 'archived')}
       planBusy={approve.isPending || reject.isPending}
       onOpenList={mobile ? () => setListOpen(true) : undefined}
     />
   ) : conversationId && conv.isLoading ? (
-    <div className="flex items-center justify-center h-full text-muted-foreground/50 text-[13px]"><Loader2 className="w-4 h-4 animate-spin mr-2" /> Loading…</div>
+    <div className="flex items-center justify-center h-full text-muted-foreground/50 text-[13px]"><Loader2 className="w-4 h-4 animate-spin mr-2" /> Carregando…</div>
   ) : conversationId && conv.error ? (
     <div className="p-6 text-[13px] text-rose-300">{conv.error.message}</div>
   ) : (
     <div className="h-full flex flex-col">
-      {mobile && <div className="p-2"><button onClick={() => setListOpen(true)} className="text-[12px] text-muted-foreground px-2 py-1 rounded-lg border border-white/[0.1]">☰ Conversations</button></div>}
+      {mobile && <div className="p-2"><button onClick={() => setListOpen(true)} className="text-[12px] text-muted-foreground px-2 py-1 rounded-lg border border-white/[0.1]">☰ Conversas</button></div>}
       {newConversation.isPending ? (
-        <div className="flex items-center justify-center h-full text-muted-foreground/50 text-[13px]"><Loader2 className="w-4 h-4 animate-spin mr-2" /> Starting…</div>
+        <div className="flex items-center justify-center h-full text-muted-foreground/50 text-[13px]"><Loader2 className="w-4 h-4 animate-spin mr-2" /> Começando…</div>
       ) : (
         <EmptyState onStart={(message) => newConversation.mutate({ message })} />
       )}
@@ -130,11 +130,11 @@ export function AdvisorPage({ conversationId, planId, onNavigate }: { conversati
         <div className="flex h-[calc(100vh-170px)] min-h-[520px]">
           {!mobile && (
             <aside className="w-[280px] shrink-0 border-r border-white/[0.06] flex flex-col">
-              {listLoading && rows.length === 0 ? <div className="p-4 text-[12px] text-muted-foreground/50">Loading…</div> : list}
+              {listLoading && rows.length === 0 ? <div className="p-4 text-[12px] text-muted-foreground/50">Carregando…</div> : list}
             </aside>
           )}
           <section className="flex-1 min-w-0 flex flex-col relative">
-            {upload.isPending && <div className="absolute top-2 right-3 z-20 text-[11px] text-muted-foreground flex items-center gap-1.5 bg-black/60 px-2 py-1 rounded-lg"><Loader2 className="w-3 h-3 animate-spin" /> Uploading…</div>}
+            {upload.isPending && <div className="absolute top-2 right-3 z-20 text-[11px] text-muted-foreground flex items-center gap-1.5 bg-black/60 px-2 py-1 rounded-lg"><Loader2 className="w-3 h-3 animate-spin" /> Enviando…</div>}
             {right}
           </section>
         </div>

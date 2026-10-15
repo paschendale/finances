@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import { Paperclip, ArrowUp, Square, ChevronRight, Loader2, FileText, MoreHorizontal, Archive, Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { type Conversation, type Plan, type StatementSummary } from '@/lib/advisor-api';
@@ -13,8 +14,8 @@ function ToolActivity({ message }: { message: LiveMessage }) {
   if (message.tools.length === 0 && !message.live) return null;
   const running = message.tools.filter((t) => !t.done);
   const label = message.live
-    ? running.length ? running[running.length - 1].summary : message.live === 'thinking' ? 'thinking…' : 'writing…'
-    : `${message.tools.length} step${message.tools.length === 1 ? '' : 's'} · ${message.tools.slice(-3).map((t) => t.summary).join(' · ')}`;
+    ? running.length ? running[running.length - 1].summary : message.live === 'thinking' ? 'pensando…' : 'escrevendo…'
+    : `${message.tools.length} passo${message.tools.length === 1 ? '' : 's'} · ${message.tools.slice(-3).map((t) => t.summary).join(' · ')}`;
   return (
     <div className="mt-1">
       <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-1.5 text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors">
@@ -106,7 +107,7 @@ export function ChatPanel({
       if (day !== last) {
         last = day;
         let label = day;
-        try { label = format(new Date(m.created_at), 'EEEE, dd MMMM yyyy'); } catch { /* keep iso */ }
+        try { label = format(new Date(m.created_at), "EEEE, d 'de' MMMM 'de' yyyy", { locale: ptBR }); } catch { /* keep iso */ }
         out.set(m.id, label);
       }
     }
@@ -118,7 +119,7 @@ export function ChatPanel({
       {/* Header */}
       <header className="flex items-center gap-2.5 px-4 py-3 border-b border-white/[0.06] bg-[#050505]/85 backdrop-blur-md shrink-0">
         {onOpenList && (
-          <button onClick={onOpenList} className="lg:hidden w-8 h-8 rounded-lg border border-white/[0.1] bg-white/[0.03] flex items-center justify-center" aria-label="Open conversations">☰</button>
+          <button onClick={onOpenList} className="lg:hidden w-8 h-8 rounded-lg border border-white/[0.1] bg-white/[0.03] flex items-center justify-center" aria-label="Abrir conversas">☰</button>
         )}
         <h1 className="text-[14px] font-semibold truncate">{conversation.title}</h1>
         <ChannelBadge row={conversation} />
@@ -129,11 +130,11 @@ export function ChatPanel({
         ))}
         <span className="flex-1" />
         <div className="relative">
-          <button onClick={() => setMenu((v) => !v)} className="w-8 h-8 rounded-lg border border-white/[0.08] text-muted-foreground hover:text-foreground flex items-center justify-center" aria-label="More actions"><MoreHorizontal className="w-4 h-4" /></button>
+          <button onClick={() => setMenu((v) => !v)} className="w-8 h-8 rounded-lg border border-white/[0.08] text-muted-foreground hover:text-foreground flex items-center justify-center" aria-label="Mais ações"><MoreHorizontal className="w-4 h-4" /></button>
           {menu && (
             <div className="absolute right-0 mt-1 w-40 rounded-xl border border-white/[0.1] bg-[#111] shadow-2xl z-30 p-1 text-[12px]" onMouseLeave={() => setMenu(false)}>
-              <button onClick={() => { setMenu(false); onRename(); }} className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-white/[0.06]"><Pencil className="w-3 h-3" /> Rename</button>
-              <button onClick={() => { setMenu(false); onArchive(); }} className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-white/[0.06]"><Archive className="w-3 h-3" /> {conversation.status === 'archived' ? 'Unarchive' : 'Archive'}</button>
+              <button onClick={() => { setMenu(false); onRename(); }} className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-white/[0.06]"><Pencil className="w-3 h-3" /> Renomear</button>
+              <button onClick={() => { setMenu(false); onArchive(); }} className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-white/[0.06]"><Archive className="w-3 h-3" /> {conversation.status === 'archived' ? 'Desarquivar' : 'Arquivar'}</button>
             </div>
           )}
         </div>
@@ -150,13 +151,13 @@ export function ChatPanel({
               {dayLabel && <div className="text-center text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/35">{dayLabel}</div>}
               {m.role === 'user' ? (
                 <div className="flex flex-col items-end gap-1">
-                  <div className="text-[11px] text-muted-foreground/50">You · {time}</div>
+                  <div className="text-[11px] text-muted-foreground/50">Você · {time}</div>
                   <div className="max-w-[85%] sm:max-w-[70%] px-3.5 py-2.5 rounded-2xl rounded-br-md bg-white/[0.06] text-[14px] leading-relaxed whitespace-pre-wrap">{m.content}</div>
                 </div>
               ) : (
                 <div className="flex flex-col gap-1.5">
-                  <div className="text-[11px] text-muted-foreground/50">Advisor · {time}</div>
-                  {m.content ? <Markdown text={m.content} className={cn(m.status === 'failed' && 'text-rose-200/90')} /> : m.live ? null : <p className="text-[13px] text-muted-foreground/50 italic">(empty reply)</p>}
+                  <div className="text-[11px] text-muted-foreground/50">Assistente · {time}</div>
+                  {m.content ? <Markdown text={m.content} className={cn(m.status === 'failed' && 'text-rose-200/90')} /> : m.live ? null : <p className="text-[13px] text-muted-foreground/50 italic">(sem resposta)</p>}
                   {m.error && m.status === 'failed' && !m.content && <p className="text-[13px] text-rose-300">{m.error}</p>}
                   <ToolActivity message={m} />
                   {cards.map((p) => (
@@ -172,28 +173,28 @@ export function ChatPanel({
         {plansByAnchor.tail.map((p) => (
           <div key={p.id} className="max-w-[640px]"><PlanCard plan={p} busy={planBusy} onReview={() => onReviewPlan(p.id)} onApprove={() => onApprovePlan(p)} onReject={() => onRejectPlan(p)} /></div>
         ))}
-        {messages.length === 0 && <p className="text-[13px] text-muted-foreground/50 text-center py-10">Say hi, or drop a statement here.</p>}
+        {messages.length === 0 && <p className="text-[13px] text-muted-foreground/50 text-center py-10">Diga oi, ou solte um extrato aqui.</p>}
       </div>
 
       {/* Composer */}
       <div className="shrink-0 px-3 sm:px-5 pb-4 pt-2 border-t border-white/[0.06] bg-[#050505]/95 backdrop-blur-md">
         <div className="flex items-end gap-1.5 px-1.5 py-1.5 rounded-2xl border border-white/[0.12] bg-white/[0.03] focus-within:border-white/[0.25] transition-colors">
           <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { const fs = Array.from(e.target.files ?? []); if (fs.length) onUpload(fs); e.target.value = ''; }} />
-          <button onClick={() => fileRef.current?.click()} className="w-10 h-10 rounded-xl text-muted-foreground/70 hover:text-foreground hover:bg-white/[0.06] flex items-center justify-center shrink-0 transition-colors" aria-label="Attach statement or receipt"><Paperclip className="w-4 h-4" /></button>
+          <button onClick={() => fileRef.current?.click()} className="w-10 h-10 rounded-xl text-muted-foreground/70 hover:text-foreground hover:bg-white/[0.06] flex items-center justify-center shrink-0 transition-colors" aria-label="Anexar extrato ou comprovante"><Paperclip className="w-4 h-4" /></button>
           <textarea
             ref={textRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={onKey}
             rows={1}
-            placeholder="Message the advisor… (Enter sends, Shift+Enter newline)"
+            placeholder="Escreva para o assistente… (Enter envia, Shift+Enter pula linha)"
             className="flex-1 min-h-[40px] max-h-40 resize-none bg-transparent outline-none text-[14px] leading-[22px] py-2 placeholder:text-muted-foreground/40"
             style={{ height: Math.min(160, 24 + 22 * Math.max(1, text.split('\n').length)) }}
           />
           {busy ? (
-            <button onClick={onStop} className="w-10 h-10 rounded-xl bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 flex items-center justify-center shrink-0 transition-colors" aria-label="Stop"><Square className="w-3.5 h-3.5" /></button>
+            <button onClick={onStop} className="w-10 h-10 rounded-xl bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 flex items-center justify-center shrink-0 transition-colors" aria-label="Parar"><Square className="w-3.5 h-3.5" /></button>
           ) : (
-            <button onClick={submit} disabled={!text.trim()} className="w-10 h-10 rounded-xl bg-white/[0.1] hover:bg-white/[0.18] disabled:opacity-30 flex items-center justify-center shrink-0 transition-colors" aria-label="Send"><ArrowUp className="w-4 h-4" /></button>
+            <button onClick={submit} disabled={!text.trim()} className="w-10 h-10 rounded-xl bg-white/[0.1] hover:bg-white/[0.18] disabled:opacity-30 flex items-center justify-center shrink-0 transition-colors" aria-label="Enviar"><ArrowUp className="w-4 h-4" /></button>
           )}
         </div>
       </div>

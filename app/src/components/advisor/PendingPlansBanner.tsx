@@ -13,10 +13,10 @@ export function PendingPlansBanner({ onOpen }: { onOpen: (planId: string, conver
     >
       <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
       <ClipboardCheck className="w-3.5 h-3.5 text-amber-300 shrink-0" />
-      <span className="text-[13px] font-semibold text-amber-100">{plans.length === 1 ? '1 plan waiting for your approval' : `${plans.length} plans waiting for your approval`}</span>
+      <span className="text-[13px] font-semibold text-amber-100">{plans.length === 1 ? '1 plano esperando sua aprovação' : `${plans.length} planos esperando sua aprovação`}</span>
       <span className="text-[12px] text-amber-200/60 truncate hidden sm:inline">{plans.map((p) => p.title).join(' · ')}</span>
       <span className="flex-1" />
-      <span className="flex items-center gap-1 text-[12px] font-semibold text-amber-200">Review <ArrowRight className="w-3.5 h-3.5" /></span>
+      <span className="flex items-center gap-1 text-[12px] font-semibold text-amber-200">Revisar <ArrowRight className="w-3.5 h-3.5" /></span>
     </button>
   );
 }

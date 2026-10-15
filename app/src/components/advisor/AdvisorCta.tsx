@@ -36,11 +36,11 @@ export function AdvisorCta({
   };
 
   return (
-    <section className="rounded-3xl border border-primary/20 bg-primary/[0.06] p-4 sm:p-5" aria-label="Advisor suggestions">
+    <section className="rounded-3xl border border-primary/20 bg-primary/[0.06] p-4 sm:p-5" aria-label="Sugestões do assistente">
       <div className="flex items-center gap-2 mb-3">
         <Sparkles className="w-4 h-4 text-primary" />
-        <h3 className="text-[13px] font-semibold tracking-tight">O advisor pode ajudar agora</h3>
-        {!health.ok && <span className="text-[11px] text-amber-300/80 ml-auto">advisor com problemas</span>}
+        <h3 className="text-[13px] font-semibold tracking-tight">O assistente pode ajudar agora</h3>
+        {!health.ok && <span className="text-[11px] text-amber-300/80 ml-auto">assistente com problemas</span>}
       </div>
       <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {reasons.map((r) => (

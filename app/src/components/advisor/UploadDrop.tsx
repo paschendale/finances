@@ -22,7 +22,7 @@ export function UploadDrop({ onFiles, disabled, children, className }: { onFiles
       {children}
       {over && (
         <div className="absolute inset-0 z-20 rounded-2xl border-2 border-dashed border-white/30 bg-black/60 backdrop-blur-sm flex items-center justify-center pointer-events-none">
-          <div className="flex items-center gap-2 text-[13px] font-semibold text-foreground/90"><Upload className="w-4 h-4" /> Drop statement or receipt</div>
+          <div className="flex items-center gap-2 text-[13px] font-semibold text-foreground/90"><Upload className="w-4 h-4" /> Solte aqui o extrato ou comprovante</div>
         </div>
       )}
     </div>

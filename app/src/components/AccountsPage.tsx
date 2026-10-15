@@ -324,10 +324,10 @@ function AccountModal({
               </div>
               <p className="text-[11px] text-muted-foreground/50">
                 {subtype === 'property' || subtype === 'loan'
-                  ? 'Tracked in the ledger, kept out of the dashboard money cards and net worth.'
+                  ? 'Fica registrado, mas não aparece como dinheiro no painel nem no patrimônio.'
                   : subtype === null
-                    ? 'No subtype: not grouped on the dashboard.'
-                    : 'Shown on the dashboard as money.'}
+                    ? 'Sem grupo: não aparece nos cartões do painel.'
+                    : 'Aparece no painel como dinheiro.'}
               </p>
             </div>
           )}
@@ -400,7 +400,7 @@ function AccountModal({
 // ── Account Card ──────────────────────────────────────────────────────────────
 
 function reconciledThroughLabel(d: string): string {
-  try { return new Date(`${d}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }); } catch { return d; }
+  try { return new Date(`${d}T00:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }); } catch { return d; }
 }
 
 function ReconciliationLines({ account, status, onReconcile }: { account: AccountNode; status: ReconciliationStatus | undefined; onReconcile?: () => void }) {
@@ -416,13 +416,13 @@ function ReconciliationLines({ account, status, onReconcile }: { account: Accoun
     <div className="mt-2 space-y-0.5 text-[10px]" onClick={(e) => e.stopPropagation()}>
       <div className={cn('flex items-center gap-1', fresh ? 'text-emerald-400/80' : 'text-amber-400/80')}>
         {fresh ? <CheckCheck className="w-3 h-3 shrink-0" /> : <Clock className="w-3 h-3 shrink-0" />}
-        <span className="truncate">{through ? `reconciled through ${reconciledThroughLabel(through)}` : 'never reconciled'}{openGap ? ` · gap ${fmt(status!.open_difference)}` : ''}</span>
+        <span className="truncate">{through ? `extrato conferido até ${reconciledThroughLabel(through)}` : 'extrato nunca conferido'}{openGap ? ` · falta explicar ${fmt(status!.open_difference)}` : ''}</span>
       </div>
       {Math.abs(suspense) >= 0.005 && (
-        <div className="text-muted-foreground/50 truncate">suspense (ajustes) {fmt(suspense)}</div>
+        <div className="text-muted-foreground/50 truncate">parado em ajustes {fmt(suspense)}</div>
       )}
       {onReconcile && (
-        <button type="button" onClick={onReconcile} className="text-primary/60 hover:text-primary/90 font-semibold transition-colors">Reconcile with the advisor →</button>
+        <button type="button" onClick={onReconcile} className="text-primary/60 hover:text-primary/90 font-semibold transition-colors">Conferir com o assistente →</button>
       )}
     </div>
   );

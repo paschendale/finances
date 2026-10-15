@@ -42,12 +42,12 @@ function statementRawOf(t: Transaction): string | null {
 }
 
 function formatPeriodEnd(d: string): string {
-  try { return new Date(`${d}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return d; }
+  try { return new Date(`${d}T00:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }); } catch { return d; }
 }
 
 function confirmClearedChange(item: TransactionItem, action: 'Editing' | 'Deleting'): boolean {
   if (!item.clearing) return true;
-  return window.confirm(`This entry was reconciled through ${formatPeriodEnd(item.clearing.period_end)}; ${action.toLowerCase()} it reopens that reconciliation. Continue?`);
+  return window.confirm(`Este lançamento já foi conferido com o extrato até ${formatPeriodEnd(item.clearing.period_end)}. ${action === 'Editing' ? 'Editar' : 'Excluir'} reabre essa conferência. Continuar?`);
 }
 
 function getInstallmentNumber(desc: string): number {
@@ -328,7 +328,7 @@ function TransactionRow({
         <div className="grid grid-cols-[1.5fr_1fr_1fr_120px] gap-4 w-full items-center">
           <span className="font-medium text-[14px] truncate text-foreground/90 flex items-center gap-2">
             {item.clearing && (
-              <span title={`Cleared by statement · reconciled through ${formatPeriodEnd(item.clearing.period_end)}`} aria-label="Cleared by statement" className="shrink-0 text-emerald-400/70">
+              <span title={`Confere com o extrato · conferido até ${formatPeriodEnd(item.clearing.period_end)}`} aria-label="Confere com o extrato" className="shrink-0 text-emerald-400/70">
                 <CheckCheck className="w-3.5 h-3.5" />
               </span>
             )}
@@ -665,12 +665,12 @@ function TransactionRow({
                 <div className="mt-3 pt-2 border-t border-border/20 space-y-1">
                   <div className="flex items-center gap-1.5 text-[11px] text-emerald-400/80">
                     <CheckCheck className="w-3.5 h-3.5" />
-                    <span>Cleared by statement · reconciled through {formatPeriodEnd(item.clearing.period_end)}</span>
+                    <span>Confere com o extrato · conferido até {formatPeriodEnd(item.clearing.period_end)}</span>
                   </div>
                   {item.statementRaw && (
                     <div className="text-[11px] font-mono text-muted-foreground/60 pl-5 truncate" title={item.statementRaw}>raw: {item.statementRaw}</div>
                   )}
-                  <div className="text-[10px] text-muted-foreground/40 pl-5">Editing a cleared entry reopens its reconciliation; the editor asks before saving.</div>
+                  <div className="text-[10px] text-muted-foreground/40 pl-5">Editar um lançamento conferido reabre a conferência; o app pergunta antes de salvar.</div>
                 </div>
               )}
               {!item.clearing && item.statementRaw && (
