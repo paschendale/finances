@@ -59,6 +59,8 @@ export interface BalanceCheck {
   ok: boolean;
   difference: number;
   account_name?: string | null;
+  period_start?: string;
+  period_end?: string;
   projected?: number;
   statement_closing?: number;
   ledger_opening?: number;
@@ -68,8 +70,24 @@ export interface BalanceCheck {
   outstanding_total?: number;
 }
 
+/** What the system did before the assistant: per statement, how many lines it vouched and corrected by itself */
+export interface PlanDigestStatement {
+  id: string;
+  filename: string;
+  period_start: string | null;
+  period_end: string | null;
+  line_count: number;
+  auto_matched: number;
+  amount_fixes: number;
+  unmatched: number;
+  outstanding: number;
+}
+
 export interface PlanResult {
   balance?: BalanceCheck | null;
+  /** One check per statement period of the plan, oldest first */
+  balances?: BalanceCheck[];
+  digest?: { account_id: string; statements: PlanDigestStatement[] };
   apply?: {
     status: string;
     applied: number;
@@ -77,6 +95,7 @@ export interface PlanResult {
     skipped: number;
     failed_items?: { seq: number; kind: string; error: string | null }[];
     reconciliation: { id: string; status: string; difference: number | null; period_end: string; cleared: number; outstanding: number; missing: number; notes: string | null } | null;
+    reconciliations?: { id: string; status: string; difference: number | null; period_start: string; period_end: string; cleared: number; outstanding: number; missing: number }[];
   };
 }
 
@@ -84,6 +103,7 @@ export interface Plan {
   id: string;
   conversation_id: string;
   statement_id: string | null;
+  statement_ids: string[] | null;
   title: string;
   summary: string | null;
   status: PlanStatus;
@@ -100,6 +120,7 @@ export interface Plan {
   update_count: number;
   skip_count: number;
   adjust_count: number;
+  delete_count: number;
   min_confidence: number;
 }
 
@@ -153,7 +174,10 @@ export interface PlanDetail {
   plan: Plan;
   items: PlanItem[];
   statement: (Omit<StatementSummary, 'line_count'> & { line_count: number; account_id: string | null }) | null;
+  statements?: (Omit<StatementSummary, 'line_count'> & { line_count: number; account_id: string | null })[];
   balance: BalanceCheck | null;
+  /** One per statement period, oldest first */
+  balances?: BalanceCheck[];
 }
 
 export interface ApplyResult {
@@ -266,6 +290,20 @@ export async function uploadFiles(files: File[], opts: { conversationId?: string
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 export const APPROVE_MIN_CONFIDENCE = 0.6;
+
+/** Items the system drafted by itself (cent corrections from the statement) */
+export const isAutoItem = (item: Pick<PlanItem, 'payload'>): boolean => Boolean(item.payload?.auto);
+
+/** Lines the system checked without an item, summed over the plan's statements */
+export function autoCheckedCount(plan: Pick<Plan, 'result'>): number {
+  return (plan.result?.digest?.statements ?? []).reduce((n, s) => n + s.auto_matched, 0);
+}
+
+const MONTHS_PT = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+export function monthLabel(date: string | null | undefined): string {
+  const m = date ? /^(\d{4})-(\d{2})/.exec(date) : null;
+  return m ? `${MONTHS_PT[Number(m[2]) - 1]} de ${m[1]}` : 'sem data';
+}
 
 /** Approve directly from the inline card only when the balance check passes and no item is doubtful. */
 export function canApproveFromCard(plan: Pick<Plan, 'status' | 'min_confidence' | 'result'>): boolean {

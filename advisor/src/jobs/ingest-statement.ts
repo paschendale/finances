@@ -52,6 +52,8 @@ export interface IngestOutcome {
   account_id: string | null;
   line_count: number;
   already_in_ledger: number;
+  /** Vouched by the system (same amount, one candidate within 3 days); no plan item needed */
+  auto_matched: number;
   likely_duplicate: number;
   period_start: string | null;
   period_end: string | null;
@@ -138,6 +140,7 @@ export async function ingestBuffer(ctx: AppContext, input: IngestInput): Promise
         institution,
         kind,
         account_id: accountId,
+        account_ref: parsed.account_ref ?? statement.account_ref ?? null,
         period_start: parsed.period_start,
         period_end: parsed.period_end,
         currency: parsed.currency,
@@ -184,6 +187,7 @@ export async function ingestBuffer(ctx: AppContext, input: IngestInput): Promise
     account_id: statement.account_id,
     line_count: lines.length,
     already_in_ledger: lines.filter((l) => l.already_in_ledger).length,
+    auto_matched: lines.filter((l) => l.auto_matched).length,
     likely_duplicate: lines.filter((l) => l.likely_duplicate && !l.already_in_ledger).length,
     period_start: statement.period_start,
     period_end: statement.period_end,
@@ -243,6 +247,10 @@ async function rememberAccountRef(ctx: AppContext, institution: string, accountR
   if (!exists) await ctx.db.query('INSERT INTO advisor_notes (scope, ref_id, note, created_by) VALUES ($1, $2, $3, $4)', ['account', accountId, key, 'advisor']);
 }
 
+/** The checking procedure for one or several statements of an account (one plan). */
+export const BATCH_STEPS =
+  'Procedure: call batch_prepare with the statement id(s) (and account_id when known). It vouches every line that already matches a ledger entry, drafts the cent corrections as automatic items, creates the plan and returns only what is left: the unmatched lines (with alias and category candidates) and, per period, the ledger entries on the account that no line vouches for. Then add items with plan_add_items: a create for each unmatched line (classify_candidates only when the candidates are weak); a delete for an outstanding entry that is a duplicate of a vouched one or of a new line (then do not create that line); a skip with transaction_id when an outstanding entry is in fact the same purchase as an unmatched line; nothing for anything else. Never add skip items for vouched lines. Then plan_finalize (it checks every period against its closing balance) and report continuity breaks first. After the plan is ready ask the person for the balance the bank app shows today and compare it with plan_projected_balance; on a mismatch investigate (outstanding entries, dates, duplicates) and ask before proposing an adjust item.';
+
 /** System-built turn messages are in English for the assistant; the person still reads Portuguese. */
 export const LANGUAGE_NOTE = 'This notice is written in English for you only; write to the person in plain Portuguese (pt-BR), as always.';
 
@@ -263,10 +271,10 @@ export function buildIngestMessage(statement: Statement, o: IngestOutcome, userM
   }
   parts.push(
     `Statement ${statement.id} received (${o.institution ?? 'unknown institution'} / ${o.kind}, ${o.format}, ${statement.filename}).`,
-    `Period ${o.period_start ?? '?'} to ${o.period_end ?? '?'}, ${o.line_count} lines, ${o.already_in_ledger} already in the ledger by FITID, ${o.likely_duplicate} likely duplicates, closing balance ${o.closing_balance ?? 'unknown'}.`,
-    o.account_id ? `Ledger account: ${o.account_id}.` : 'The ledger account is not known yet: resolve it with match_account from the statement metadata and the user, and record it with note_add (scope account, note "statement_source=<institution>:<acctid>").',
+    `Period ${o.period_start ?? '?'} to ${o.period_end ?? '?'}, ${o.line_count} lines, ${o.already_in_ledger} already in the ledger by FITID, ${o.auto_matched} vouched automatically, ${o.likely_duplicate} likely duplicates, closing balance ${o.closing_balance ?? 'unknown'}.`,
+    o.account_id ? `Ledger account: ${o.account_id}.` : 'The ledger account is not known yet: resolve it with match_account from the statement metadata and the user (note_list may already know it), then pass account_id to batch_prepare.',
     o.duplicate ? 'This exact file was ingested before; flags were recomputed against the ledger as it is now.' : '',
-    'Build the insertion plan: read statement_lines, categorise with classify_candidates, pair transfers and card payments, draft with plan_create/plan_set_items, run the balance check, then plan_finalize. Report continuity breaks before anything else.',
+    BATCH_STEPS,
     LANGUAGE_NOTE,
   );
   return parts.filter((p) => p !== '').join('\n');

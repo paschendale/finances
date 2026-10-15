@@ -67,12 +67,18 @@ export interface StatementLine {
   ledger_transaction_id?: string;
   likely_duplicate?: boolean;
   duplicate_candidate_id?: string;
+  /** Vouched by the system: same amount, one candidate on the account within 3 days (no plan item needed) */
+  auto_matched?: boolean;
+  /** A hand-entered transaction whose amount differs by cents; the plan carries an automatic correction */
+  amount_fix?: { transaction_id: string; ledger_amount: number; description: string };
   installment?: { current: number; total: number };
 }
 
 export interface Statement {
   id: string;
   account_id: string | null;
+  /** Bank-side account identifier (OFX ACCTID, agência-conta) */
+  account_ref: string | null;
   source: StatementSource;
   institution: string | null;
   kind: StatementKind;
@@ -109,6 +115,8 @@ export interface Plan {
   id: string;
   conversation_id: string;
   statement_id: string | null;
+  /** Every statement period the plan covers (batch); statement_id is the first of them */
+  statement_ids: string[] | null;
   title: string;
   summary: string | null;
   status: PlanStatus;
@@ -128,6 +136,7 @@ export interface PlanWithCounts extends Plan {
   update_count: number;
   skip_count: number;
   adjust_count: number;
+  delete_count: number;
   min_confidence: number;
 }
 

@@ -8,7 +8,10 @@ import { getStatement, updateStatement } from '../../db/repo/statements.js';
 import { toCsv } from '../../ingest/normalize.js';
 import { ApplyError, reconcileAppliedPlan } from '../../plan/apply.js';
 import { addNote, listNotes } from '../../db/repo/misc.js';
-import { createPlan, getPlan, listPlanItems, replacePlanItems, updatePlan } from '../../db/repo/plans.js';
+import { appendPlanItems, createPlan, getPlan, listPlanItems, planStatementIds, replacePlanItems, updatePlan } from '../../db/repo/plans.js';
+import { prepareBatch } from '../../plan/batch.js';
+import { ledgerBalanceAsOf } from '../../plan/reconcile.js';
+import { planDeltasByAccount, round2 } from '../../plan/schema.js';
 import { getConversation, updateConversation } from '../../db/repo/conversations.js';
 import { planItemInputSchema, validatePlanItems } from '../../plan/schema.js';
 import { computePlanBalance, ensureStatementAccount, loadAccounts, reconciliationDetail, reconciliationHistory } from '../../plan/reconcile.js';
@@ -18,7 +21,7 @@ import { computePlanBalance, ensureStatementAccount, loadAccounts, reconciliatio
  * with the system prompt it forms the conversation's `prompt_hash`; a mismatch on resume tells the
  * assistant its capabilities changed.
  */
-export const CAPABILITIES_VERSION = '2026-10-15.6';
+export const CAPABILITIES_VERSION = '2026-10-15.7';
 
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD');
 
@@ -287,15 +290,108 @@ export function registerAdvisorTools(server: McpServer, ctx: AppContext, session
     'plan_create',
     {
       title: 'Plan Create',
-      description: 'Create a draft plan bound to this conversation (optionally to a statement). Returns the plan id. Group one statement into one plan.',
-      inputSchema: z.object({ title: z.string().min(1).max(200), statement_id: z.string().uuid().optional() }),
+      description: 'Create a draft plan bound to this conversation, optionally to one or several statements of one account (statement_ids). For statements prefer batch_prepare, which creates the plan and vouches lines for you. Returns the plan id.',
+      inputSchema: z.object({ title: z.string().min(1).max(200), statement_id: z.string().uuid().optional(), statement_ids: z.array(z.string().uuid()).max(24).optional() }),
     },
-    async ({ title, statement_id }) =>
+    async ({ title, statement_id, statement_ids }) =>
       runTool(async () => {
-        const plan = await createPlan(db, { conversation_id: session.conversationId, statement_id: statement_id ?? null, title, created_by: 'advisor' });
-        if (statement_id) await db.query(`UPDATE advisor_statements SET status = 'planned' WHERE id = $1 AND status IN ('received','parsed')`, [statement_id]);
+        const ids = statement_ids?.length ? statement_ids : statement_id ? [statement_id] : [];
+        const plan = await createPlan(db, { conversation_id: session.conversationId, statement_ids: ids, title, created_by: 'advisor' });
+        if (ids.length) await db.query(`UPDATE advisor_statements SET status = 'planned' WHERE id = ANY($1::uuid[]) AND status IN ('received','parsed')`, [ids]);
         ctx.bus.emitConversation(session.conversationId, { type: 'plan', planId: plan.id, status: plan.status, version: plan.version });
         return { id: plan.id, status: plan.status };
+      }),
+  );
+
+  server.registerTool(
+    'batch_prepare',
+    {
+      title: 'Batch Prepare',
+      description:
+        'Starts the check of one or several statements of ONE account in a single plan. Vouches every line that already matches a ledger entry on the account (same amount, one candidate within 3 days; no item needed), drafts the cent corrections as automatic update items, creates the draft plan and returns the digest: per period, the unmatched lines (with alias and category candidates) and the ledger entries no line vouches for. Pass account_id when the statements do not know their account yet. Continue with plan_add_items and plan_finalize.',
+      inputSchema: z.object({ statement_ids: z.array(z.string().uuid()).min(1).max(24), account_id: z.string().uuid().optional() }),
+    },
+    async ({ statement_ids, account_id }) =>
+      runTool(async () => {
+        const digest = await prepareBatch(ctx, { conversationId: session.conversationId, statementIds: statement_ids, accountId: account_id ?? null, createdBy: 'advisor' });
+        ctx.bus.emitConversation(session.conversationId, { type: 'plan', planId: digest.plan_id, status: 'draft', version: 1 });
+        return digest;
+      }),
+  );
+
+  server.registerTool(
+    'plan_add_items',
+    {
+      title: 'Plan Add Items',
+      description:
+        'Appends items to a draft or pending plan, keeping the ones already there (the automatic corrections from batch_prepare). Same item shape as plan_set_items. Validation errors come back with the item index; fix and call again. Call it in chunks when there are many items.',
+      inputSchema: z.object({ plan_id: z.string().uuid(), items: z.array(planItemInputSchema).min(1).max(500) }),
+    },
+    async ({ plan_id, items }) =>
+      runTool(async () => {
+        const plan = await getPlan(db, plan_id);
+        if (!plan) throw new Error(`plan ${plan_id} not found`);
+        if (plan.conversation_id !== session.conversationId) throw new Error('plan belongs to another conversation');
+        if (!['draft', 'pending_approval'].includes(plan.status)) throw new Error(`plan is ${plan.status}; create a new plan instead`);
+        const accounts = await loadAccounts(db);
+        const issues = validatePlanItems(items, accounts);
+        if (issues.length > 0) return { ok: false, issues };
+        const saved = await appendPlanItems(
+          db,
+          plan_id,
+          items.map((it) => ({
+            kind: it.kind,
+            transaction_id: it.transaction_id ?? null,
+            date: it.date ?? null,
+            description: it.description ?? null,
+            entries: it.entries,
+            payload: { ...it.payload, ...(it.reopens_reconciliation ? { reopens_reconciliation: true } : {}) },
+            source_ref: it.source_ref ?? null,
+            confidence: it.confidence ?? null,
+            rationale: it.rationale ?? null,
+          })),
+        );
+        if (plan.status === 'pending_approval') await updatePlan(db, plan_id, { bumpVersion: true });
+        const fresh = await getPlan(db, plan_id);
+        ctx.bus.emitConversation(session.conversationId, { type: 'plan', planId: plan_id, status: fresh!.status, version: fresh!.version });
+        return { ok: true, added: saved.length, total: fresh!.item_count, version: fresh!.version };
+      }),
+  );
+
+  server.registerTool(
+    'plan_projected_balance',
+    {
+      title: 'Plan Projected Balance',
+      description:
+        'The balance the account will show today once the plan is applied: ledger balance as of today plus the plan\'s effect on the account. Compare it with the figure the person reads in the bank app. Returns ledger_today, plan_delta, projected and the account.',
+      inputSchema: z.object({ plan_id: z.string().uuid(), account_id: z.string().uuid().optional() }),
+    },
+    async ({ plan_id, account_id }) =>
+      runTool(async () => {
+        const plan = await getPlan(db, plan_id);
+        if (!plan) throw new Error(`plan ${plan_id} not found`);
+        if (plan.conversation_id !== session.conversationId) throw new Error('plan belongs to another conversation');
+        let acc = account_id ?? null;
+        if (!acc) {
+          for (const sid of planStatementIds(plan)) {
+            const st = await getStatement(db, sid);
+            if (st?.account_id) { acc = st.account_id; break; }
+          }
+        }
+        if (!acc) throw new Error('pass account_id: the plan\'s statements do not know their account');
+        const items = (await listPlanItems(db, plan_id)).filter((i) => i.status !== 'removed');
+        const today = new Date().toISOString().slice(0, 10);
+        const ledgerToday = await ledgerBalanceAsOf(db, acc, today);
+        let delta = planDeltasByAccount(items.filter((i) => i.kind !== 'update')).get(acc) ?? 0;
+        for (const it of items) {
+          if ((it.kind === 'update' || it.kind === 'delete') && it.transaction_id) {
+            const old = await maybeOne<{ s: number }>(db, 'SELECT COALESCE(sum(amount_base), 0)::float8 AS s FROM entries WHERE transaction_id = $1 AND account_id = $2', [it.transaction_id, acc]);
+            delta = round2(delta - Number(old?.s ?? 0));
+            if (it.kind === 'update') delta = round2(delta + it.entries.filter((e) => e.account_id === acc).reduce((s, e) => s + e.amount_base, 0));
+          }
+        }
+        const name = await maybeOne<{ full_name: string }>(db, 'SELECT full_name FROM account_names_hierarchical WHERE id = $1', [acc]);
+        return { account_id: acc, account_name: name?.full_name ?? null, as_of: today, ledger_today: round2(ledgerToday), plan_delta: round2(delta), projected: round2(ledgerToday + delta) };
       }),
   );
 
@@ -354,15 +450,21 @@ export function registerAdvisorTools(server: McpServer, ctx: AppContext, session
         if (!['draft', 'pending_approval'].includes(plan.status)) throw new Error(`plan is ${plan.status}`);
         const items = await listPlanItems(db, plan_id);
         if (items.length === 0) throw new Error('plan has no items');
-        let balance = null;
-        if (plan.statement_id) {
-          let st = await getStatement(db, plan.statement_id);
-          if (st) {
-            st = await ensureStatementAccount(db, st, items);
-            balance = await computePlanBalance(db, plan, items, st);
-          }
+        // One balance check per period, oldest first; `balance` is the last period's (what the account shows at the end).
+        const balances = [];
+        const sts = [];
+        for (const sid of planStatementIds(plan)) {
+          const st = await getStatement(db, sid);
+          if (st) sts.push(await ensureStatementAccount(db, st, items));
         }
-        const updated = await updatePlan(db, plan_id, { status: 'pending_approval', summary, result: balance ? { balance } : null });
+        sts.sort((a, b) => (a.period_start ?? '9999').localeCompare(b.period_start ?? '9999'));
+        for (const st of sts) {
+          const b = await computePlanBalance(db, plan, items, st);
+          if (b) balances.push(b);
+        }
+        const balance = balances[balances.length - 1] ?? null;
+        const prev = (plan.result ?? {}) as Record<string, unknown>;
+        const updated = await updatePlan(db, plan_id, { status: 'pending_approval', summary, result: { ...prev, balance, balances } });
         const withCounts = (await getPlan(db, plan_id))!;
         ctx.bus.emitConversation(session.conversationId, { type: 'plan', planId: plan_id, status: updated.status, version: updated.version });
         ctx.bus.emitGlobal({ type: 'plan', planId: plan_id, conversationId: session.conversationId, status: updated.status });
@@ -382,7 +484,7 @@ export function registerAdvisorTools(server: McpServer, ctx: AppContext, session
           },
           balance: balance ? { ok: balance.ok, difference: balance.difference, account_name: balance.account_name ?? undefined } : null,
         });
-        return { status: updated.status, version: updated.version, balance };
+        return { status: updated.status, version: updated.version, balance, balances: balances.map((b) => ({ period_start: b.period_start, period_end: b.period_end, ok: b.ok, difference: b.difference, statement_closing: b.statement_closing, projected: b.projected, outstanding_count: b.outstanding_count })) };
       }),
   );
 

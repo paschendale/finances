@@ -153,6 +153,12 @@ not read (PDF) gets its period and balances from the session through `statement_
 `POST /plans/:id/reconcile` (web token, optional body with period/balances/account) opens the
 reconciliation of a plan that was applied before those were known.
 
+Checking is one plan per batch: `batch_prepare` vouches every line that already matches a ledger entry
+on the account (same amount, one free candidate within 3 days), drafts cent corrections as automatic
+items and hands the session only the unmatched lines and the period's unvouched entries; the session
+adds creates, deletes and the odd skip with `plan_add_items`, `plan_finalize` checks every period, and
+the session asks for the balance the bank app shows today (`plan_projected_balance`).
+
 Mailed statements are grouped **per account**: a statement joins the conversation of its account
 (`external_ref` `gmail:<account_id>`, or `gmail:<institution>:<kind>` until the account is known) as long
 as no turn has run there yet, and the title spans the periods ("Nubank conta · 01/07/2026 a

@@ -1,7 +1,7 @@
 import type { AppContext } from '../context.js';
 import { many, maybeOne } from '../db/client.js';
 import type { PlanItem, PlanWithCounts, Statement, StatementLine } from '../db/types.js';
-import { getPlan, listPlanItems, updatePlan, updatePlanItem } from '../db/repo/plans.js';
+import { getPlan, listPlanItems, planStatementIds, updatePlan, updatePlanItem } from '../db/repo/plans.js';
 import { getStatement, updateStatement } from '../db/repo/statements.js';
 import { ensureStatementAccount, loadAccounts, reconcileAfterApply, type ReconcileOutcome } from './reconcile.js';
 import { validatePlanItems, type AccountCreatePayload, type AccountUpdatePayload, type PlanItemInputShape } from './schema.js';
@@ -28,7 +28,9 @@ export interface ApplyResult {
   failed: number;
   skipped: number;
   items: Array<{ id: string; seq: number; kind: string; status: string; transaction_id: string | null; error: string | null }>;
+  /** Last period's reconciliation (kept for older readers); every period is in `reconciliations` */
   reconciliation: ReconcileOutcome | null;
+  reconciliations: ReconcileOutcome[];
   /** Reconciliations this plan reopened (cleared entries edited/deleted), with their state after apply */
   reopened: ReconciliationState[];
 }
@@ -88,13 +90,21 @@ export async function reconcileAppliedPlan(ctx: AppContext, planId: string, acto
   const plan = await getPlan(ctx.db, planId);
   if (!plan) throw new ApplyError('Plano não encontrado.', 404);
   if (plan.status !== 'applied') throw new ApplyError('Este plano ainda não foi gravado.', 409);
-  if (!plan.statement_id) throw new ApplyError('Este plano não veio de um extrato.', 409);
-  const statement = await getStatement(ctx.db, plan.statement_id);
-  if (!statement) throw new ApplyError('Extrato não encontrado.', 404);
-  const existing = await maybeOne<{ id: string }>(ctx.db, `SELECT id FROM reconciliations WHERE statement_ref = $1 AND status <> 'abandoned' LIMIT 1`, [statement.id]);
-  if (existing) throw new ApplyError('Este extrato já tem uma conferência registrada.', 409);
+  const ids = planStatementIds(plan);
+  if (ids.length === 0) throw new ApplyError('Este plano não veio de um extrato.', 409);
   const items = await listPlanItems(ctx.db, planId);
-  const outcome = await reconcileAfterApply(ctx.db, ctx.pg, plan, items, statement, actor);
+  let outcome: ReconcileOutcome | null = null;
+  let pending = 0;
+  for (const sid of ids) {
+    const statement = await getStatement(ctx.db, sid);
+    if (!statement) continue;
+    const existing = await maybeOne<{ id: string }>(ctx.db, `SELECT id FROM reconciliations WHERE statement_ref = $1 AND status <> 'abandoned' LIMIT 1`, [statement.id]);
+    if (existing) continue;
+    pending++;
+    const r = await reconcileAfterApply(ctx.db, ctx.pg, plan, items, statement, actor);
+    if (r) outcome = r;
+  }
+  if (pending === 0) throw new ApplyError('Este extrato já tem uma conferência registrada.', 409);
   if (!outcome) throw new ApplyError('O extrato ainda não tem período, saldo final e conta; informe-os primeiro.', 409);
   const prev = (plan.result ?? {}) as Record<string, unknown>;
   await updatePlan(ctx.db, planId, {
@@ -133,9 +143,14 @@ export async function approveAndApply(ctx: AppContext, planId: string, opts: { a
   await updatePlan(ctx.db, planId, { status: 'applying', approved_by: opts.actor, approved_at: 'now' });
   ctx.bus.emitConversation(plan.conversation_id, { type: 'plan', planId, status: 'applying', version: plan.version });
 
-  let statement = plan.statement_id ? await getStatement(ctx.db, plan.statement_id) : null;
-  if (statement) statement = await ensureStatementAccount(ctx.db, statement, items);
-  const result: ApplyResult = { plan_id: planId, status: 'applied', applied: 0, failed: 0, skipped: 0, items: [], reconciliation: null, reopened: [] };
+  const statements: Statement[] = [];
+  for (const sid of planStatementIds(plan)) {
+    const st = await getStatement(ctx.db, sid);
+    if (st) statements.push(await ensureStatementAccount(ctx.db, st, items));
+  }
+  const statement = statements[0] ?? null;
+  const statementFor = (item: PlanItem): Statement | null => (item.source_ref?.statement_id ? (statements.find((s) => s.id === item.source_ref!.statement_id) ?? statement) : statement);
+  const result: ApplyResult = { plan_id: planId, status: 'applied', applied: 0, failed: 0, skipped: 0, items: [], reconciliation: null, reconciliations: [], reopened: [] };
   /** `new:<ref>` → id of the account created by an earlier item of this run */
   const created = new Map<string, string>();
   /** reconciliations touched by update/delete items of this run → their status before the run */
@@ -152,7 +167,7 @@ export async function approveAndApply(ctx: AppContext, planId: string, opts: { a
         result.items.push({ id: item.id, seq: item.seq, kind: item.kind, status: 'applied', transaction_id: null, error: null });
         continue;
       }
-      const txId = await applyItem(ctx, plan, item, statement, { ...opts, reopened });
+      const txId = await applyItem(ctx, plan, item, statementFor(item), { ...opts, reopened });
       await updatePlanItem(ctx.db, planId, item.id, { status: 'applied', applied_transaction_id: txId, error: null });
       if (item.kind === 'skip') result.skipped++;
       else result.applied++;
@@ -177,15 +192,20 @@ export async function approveAndApply(ctx: AppContext, planId: string, opts: { a
   }
 
   const appliedItems = await listPlanItems(ctx.db, planId);
-  if (result.failed === 0 && statement) {
-    try {
-      result.reconciliation = await reconcileAfterApply(ctx.db, ctx.pg, plan, appliedItems, statement, opts.actor);
-    } catch (err) {
-      log.error({ planId, err }, 'reconciliation after apply failed');
-      result.reconciliation = null;
+  if (result.failed === 0) {
+    // One reconciliation per period, oldest first, so each period's ledger opening sees the one before.
+    const ordered = [...statements].sort((a, b) => (a.period_start ?? '9999').localeCompare(b.period_start ?? '9999'));
+    for (const st of ordered) {
+      try {
+        const r = await reconcileAfterApply(ctx.db, ctx.pg, plan, appliedItems, st, opts.actor);
+        if (r) result.reconciliations.push(r);
+      } catch (err) {
+        log.error({ planId, statementId: st.id, err }, 'reconciliation after apply failed');
+      }
+      await updateStatement(ctx.db, st.id, { status: 'applied' });
+      ctx.bus.emitGlobal({ type: 'statement', statementId: st.id, conversationId: st.conversation_id, status: 'applied' });
     }
-    await updateStatement(ctx.db, statement.id, { status: 'applied' });
-    ctx.bus.emitGlobal({ type: 'statement', statementId: statement.id, conversationId: statement.conversation_id, status: 'applied' });
+    result.reconciliation = result.reconciliations[result.reconciliations.length - 1] ?? null;
   }
 
   if (created.size > 0 || items.some((i) => i.kind === 'account_update')) ctx.bus.emitGlobal({ type: 'accounts', planId });
@@ -222,6 +242,7 @@ function summarise(r: ApplyResult): Record<string, unknown> {
     skipped: r.skipped,
     failed_items: r.items.filter((i) => i.status === 'failed'),
     reopened: r.reopened,
+    reconciliations: r.reconciliations.map((x) => ({ id: x.reconciliation.id, status: x.reconciliation.status, difference: x.reconciliation.difference, period_start: x.reconciliation.period_start, period_end: x.reconciliation.period_end, cleared: x.cleared_count, outstanding: x.outstanding_count, missing: x.missing_count })),
     reconciliation: r.reconciliation
       ? {
           id: r.reconciliation.reconciliation.id,

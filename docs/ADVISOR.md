@@ -483,6 +483,9 @@ served locally against PostgREST with the advisor token. Add:
 | `statement_list(institution?, kind?, limit)` | every statement, any conversation, newest first, with a `waiting` flag (parsed, no plan, nobody spoke in its conversation) |
 | `mailbox_check()` | reads the watched mailbox now (interactive: unknown senders are routed without the gate) and returns the mails handled |
 | `statement_claim(ids)` | moves waiting mailed statements into the current conversation (files copied into its workspace; the emptied conversation is archived) so they are planned here, in the same turn |
+| `batch_prepare(statement_ids, account_id?)` | one plan for every statement of an account that arrived together: vouches lines that already match (same amount, one free candidate within 3 days), drafts cent corrections as automatic `update` items, returns per period the unmatched lines with candidates and the ledger entries no line vouches for |
+| `plan_add_items(plan_id, items)` | appends items (keeps the automatic ones); `plan_set_items` still replaces |
+| `plan_projected_balance(plan_id, account_id?)` | today's ledger balance plus the plan's effect on the account, to compare with the figure the person reads in the bank app |
 | `statement_set_meta(id, period_start?, period_end?, opening_balance?, closing_balance?, account_id?)` | fills what the parser could not read; when the statement's plan is already applied, opens its reconciliation now |
 | `ledger_balance_as_of(account_id, date)` | `SUM(amount_base)` up to a date (uses `daily_account_balances`) |
 | `reconciliation_history(account_id, limit)` / `reconciliation_get(id)` | past reconciliations with items, newest first; `reconciled_through` per account |

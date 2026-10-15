@@ -9,7 +9,7 @@ import { parseCsv } from '../src/ingest/csv.js';
 import { parseItauPdfText, parseNubankPdfText, parsePdfText } from '../src/ingest/pdf.js';
 import { detectFormat, detectInstitution, parseStatementFile } from '../src/ingest/detect.js';
 import { descriptionHint, detectInstallment, lineHash, normalizeMerchantJs, titleCase, toCsv } from '../src/ingest/normalize.js';
-import { extractCounterparty, isCardPayment, matchLines, pairTransfers } from '../src/ingest/match.js';
+import { assignAutoMatches, extractCounterparty, isCardPayment, matchLines, pairTransfers } from '../src/ingest/match.js';
 import type { StatementLine } from '../src/db/types.js';
 
 const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
@@ -275,6 +275,21 @@ describe('match helpers', () => {
     expect(isCardPayment('Compra')).toBe(false);
   });
 
+  it('assignAutoMatches vouches only lines with exactly one free candidate, one transaction per line', () => {
+    const m = assignAutoMatches([
+      { hash: 'a', id: 't1', dd: 0 },
+      { hash: 'b', id: 't1', dd: 1 }, // b shares t1 with a and also has t2
+      { hash: 'b', id: 't2', dd: 2 },
+      { hash: 'c', id: 't3', dd: 0 },
+      { hash: 'c', id: 't4', dd: 1 }, // c stays ambiguous
+      { hash: 'd', id: 't5', dd: 0 },
+    ], new Set(['t5'])); // t5 already taken by a FITID match
+    expect(m.get('a')).toBe('t1');
+    expect(m.get('b')).toBe('t2'); // disambiguated once a took t1
+    expect(m.has('c')).toBe(false);
+    expect(m.has('d')).toBe(false);
+  });
+
   it('pairTransfers pairs opposite amounts within a day', () => {
     const mk = (hash: string, date: string, amount: number): StatementLine => ({ hash, date, amount, currency: 'BRL', raw: hash, description_hint: hash, kind: amount < 0 ? 'debit' : 'credit' });
     const a = [mk('a1', '2026-10-05', -1234.56), mk('a2', '2026-10-06', -50)];
@@ -324,10 +339,13 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('matchLines against a database',
     expect(tampopo.candidates).toBeUndefined();
     expect(tampopo.alias?.canonical_description).toBe('Tampopo');
 
+    // same amount, one free candidate on the account within 3 days → vouched by the system, no item needed
     const market = matched.find((l) => l.raw.includes('SUPERMERCADO EXEMPLO'))!;
     expect(market.already_in_ledger).toBe(false);
-    expect(market.likely_duplicate).toBe(true);
-    expect(market.duplicate_candidate_id).toBeTruthy();
+    expect(market.auto_matched).toBe(true);
+    expect(market.ledger_transaction_id).toBeTruthy();
+    expect(market.likely_duplicate).toBe(false);
+    expect(market.candidates).toBeUndefined();
 
     const pix = matched.find((l) => l.raw.includes('FULANO DE TAL'))!;
     expect(pix.counterparty).toBe('FULANO DE TAL');

@@ -47,6 +47,7 @@ export async function updateStatement(
   id: string,
   patch: Partial<{
     account_id: string | null;
+    account_ref: string | null;
     institution: string | null;
     kind: StatementKind;
     period_start: string | null;

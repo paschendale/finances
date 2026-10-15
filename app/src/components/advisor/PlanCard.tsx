@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { ClipboardCheck, Check, X, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { canApproveFromCard, formatBRL, type Plan } from '@/lib/advisor-api';
+import { autoCheckedCount, canApproveFromCard, formatBRL, type Plan } from '@/lib/advisor-api';
 
 const fmtDay = (d: string) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d); return m ? `${m[3]}/${m[2]}` : d; };
 
@@ -19,7 +19,10 @@ export function PlanCard({
   busy?: boolean;
 }) {
   const balance = plan.result?.balance ?? null;
+  const balances = plan.result?.balances ?? [];
   const apply = plan.result?.apply ?? null;
+  const autoChecked = autoCheckedCount(plan);
+  const periods = balances.length > 1 ? `${balances.length} períodos · ${balances.filter((b) => b.ok).length} batem` : null;
   const approvable = canApproveFromCard(plan);
   const statusLabel = useMemo(() => {
     switch (plan.status) {
@@ -40,10 +43,10 @@ export function PlanCard({
         <span className="text-[13px] font-semibold truncate">{plan.title}</span>
         <span className="text-[11px] text-muted-foreground/60 ml-1 shrink-0">{statusLabel}</span>
         <span className="flex-1" />
-        <span className="text-[11px] text-muted-foreground/50 shrink-0">{plan.item_count} {plan.item_count === 1 ? 'item' : 'itens'}</span>
+        <span className="text-[11px] text-muted-foreground/50 shrink-0">{periods ?? `${plan.item_count} ${plan.item_count === 1 ? 'item' : 'itens'}`}</span>
       </div>
       <div className="grid grid-cols-4 gap-px bg-white/[0.06]">
-        {[['Novos', plan.create_count], ['Correções', plan.update_count], ['Já registrados', plan.skip_count], ['Ajustes', plan.adjust_count]].map(([label, n]) => (
+        {[['Novos', plan.create_count], ['Correções', plan.update_count], ['Excluir', plan.delete_count ?? 0], ['Conferidos', plan.skip_count + autoChecked]].map(([label, n]) => (
           <div key={label as string} className="px-3 py-2 bg-[#0d0d0e]">
             <div className="text-[9px] uppercase tracking-widest text-muted-foreground/50 font-bold">{label}</div>
             <div className={cn('font-mono text-[16px]', (n as number) === 0 && 'text-muted-foreground/40')}>{n as number}</div>

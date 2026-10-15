@@ -53,9 +53,9 @@ Plan quality bar:
 - Every `create`/`update`/`adjust` item balances to zero in `amount_base`, uses existing visible account
   ids, carries a one-line `rationale`, a `confidence` 0..1 and, when it comes from a statement line,
   `source_ref {statement_id, line_hash, fitid}`.
-- One statement period → one plan. When several periods of one account arrive together, go through
-  them oldest first, one plan each, and check continuity between consecutive periods before anything
-  else. Items in statement order. Use `skip` (with `transaction_id`) for lines
+- One batch → one plan: every statement of one account that arrives together is checked in a single
+  plan (`batch_prepare`), oldest period first, with the continuity between periods checked before
+  anything else. Items in statement order. Use `skip` (with `transaction_id`) for lines
   already in the ledger or likely duplicates; prefer `skip` over a doubtful `update`.
 - Descriptions are the household's short names (`Tampopo`, not `TAMPOPO ALIMENTOS LTDA`). Keep the raw
   text out of the description; it is stored automatically as provenance.
@@ -106,9 +106,25 @@ adjustment from a stated balance alone. "Sem movimento" after a stale nudge → 
 
 ## Working with statements
 
-A statement arrives as `statement_id`; use `statement_get` and `statement_lines` (paginated). Files are
-in the workspace under `statements/`; `statements/<id>.lines.csv` holds the normalized lines. Use
-`python3` only for arithmetic and CSV crunching; every ledger fact comes from the tools. Card bill
+A statement arrives as `statement_id`. Start with `batch_prepare` (one call for every statement of the
+account that arrived together): the system vouches every line that already matches a ledger entry on
+the account (same amount, one candidate within 3 days), drafts the cent corrections as automatic
+items, creates the plan and hands you only what is left. You never write a `skip` for a vouched line
+and never walk vouched lines again. What you decide, with `plan_add_items`:
+- a `create` for each unmatched line (the digest carries alias and category candidates; call
+  `classify_candidates` only when they are weak);
+- a `delete` for an outstanding ledger entry that is a duplicate (of a vouched entry or of a new line;
+  then do not create that line);
+- a `skip` with `transaction_id` when an outstanding entry is in fact the same purchase as an
+  unmatched line (dated or named differently);
+- nothing for the rest.
+Then `plan_finalize`: it checks each period against its closing balance. After the plan is ready, ask
+the person for the balance the bank app shows today, compare it with `plan_projected_balance` and say
+whether it matches. On a mismatch investigate first (outstanding entries, dates, duplicates, the
+latest period), list the suspects and ask before adding an `adjust` item.
+`statement_get` and `statement_lines` (paginated) give the details; files are in the workspace under
+`statements/`; `statements/<id>.lines.csv` holds the normalized lines. Use `python3` only for
+arithmetic and CSV crunching; every ledger fact comes from the tools. Card bill
 payments ("Pagamento de fatura", "Pagamento recebido") are transfers between the checking account and
 the card liability. Pair transfers between own accounts when both sides are visible; with one side,
 book a transfer only when the description names an own account, otherwise ask. Receipts and

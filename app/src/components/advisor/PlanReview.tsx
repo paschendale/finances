@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Check, X, Loader2, Sparkles, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fetchAccounts } from '@/lib/api';
-import { approvePlan, fetchPlan, formatBRL, patchPlanItem, rejectPlan, replan, AdvisorApiError, APPROVE_MIN_CONFIDENCE, type PlanItem } from '@/lib/advisor-api';
+import { approvePlan, autoCheckedCount, fetchPlan, formatBRL, isAutoItem, monthLabel, patchPlanItem, rejectPlan, replan, AdvisorApiError, APPROVE_MIN_CONFIDENCE, type PlanItem } from '@/lib/advisor-api';
 import { PlanItemRow, type AccountOption } from './PlanItemRow';
 
 type Filter = 'all' | 'changes' | 'low';
@@ -16,6 +16,7 @@ export function PlanReview({ planId, onBack, mobile }: { planId: string; onBack:
   const [expanded, setExpanded] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>('all');
   const [showSkipped, setShowSkipped] = useState(false);
+  const [showAuto, setShowAuto] = useState(false);
   const [ask, setAsk] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -56,11 +57,17 @@ export function PlanReview({ planId, onBack, mobile }: { planId: string; onBack:
   if (error) return <div className="p-6 text-[13px] text-rose-300">{(error as Error).message}</div>;
 
   const { plan, items, balance } = data;
+  const balances = data.balances ?? (balance ? [balance] : []);
+  const autoChecked = autoCheckedCount(plan);
   const active = items.filter((i) => i.status !== 'removed');
-  const changes = items.filter((i) => i.kind !== 'skip');
+  const autoItems = items.filter((i) => isAutoItem(i));
+  const changes = items.filter((i) => i.kind !== 'skip' && !isAutoItem(i));
   const low = items.filter((i) => i.kind !== 'skip' && i.status !== 'removed' && i.confidence != null && i.confidence < APPROVE_MIN_CONFIDENCE);
   const skipped = items.filter((i) => i.kind === 'skip');
-  const visible = (filter === 'changes' ? changes : filter === 'low' ? low : items).filter((i) => i.kind !== 'skip' || showSkipped || filter !== 'all');
+  const visible = (filter === 'changes' ? changes : filter === 'low' ? low : items).filter((i) => (i.kind !== 'skip' || showSkipped || filter !== 'all') && (!isAutoItem(i) || showAuto || filter !== 'all'));
+  // Several periods in one plan: a heading per month keeps the list readable.
+  const multiPeriod = balances.length > 1 || new Set(visible.map((i) => (i.date ?? '').slice(0, 7))).size > 1;
+  const autoTotal = autoItems.reduce((s, i) => s + Math.abs(Number(i.payload?.statement_amount ?? 0) - Number(i.payload?.ledger_amount ?? 0)), 0);
   const editable = plan.status === 'pending_approval' || plan.status === 'draft';
   const approvableCount = active.filter((i) => i.kind !== 'skip').length;
   const canApprove = editable && (!balance || balance.ok || true) && !approve.isPending; // review page may approve with a difference; the card cannot
@@ -91,9 +98,23 @@ export function PlanReview({ planId, onBack, mobile }: { planId: string; onBack:
             <div>Data</div><div>Descrição</div><div>Conta → categoria</div><div className="text-right">Valor</div><div>Certeza</div><div>Ação</div><div />
           </div>
         )}
-        {visible.map((item) => (
+        {(autoChecked > 0 || autoItems.length > 0) && (
+          <div className="px-4 py-2 text-[12px] text-muted-foreground/80 border-b border-white/[0.05] flex flex-wrap gap-x-4 gap-y-1">
+            {autoChecked > 0 && <span><Check className="inline w-3 h-3 text-emerald-400 mr-1" />{autoChecked} linha{autoChecked > 1 ? 's' : ''} já estava{autoChecked > 1 ? 'm' : ''} registrada{autoChecked > 1 ? 's' : ''} igual e {autoChecked > 1 ? 'foram conferidas' : 'foi conferida'} sem você precisar olhar</span>}
+            {autoItems.length > 0 && (
+              <button onClick={() => setShowAuto((v) => !v)} className="flex items-center gap-1 hover:text-foreground transition-colors">
+                <ChevronRight className={cn('w-3 h-3 transition-transform', showAuto && 'rotate-90')} />
+                {autoItems.length} valor{autoItems.length > 1 ? 'es' : ''} corrigido{autoItems.length > 1 ? 's' : ''} pelo extrato (centavos, <span className="font-mono">{formatBRL(autoTotal)}</span> no total)
+              </button>
+            )}
+          </div>
+        )}
+        {visible.map((item, idx) => (
+          <div key={item.id}>
+          {multiPeriod && (idx === 0 || (visible[idx - 1]!.date ?? '').slice(0, 7) !== (item.date ?? '').slice(0, 7)) && (
+            <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 bg-white/[0.02] border-b border-white/[0.05]">{monthLabel(item.date)}</div>
+          )}
           <PlanItemRow
-            key={item.id}
             item={item}
             accountOptions={accountOptions}
             categoryOptions={categoryOptions}
@@ -103,6 +124,7 @@ export function PlanReview({ planId, onBack, mobile }: { planId: string; onBack:
             disabled={!editable || patch.isPending}
             mobile={mobile}
           />
+          </div>
         ))}
         {filter === 'all' && skipped.length > 0 && (
           <button onClick={() => setShowSkipped((v) => !v)} className="w-full flex items-center gap-2 px-3 py-2.5 text-[12px] text-muted-foreground/70 hover:text-foreground transition-colors border-b border-white/[0.05]">
@@ -116,7 +138,18 @@ export function PlanReview({ planId, onBack, mobile }: { planId: string; onBack:
       {/* Sticky footer */}
       <div className="shrink-0 border-t border-white/[0.08] bg-[#050505]/95 backdrop-blur-md px-3 sm:px-4 py-3 space-y-2">
         <div className="flex items-center gap-3 text-[12px] flex-wrap">
-          {balance ? (
+          {balances.length > 1 ? (
+            <span className="flex items-center gap-2 flex-wrap">
+              {balances.map((b) => (
+                <span key={b.period_end ?? ''} className="flex items-center gap-1" title={`${fmtDay(b.period_start ?? '')} a ${fmtDay(b.period_end ?? '')}: saldo depois do plano ${formatBRL(b.projected ?? 0)}, extrato ${formatBRL(b.statement_closing ?? 0)}`}>
+                  {b.ok ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <X className="w-3.5 h-3.5 text-rose-400" />}
+                  <span className="capitalize">{monthLabel(b.period_start).split(' ')[0]}</span>
+                  {!b.ok && <span className="text-rose-300 font-mono">{formatBRL(b.difference)}</span>}
+                </span>
+              ))}
+              <span className="text-muted-foreground/60">· no fim, <span className="font-mono text-foreground/80">{formatBRL(balance?.projected ?? 0)}</span></span>
+            </span>
+          ) : balance ? (
             <span className="flex items-center gap-1.5">
               {balance.ok ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <X className="w-3.5 h-3.5 text-rose-400" />}
               Saldo depois do plano <span className="font-mono">{formatBRL(balance.projected ?? 0)}</span> {balance.ok ? '=' : '≠'} extrato <span className="font-mono">{formatBRL(balance.statement_closing ?? 0)}</span>
@@ -134,7 +167,7 @@ export function PlanReview({ planId, onBack, mobile }: { planId: string; onBack:
           </form>
           <div className="flex gap-2">
             <button onClick={() => { if (window.confirm('Descartar este plano?')) reject.mutate(); }} disabled={!editable || reject.isPending} className="h-10 px-3.5 rounded-xl border border-white/[0.12] text-[13px] font-semibold text-muted-foreground hover:text-rose-300 hover:border-rose-500/30 disabled:opacity-40 transition-all">Descartar plano</button>
-            <button onClick={() => { if (balance && !balance.ok && !window.confirm(`O saldo não bate: falta explicar ${formatBRL(balance.difference)}. Gravar mesmo assim? A conferência do extrato fica em aberto com essa diferença.`)) return; approve.mutate(); }} disabled={!canApprove || approvableCount === 0} className="h-10 px-4 rounded-xl bg-emerald-400 text-[#04130c] text-[13px] font-semibold hover:bg-emerald-300 disabled:opacity-40 flex items-center gap-1.5 transition-all active:scale-[0.99] flex-1 sm:flex-none justify-center">
+            <button onClick={() => { const bad = balances.filter((b) => !b.ok); if (bad.length > 0 && !window.confirm(`O saldo não bate em ${bad.length > 1 ? `${bad.length} períodos` : 'um período'}: falta explicar ${bad.map((b) => formatBRL(b.difference)).join(', ')}. Gravar mesmo assim? A conferência fica em aberto com essa diferença.`)) return; approve.mutate(); }} disabled={!canApprove || approvableCount === 0} className="h-10 px-4 rounded-xl bg-emerald-400 text-[#04130c] text-[13px] font-semibold hover:bg-emerald-300 disabled:opacity-40 flex items-center gap-1.5 transition-all active:scale-[0.99] flex-1 sm:flex-none justify-center">
               {approve.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Aprovar {approvableCount} {approvableCount === 1 ? 'item' : 'itens'}
             </button>
           </div>

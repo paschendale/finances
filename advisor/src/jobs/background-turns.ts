@@ -1,7 +1,7 @@
 import type { AppContext } from '../context.js';
 import { many } from '../db/client.js';
 import type { Statement } from '../db/types.js';
-import { buildIngestMessage, LANGUAGE_NOTE, type IngestOutcome } from './ingest-statement.js';
+import { BATCH_STEPS, buildIngestMessage, LANGUAGE_NOTE, type IngestOutcome } from './ingest-statement.js';
 import { routineGate } from './scheduler.js';
 import { scoped } from '../log.js';
 
@@ -115,6 +115,7 @@ const outcomeOf = (s: WaitingStatement): IngestOutcome => {
     account_id: s.account_id,
     line_count: lines.length,
     already_in_ledger: lines.filter((l) => l.already_in_ledger).length,
+    auto_matched: lines.filter((l) => l.auto_matched).length,
     likely_duplicate: lines.filter((l) => l.likely_duplicate && !l.already_in_ledger).length,
     period_start: s.period_start,
     period_end: s.period_end,
@@ -143,7 +144,8 @@ export function buildPlanningMessage(statements: WaitingStatement[]): { text: st
     first.account_id
       ? `Ledger account: ${first.account_id}.`
       : 'The ledger account is not known yet: resolve it with match_account from the statement metadata and the user, and record it with note_add (scope account, note "statement_source=<institution>:<acctid>").',
-    `Plan ONLY the oldest period in this turn (statement ${first.id}): plan_create with that statement_id, plan_set_items, the balance check, plan_finalize. The following periods come to you one per turn, in this same conversation, right after; do not start them now. Before anything else check continuity: this period's opening balance must match the last balanced reconciliation (reconciliation_history), and each later period's opening must equal the closing before it; report breaks first. Lines already in the ledger get skip items.`,
+    `All of them go into ONE plan. ${BATCH_STEPS}`,
+    'Before anything else check continuity: the first period\'s opening balance must match the last balanced reconciliation (reconciliation_history), and each later period\'s opening must equal the closing before it; report breaks first.',
     '',
   ];
   for (const g of groups) {
@@ -158,35 +160,20 @@ export function buildPlanningMessage(statements: WaitingStatement[]): { text: st
 }
 
 /**
- * Starts the planning turn for one conversation's waiting statements: one period per turn, with the
- * whole list as context. When the turn produced a plan and periods are still waiting, the next turn
- * follows at once with the same kind (an interactive request stays ungated all the way through).
+ * Starts the planning turn for one conversation's waiting statements: one turn, one plan for all
+ * the periods (the system vouches what already matches; the assistant only decides the rest).
  */
-export async function startPlanningTurn(ctx: AppContext, conversationId: string, statements: WaitingStatement[], opts: { actor: string | null; kind: 'interactive' | 'background' }, depth = 0): Promise<unknown> {
+export function startPlanningTurn(ctx: AppContext, conversationId: string, statements: WaitingStatement[], opts: { actor: string | null; kind: 'interactive' | 'background' }): Promise<unknown> {
   const { text, primary } = buildPlanningMessage(statements);
-  log.info({ conversationId, statementId: primary.id, statements: statements.length, kind: opts.kind, actor: opts.actor, depth }, 'starting planning turn');
+  log.info({ conversationId, statementId: primary.id, statements: statements.length, kind: opts.kind, actor: opts.actor }, 'starting planning turn');
   const names = statements.map((s) => s.filename);
-  const plansBefore = await planCount(ctx, conversationId);
-  const outcome = await ctx.sessions.sendUserMessage(conversationId, text, {
+  return ctx.sessions.sendUserMessage(conversationId, text, {
     actor: opts.actor,
     kind: opts.kind,
     attachments: statements.map((s) => ({ statement_id: s.id, filename: s.filename, format: s.format })),
     display: `📎 ${names.length > 3 ? `${names.length} extratos: ${names.slice(0, 3).join(', ')}…` : names.join(', ')} (Gmail)`,
     timeoutMs: ctx.config.PLANNING_TURN_TIMEOUT_MS,
   });
-  const remaining = await findWaitingStatements(ctx, conversationId);
-  const produced = (await planCount(ctx, conversationId)) > plansBefore;
-  if (remaining.length > 0 && produced && depth + 1 < statements.length) {
-    log.info({ conversationId, remaining: remaining.length, depth: depth + 1 }, 'next period of the same account');
-    return startPlanningTurn(ctx, conversationId, remaining, opts, depth + 1);
-  }
-  if (remaining.length > 0 && !produced) log.warn({ conversationId, remaining: remaining.length }, 'planning turn produced no plan; the rest waits for the next tick or the person');
-  return outcome;
-}
-
-async function planCount(ctx: AppContext, conversationId: string): Promise<number> {
-  const r = await ctx.db.query<{ n: string }>('SELECT count(*)::text AS n FROM advisor_plans WHERE conversation_id = $1', [conversationId]);
-  return Number(r.rows[0]?.n ?? 0);
 }
 
 /** Groups waiting statements by conversation, oldest first. */

@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AppContext } from '../../context.js';
 import type { Actor } from '../auth.js';
-import { getPlan, getPlanItem, listPlanItems, listPlans, updatePlan, updatePlanItem } from '../../db/repo/plans.js';
+import { getPlan, getPlanItem, listPlanItems, listPlans, planStatementIds, updatePlan, updatePlanItem } from '../../db/repo/plans.js';
 import { getStatement, updateStatement } from '../../db/repo/statements.js';
 import { getConversation } from '../../db/repo/conversations.js';
 import { approveAndApply, ApplyError, reconcileAppliedPlan, rejectPlan } from '../../plan/apply.js';
@@ -44,10 +44,19 @@ export function planRoutes(ctx: AppContext): Hono<Env> {
     const plan = await getPlan(ctx.db, c.req.param('id'));
     if (!plan) return c.json({ error: 'not found' }, 404);
     const items = await listPlanItems(ctx.db, plan.id);
-    let statement = plan.statement_id ? await getStatement(ctx.db, plan.statement_id) : null;
-    if (statement) statement = await ensureStatementAccount(ctx.db, statement, items);
-    const balance = statement ? await computePlanBalance(ctx.db, plan, items, statement) : null;
-    const lines = new Map((statement?.lines ?? []).map((l) => [l.hash, l]));
+    const statements = [];
+    for (const sid of planStatementIds(plan)) {
+      const st = await getStatement(ctx.db, sid);
+      if (st) statements.push(await ensureStatementAccount(ctx.db, st, items));
+    }
+    statements.sort((a, b) => (a.period_start ?? '9999').localeCompare(b.period_start ?? '9999'));
+    const balances = [];
+    for (const st of statements) {
+      const b = await computePlanBalance(ctx.db, plan, items, st);
+      if (b) balances.push(b);
+    }
+    const statement = statements[0] ?? null;
+    const lines = new Map(statements.flatMap((s) => (s.lines ?? []).map((l) => [l.hash, l] as const)));
     const accounts = await loadAccounts(ctx.db);
     return c.json({
       plan,
@@ -57,7 +66,9 @@ export function planRoutes(ctx: AppContext): Hono<Env> {
         entries: it.entries.map((e) => ({ ...e, account_name: accounts.get(e.account_id)?.full_name ?? null, account_type: accounts.get(e.account_id)?.type ?? null })),
       })),
       statement: statement ? { ...statement, lines: undefined, line_count: statement.lines?.length ?? 0 } : null,
-      balance,
+      statements: statements.map((s) => ({ ...s, lines: undefined, line_count: s.lines?.length ?? 0 })),
+      balance: balances[balances.length - 1] ?? null,
+      balances,
     });
   });
 

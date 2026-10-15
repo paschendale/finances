@@ -4,14 +4,21 @@ import type { Plan, PlanItem, PlanItemKind, PlanItemStatus, PlanStatus, PlanWith
 
 export async function createPlan(
   q: Queryable,
-  input: { conversation_id: string; statement_id?: string | null; title: string; created_by?: string | null },
+  input: { conversation_id: string; statement_id?: string | null; statement_ids?: string[] | null; title: string; created_by?: string | null },
 ): Promise<Plan> {
+  const ids = input.statement_ids?.length ? input.statement_ids : input.statement_id ? [input.statement_id] : null;
   return one<Plan>(
     q,
-    `INSERT INTO advisor_plans (conversation_id, statement_id, title, created_by)
-     VALUES ($1, $2, $3, $4) RETURNING *`,
-    [input.conversation_id, input.statement_id ?? null, input.title, input.created_by ?? null],
+    `INSERT INTO advisor_plans (conversation_id, statement_id, statement_ids, title, created_by)
+     VALUES ($1, $2, $3::uuid[], $4, $5) RETURNING *`,
+    [input.conversation_id, ids?.[0] ?? null, ids, input.title, input.created_by ?? null],
   );
+}
+
+/** The statement periods a plan covers, in the order they were bound. */
+export function planStatementIds(plan: Pick<Plan, 'statement_id' | 'statement_ids'>): string[] {
+  if (plan.statement_ids?.length) return plan.statement_ids;
+  return plan.statement_id ? [plan.statement_id] : [];
 }
 
 export async function getPlan(q: Queryable, id: string): Promise<PlanWithCounts | null> {
@@ -101,6 +108,38 @@ export async function replacePlanItems(q: Queryable, planId: string, items: Plan
     );
   }
   await q.query('UPDATE advisor_plans SET updated_at = now() WHERE id = $1', [planId]);
+  return out;
+}
+
+/** Appends items after the plan's current last seq (the system's automatic items stay in place). */
+export async function appendPlanItems(q: Queryable, planId: string, items: PlanItemInput[]): Promise<PlanItem[]> {
+  const row = await one<{ n: number }>(q, 'SELECT COALESCE(max(seq), 0)::int AS n FROM advisor_plan_items WHERE plan_id = $1', [planId]);
+  let seq = Number(row.n);
+  const out: PlanItem[] = [];
+  for (const it of items) {
+    seq++;
+    out.push(
+      await one<PlanItem>(
+        q,
+        `INSERT INTO advisor_plan_items (plan_id, seq, kind, transaction_id, date, description, entries, payload, source_ref, confidence, rationale, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb, $10, $11, $12) RETURNING *`,
+        [
+          planId,
+          seq,
+          it.kind,
+          it.transaction_id ?? null,
+          it.date ?? null,
+          it.description ?? null,
+          JSON.stringify(it.entries ?? []),
+          JSON.stringify(it.payload ?? {}),
+          it.source_ref ? JSON.stringify(it.source_ref) : null,
+          it.confidence ?? null,
+          it.rationale ?? null,
+          it.status ?? 'proposed',
+        ],
+      ),
+    );
+  }
   return out;
 }
 
