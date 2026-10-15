@@ -355,7 +355,7 @@ export function Dashboard({ filters, onFilterChange, onNavigateToBudget, onOpenA
       {/* Date Filters */}
       <div className="flex flex-col gap-4 bg-white/[0.02] backdrop-blur-3xl p-4 rounded-3xl border border-white/10 sticky top-0 z-50 shadow-2xl">
         <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
             {DATE_PRESETS.map(preset => (
                 <button
                 key={preset.label}
