@@ -305,8 +305,8 @@ function AccountModal({
               <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/60">Subtype</p>
               <div className="flex rounded-xl border border-white/[0.08] bg-white/[0.02] p-0.5 w-fit">
                 {(type === 'asset'
-                  ? [null, 'checking', 'emergency', 'investments'] as const
-                  : [null, 'liabilities'] as const
+                  ? [null, 'checking', 'emergency', 'investments', 'property'] as const
+                  : [null, 'liabilities', 'loan'] as const
                 ).map((s) => (
                   <button
                     key={s ?? 'none'}
@@ -322,6 +322,13 @@ function AccountModal({
                   </button>
                 ))}
               </div>
+              <p className="text-[11px] text-muted-foreground/50">
+                {subtype === 'property' || subtype === 'loan'
+                  ? 'Tracked in the ledger, kept out of the dashboard money cards and net worth.'
+                  : subtype === null
+                    ? 'No subtype: not grouped on the dashboard.'
+                    : 'Shown on the dashboard as money.'}
+              </p>
             </div>
           )}
 

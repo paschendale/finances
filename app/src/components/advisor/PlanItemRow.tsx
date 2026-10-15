@@ -3,7 +3,7 @@ import { format } from 'date-fns';
 import { X, RotateCcw, Tag, Wallet } from 'lucide-react';
 import { cn, formatHierarchicalName } from '@/lib/utils';
 import { formatBRL, type PlanEntry, type PlanItem } from '@/lib/advisor-api';
-import { primaryLeg } from '@/lib/plan-utils';
+import { accountItemLabel, isAccountItem, primaryLeg } from '@/lib/plan-utils';
 import { SearchableSelect, type Option } from '../SearchableSelect';
 
 export interface AccountOption extends Option {
@@ -19,7 +19,11 @@ const KIND_STYLE: Record<string, string> = {
   budget_upsert: 'bg-violet-500/15 text-violet-300',
   budget_delete: 'bg-rose-500/15 text-rose-300',
   mark_checked: 'bg-white/[0.06] text-muted-foreground',
+  account_create: 'bg-cyan-500/15 text-cyan-200',
+  account_update: 'bg-cyan-500/15 text-cyan-200',
 };
+
+const KIND_LABEL: Record<string, string> = { account_create: 'new account', account_update: 'account' };
 
 function fmtDate(d: string | null): string {
   if (!d) return '—';
@@ -66,6 +70,9 @@ export function PlanItemRow({
   const [amt, setAmt] = useState(String(Math.abs(amount)));
   const editable = !disabled && !removed && ['create', 'update', 'adjust'].includes(item.kind);
   const reopens = Boolean(item.payload?.reopens_reconciliation);
+  const accountLabel = accountItemLabel(item);
+  const label = accountLabel ?? item.description;
+  const kindLabel = KIND_LABEL[item.kind] ?? item.kind;
 
   const setEntryAccount = (accountId: string, which: 'asset' | 'category') => {
     const target = which === 'asset' ? asset : category;
@@ -122,24 +129,24 @@ export function PlanItemRow({
           <>
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-mono text-muted-foreground/60 w-12 shrink-0">{fmtDate(item.date)}</span>
-              <span className={cn('text-[13px] font-medium truncate flex-1', removed && 'line-through')}>{item.description ?? item.kind}</span>
-              <span className={cn('font-mono text-[13px] tabular-nums shrink-0', positive ? 'text-emerald-400' : 'text-rose-300')}>{positive ? '+' : '−'}{formatBRL(Math.abs(amount)).replace('R$', '').trim()}</span>
+              <span className={cn('text-[13px] font-medium truncate flex-1', removed && 'line-through')}>{label ?? kindLabel}</span>
+              {!isAccountItem(item.kind) && <span className={cn('font-mono text-[13px] tabular-nums shrink-0', positive ? 'text-emerald-400' : 'text-rose-300')}>{positive ? '+' : '−'}{formatBRL(Math.abs(amount)).replace('R$', '').trim()}</span>}
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               {accountCell}
               <span className="flex-1" />
               <ConfidenceBar value={item.confidence} />
-              <span className={cn('px-1.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider', KIND_STYLE[removed ? 'skip' : item.kind])}>{removed ? 'removed' : item.kind}</span>
+              <span className={cn('px-1.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider', KIND_STYLE[removed ? 'skip' : item.kind])}>{removed ? 'removed' : kindLabel}</span>
             </div>
           </>
         ) : (
           <>
             <span className="text-[11px] font-mono text-muted-foreground/60">{fmtDate(item.date)}</span>
-            <span className={cn('text-[13px] font-medium truncate', removed && 'line-through')}>{item.description ?? <span className="text-muted-foreground/50">{item.kind}</span>}{edited && <span className="ml-1.5 text-[10px] text-amber-300/80">· edited</span>}{reopens && <span className="ml-1.5 text-[10px] text-rose-300/80">· reopens reconciliation</span>}</span>
-            {accountCell}
-            <span className={cn('font-mono text-[13px] tabular-nums text-right', positive ? 'text-emerald-400' : 'text-rose-300')}>{positive ? '+' : '−'}{formatBRL(Math.abs(amount)).replace('R$', '').trim()}</span>
+            <span className={cn('text-[13px] font-medium truncate', removed && 'line-through')}>{label ?? <span className="text-muted-foreground/50">{kindLabel}</span>}{edited && <span className="ml-1.5 text-[10px] text-amber-300/80">· edited</span>}{reopens && <span className="ml-1.5 text-[10px] text-rose-300/80">· reopens reconciliation</span>}</span>
+            {isAccountItem(item.kind) ? <span /> : accountCell}
+            {isAccountItem(item.kind) ? <span /> : <span className={cn('font-mono text-[13px] tabular-nums text-right', positive ? 'text-emerald-400' : 'text-rose-300')}>{positive ? '+' : '−'}{formatBRL(Math.abs(amount)).replace('R$', '').trim()}</span>}
             <ConfidenceBar value={item.confidence} />
-            <span className={cn('px-1.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-center', KIND_STYLE[removed ? 'skip' : item.kind], item.status === 'failed' && 'bg-rose-500/20 text-rose-300', item.status === 'applied' && 'bg-emerald-500/20 text-emerald-300')}>{removed ? 'removed' : item.status === 'applied' ? 'applied' : item.status === 'failed' ? 'failed' : item.kind}</span>
+            <span className={cn('px-1.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-center', KIND_STYLE[removed ? 'skip' : item.kind], item.status === 'failed' && 'bg-rose-500/20 text-rose-300', item.status === 'applied' && 'bg-emerald-500/20 text-emerald-300')}>{removed ? 'removed' : item.status === 'applied' ? 'applied' : item.status === 'failed' ? 'failed' : kindLabel}</span>
             <button
               onClick={(e) => { e.stopPropagation(); onPatch({ status: removed ? 'proposed' : 'removed' }); }}
               disabled={disabled}
@@ -200,7 +207,7 @@ export function PlanItemRow({
                 )}
               </>
             ) : (
-              <p className="text-[11px] text-muted-foreground/50">{item.kind === 'budget_upsert' ? JSON.stringify(item.payload) : 'No statement line (drafted from the conversation).'}</p>
+              <p className="text-[11px] text-muted-foreground/50 break-all">{item.kind === 'budget_upsert' || isAccountItem(item.kind) ? JSON.stringify(item.payload) : 'No statement line (drafted from the conversation).'}</p>
             )}
           </div>
         </div>

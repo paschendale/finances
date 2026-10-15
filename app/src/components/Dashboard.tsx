@@ -4,6 +4,7 @@ import { type Account, fetchAccounts, fetchDashboardData, fetchDailyBalances, ma
 import { createConversation } from '@/lib/advisor-api';
 import type { AdvisorTarget } from './advisor/AdvisorPage';
 import { BudgetHealthCard, type BudgetItemSummary } from './BudgetHealthCard';
+import { AdvisorCta } from './advisor/AdvisorCta';
 import { isBalanceCheckStale } from '@/lib/balanceCheckStale';
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, 
@@ -423,6 +424,9 @@ export function Dashboard({ filters, onFilterChange, onNavigateToBudget, onOpenA
            <span className="text-xl font-bold tracking-tight">R$ {netWorth.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
         </div>
       </div>
+
+      {/* Advisor call to action (only when there is something to do) */}
+      <AdvisorCta accounts={accounts} entries={entries} range={{ start: startDateStr, end: endDateStr }} onOpenAdvisor={onOpenAdvisor} />
 
       {/* Budget Highlights */}
       {budgetMetrics && (
