@@ -115,7 +115,10 @@ Plans may contain `account_create` items (`payload {ref, name, type, subtype, pa
 `account_update` items (`payload {account_id, name?, subtype?, parent_id?, icon?, color?, hidden?}`).
 Later items in the same plan reference a new account as `account_id: "new:<ref>"`; the applier
 creates the account through PostgREST (`POST /accounts`, reusing an identical existing one) and
-substitutes the id before posting the entries. Subtypes `property` (asset) and `loan` (liability) keep
+substitutes the id before posting the entries. Updating or deleting an entry cleared by a closed
+reconciliation needs the item's `reopens_reconciliation` flag; the period is reopened, the clearings
+are carried over to the recreated entries, and after apply the period is closed again when it still
+balances (or still matches its adjustment). Otherwise it stays open and the apply result says so. Subtypes `property` (asset) and `loan` (liability) keep
 an account out of the dashboard money cards and net worth while it stays a normal ledger account.
 
 ## Gmail (optional)

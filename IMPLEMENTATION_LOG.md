@@ -8,12 +8,16 @@
 - **Dashboard call to action.** `AdvisorCta` under the balances, shown only when the advisor is reachable and there is something to do: accounts that moved after their last check, accounts unchecked for 30+ days, uncategorised entries (`sem-categoria`) in the selected range. Each row opens a conversation with the right message and hidden context. `app/src/lib/advisor-reasons.ts`, `app/src/components/advisor/AdvisorCta.tsx`.
 - **App.** Account form offers `property` / `loan` with a one-line explanation; plan review renders account items (label, payload) without a money column.
 - **Docs.** `advisor/README.md` (Discord behaviour, accounts, `WEB_APP_URL`), `docs/ADVISOR.md` kinds, `docs/API_CONTRACT.md` subtypes, `docs/DOMAINS.md` accounts fields, `LEDGER.md` Gmail steps, compose files.
+- **Found while verifying on the dev instance.** (1) A resumed Claude session kept answering that it could not create accounts after the capability shipped: conversations now store a hash of the prompt + tool-set version (migration 0053, `CAPABILITIES_VERSION`); on a mismatch the turn starts a fresh session with the last twelve turns as transcript instead of resuming. (2) `update_transaction` recreates entries, which cascaded away their reconciliation clearings, so every recategorisation of a reconciled line left the period open with a stale total: `src/plan/clearings.ts` snapshots the clearings before an update, re-attaches them to the new entries (same account, same amount when possible), recomputes `cleared_total`/`difference` from the ledger and closes the reopened period again (`balanced` on zero difference, `adjusted` again when its adjustment still fits; otherwise it stays open and the result says so). Covered by the SQL suite.
 
 ### Why
 Review of the first day on the dev instance: Discord messages were long walls of text unreadable on a phone and the channel had no state; the advisor told the user to create the house asset account in the app and said it could not post to hidden accounts (the right tool was a subtype, not `hidden`); the dashboard had no entry point when the ledger needed attention.
 
 ### Tests
-`advisor/`: 67 tests (new: account item validation and placeholders, `mobileify`/`headline`/tracker build+parse). `app/`: 60 tests (new: `advisorReasons`), build clean, lint parity.
+`advisor/`: 70 tests (new: account item validation and placeholders, `mobileify`/`headline`/tracker build+parse, clearings carried across `update_transaction` + re-close decision in the SQL suite). `app/`: 60 tests (new: `advisorReasons`), build clean, lint parity.
+
+### Acceptance on the dev copy
+Fresh web conversation "Conta do imóvel" → one plan with `account_create casa-imovel (asset/property)` + three `update` items referencing `new:casa`; Discord got the tracker ("🟡 Plano aguardando aprovação · 3 alterações · 1 conta", deep link) with the compact summary in its thread; approval through the API created the account (subtype `property`, not hidden, 3 entries) and moved the three transactions. The September reconciliation had been left open by the earlier Hussein recategorisation (the clearings bug above); it was repaired on the dev data and the fix ships with this entry.
 
 ---
 
