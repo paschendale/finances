@@ -480,6 +480,10 @@ served locally against PostgREST with the advisor token. Add:
 | `classify_candidates(description, amount?, account_id?, date?, posted_at?, raw?)` | ranked categories with per-factor evidence (§21); the agent's primary categorisation tool |
 | `merchant_alias_get(raw)` / `merchant_alias_set(raw, canonical_description, account_id?)` | read or teach raw-statement-text → household name mappings (writes only the alias table, never the ledger) |
 | `statement_get(id)` / `statement_lines(id, offset, limit)` | metadata and normalized lines, with `already_in_ledger`, `alias` and `candidates` pre-filled by `ingest/match.ts` |
+| `statement_list(institution?, kind?, limit)` | every statement, any conversation, newest first, with a `waiting` flag (parsed, no plan, nobody spoke in its conversation) |
+| `mailbox_check()` | reads the watched mailbox now (interactive: unknown senders are routed without the gate) and returns the mails handled |
+| `statement_claim(ids)` | moves waiting mailed statements into the current conversation (files copied into its workspace; the emptied conversation is archived) so they are planned here, in the same turn |
+| `statement_set_meta(id, period_start?, period_end?, opening_balance?, closing_balance?, account_id?)` | fills what the parser could not read; when the statement's plan is already applied, opens its reconciliation now |
 | `ledger_balance_as_of(account_id, date)` | `SUM(amount_base)` up to a date (uses `daily_account_balances`) |
 | `reconciliation_history(account_id, limit)` / `reconciliation_get(id)` | past reconciliations with items, newest first; `reconciled_through` per account |
 | `uncleared_entries(account_id, through_date)` | ledger entries on the account not vouched by any statement, for outstanding-item analysis |

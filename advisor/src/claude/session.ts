@@ -34,6 +34,8 @@ export interface TurnOptions {
   context?: string;
   /** Message to persist as the user's text; defaults to `content`. */
   display?: string;
+  /** Per-turn timeout; planning turns over a whole statement get a longer one than chat. */
+  timeoutMs?: number;
 }
 
 export interface TurnOutcome {
@@ -265,7 +267,7 @@ export class SessionManager {
           model: fresh.model ?? config.SESSION_MODEL,
           effort: config.SESSION_EFFORT,
           resumeSessionId: capabilitiesChanged ? null : fresh.claude_session_id,
-          timeoutMs: config.SESSION_TIMEOUT_MS,
+          timeoutMs: opts.timeoutMs ?? config.SESSION_TIMEOUT_MS,
           onEvent,
           signal: ac.signal,
         });

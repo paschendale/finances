@@ -30,6 +30,8 @@ const schema = z.object({
   HEALTH_MODEL: z.string().default('haiku'),
   SESSION_EFFORT: z.string().default('high'),
   SESSION_TIMEOUT_MS: intEnv(900_000),
+  /** A planning turn walks every line of a statement; it gets more time than a chat turn. */
+  PLANNING_TURN_TIMEOUT_MS: intEnv(30 * 60_000),
   SINGLE_SHOT_TIMEOUT_MS: intEnv(180_000),
   MAX_CONCURRENT_SESSIONS: intEnv(2),
   GATE_MAX_7D_PCT: numEnv(85),

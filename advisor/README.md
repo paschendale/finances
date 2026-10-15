@@ -58,7 +58,7 @@ npm run dev               # tsx watch, ADVISOR_CHANNELS=web by default
 | `DATA_DIR` | `/data` | Statement files and per-conversation workspaces |
 | `CLAUDE_BIN`, `CLAUDE_CONFIG_DIR` | `claude`, unset | Claude Code binary and config dir (`~/.claude` when unset) |
 | `SESSION_MODEL` / `ROUTINE_MODEL` / `HEALTH_MODEL` | `opus` / `sonnet` / `haiku` | Models for sessions, single-shot routing, health ping |
-| `SESSION_EFFORT`, `SESSION_TIMEOUT_MS` | `high`, `900000` | Session effort and per-turn timeout |
+| `SESSION_EFFORT`, `SESSION_TIMEOUT_MS`, `PLANNING_TURN_TIMEOUT_MS` | `high`, `900000`, `1800000` | Session effort, per-turn timeout for chat, and for a turn that plans a whole statement |
 | `MAX_CONCURRENT_SESSIONS` | `2` | Interactive slots; background work has one extra slot and yields |
 | `GATE_MAX_7D_PCT`, `GATE_MAX_5H_PCT`, `GATE_MAX_CALLS_PER_WINDOW`, `GATE_TAIL_MINUTES`, `GATE_IDLE_MINUTES` | `85`, `70`, `40`, `60`, `15` | Usage gate for routine work only |
 | `STALE_DAYS` | `30` | Accounts unchecked for longer get a nudge |
@@ -141,7 +141,7 @@ statement that is waiting for the usage gate, right away and as an interactive t
 
 Manual pick-up (web token): `GET /gmail/messages?q=<gmail query>&limit=20` lists mails with their
 attachments, detected institution/kind and whether the sync already handled them;
-`POST /gmail/messages/:id/ingest` (`{"force":true}` to redo one) ingests that mail and starts the
+`POST /gmail/messages/:id/ingest` (`{"force":true}` to redo one, `{"plan":false}` to only store it) ingests that mail and starts the
 planning turn right away as an interactive turn, together with whatever else of that account is still
 waiting. Of several attachments of one statement (OFX + CSV + PDF) only the preferred one is ingested
 unless it yields no lines.
@@ -158,7 +158,8 @@ Mailed statements are grouped **per account**: a statement joins the conversatio
 as no turn has run there yet, and the title spans the periods ("Nubank conta · 01/07/2026 a
 30/09/2026"). The background job starts a conversation's planning turn only once its newest statement
 is `SETTLE_SECONDS` (3 min) old, so the initial sync or a burst of re-sent mails is planned in one turn
-that walks the periods oldest first, one plan per period, checking continuity between them.
+that plans the oldest period, then chains one turn per remaining period in the same conversation
+(each turn gets `PLANNING_TURN_TIMEOUT_MS`), checking continuity between them.
 
 Every cheap tick the daemon walks `users.history` from its cursor (first run: `GMAIL_LOOKBACK_DAYS`
 of mail with attachments). Known senders (Nubank account and card statements, Wise) are ingested by

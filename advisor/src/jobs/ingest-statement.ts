@@ -243,6 +243,9 @@ async function rememberAccountRef(ctx: AppContext, institution: string, accountR
   if (!exists) await ctx.db.query('INSERT INTO advisor_notes (scope, ref_id, note, created_by) VALUES ($1, $2, $3, $4)', ['account', accountId, key, 'advisor']);
 }
 
+/** System-built turn messages are in English for the assistant; the person still reads Portuguese. */
+export const LANGUAGE_NOTE = 'This notice is written in English for you only; write to the person in plain Portuguese (pt-BR), as always.';
+
 /** What to do with a file that is not a parsed bank statement (a purchase list, a receipt, an invoice, an unknown format). */
 export const DOCUMENT_HINT =
   'The original file is in the workspace under statements/. Open it with Read, work out what it is (a statement in a format the system does not parse, a list of purchases such as Amazon orders, a receipt, an invoice, a spreadsheet) and do what the person asked. When it lists purchases or charges, find each one in the ledger (list_transactions around the date, same amount or description), propose `update` items for wrong categories or names, `create` items for what is missing and nothing for what already matches; say which lines you could not read or find.';
@@ -251,11 +254,11 @@ export function buildIngestMessage(statement: Statement, o: IngestOutcome, userM
   const parts: string[] = [];
   if (userMessage?.trim()) parts.push(userMessage.trim(), '');
   if (o.status === 'failed') {
-    parts.push(`File ${statement.id} (${statement.filename}) was received but could not be read as a bank statement (${o.error}). ${DOCUMENT_HINT}`);
+    parts.push(`File ${statement.id} (${statement.filename}) was received but could not be read as a bank statement (${o.error}). ${DOCUMENT_HINT}`, LANGUAGE_NOTE);
     return parts.join('\n');
   }
   if (o.line_count === 0) {
-    parts.push(`File ${statement.id} (${statement.filename}, ${o.format}) was received; it has no machine-readable statement lines. ${DOCUMENT_HINT}`);
+    parts.push(`File ${statement.id} (${statement.filename}, ${o.format}) was received; it has no machine-readable statement lines. ${DOCUMENT_HINT}`, LANGUAGE_NOTE);
     return parts.join('\n');
   }
   parts.push(
@@ -264,6 +267,7 @@ export function buildIngestMessage(statement: Statement, o: IngestOutcome, userM
     o.account_id ? `Ledger account: ${o.account_id}.` : 'The ledger account is not known yet: resolve it with match_account from the statement metadata and the user, and record it with note_add (scope account, note "statement_source=<institution>:<acctid>").',
     o.duplicate ? 'This exact file was ingested before; flags were recomputed against the ledger as it is now.' : '',
     'Build the insertion plan: read statement_lines, categorise with classify_candidates, pair transfers and card payments, draft with plan_create/plan_set_items, run the balance check, then plan_finalize. Report continuity breaks before anything else.',
+    LANGUAGE_NOTE,
   );
   return parts.filter((p) => p !== '').join('\n');
 }

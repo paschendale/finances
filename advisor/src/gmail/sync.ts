@@ -71,6 +71,14 @@ export class GmailSync {
       throw err;
     }
 
+    // A claim without an outcome after a while means the daemon died mid-message (a redeploy). Those
+    // ids may have left the history window already, so they are taken again by id here.
+    const stale = await this.ctx.db.query<{ external_id: string }>(
+      `DELETE FROM advisor_events WHERE source = 'gmail' AND outcome IS NULL AND created_at < now() - interval '10 minutes' RETURNING external_id`,
+    );
+    for (const row of stale.rows) if (!ids.includes(row.external_id)) ids.push(row.external_id);
+    if (stale.rowCount) log.warn({ ids: stale.rows.map((r) => r.external_id) }, 'retaking mails left half-done');
+
     for (const id of ids) {
       if (!(await claimEvent(this.ctx.db, { source: 'gmail', external_id: id, kind: 'message' }))) continue;
       try {
@@ -110,7 +118,7 @@ export class GmailSync {
    * interactive turn instead of waiting for the gated background job). A mail already handled is
    * processed again only with `force`.
    */
-  async ingestMessage(id: string, opts: { actor: string; force?: boolean }): Promise<{ outcome: string; conversation_id: string | null }> {
+  async ingestMessage(id: string, opts: { actor: string; force?: boolean; plan?: boolean }): Promise<{ outcome: string; conversation_id: string | null }> {
     const claimed = await claimEvent(this.ctx.db, { source: 'gmail', external_id: id, kind: 'message', payload: { manual: opts.actor } });
     if (!claimed && !opts.force) {
       const prev = await this.ctx.db.query<{ payload: unknown }>('SELECT payload FROM advisor_events WHERE source = $1 AND external_id = $2', ['gmail', id]);
@@ -118,7 +126,7 @@ export class GmailSync {
     }
     const r = await this.processMessage(id, { interactive: true, actor: opts.actor });
     await setEventOutcome(this.ctx.db, 'gmail', id, r.outcome);
-    if (r.conversation_id) {
+    if (r.conversation_id && opts.plan !== false) {
       // Plan right away, together with whatever else of that account is still waiting.
       const waiting = await findWaitingStatements(this.ctx, r.conversation_id);
       if (waiting.length > 0) void startPlanningTurn(this.ctx, r.conversation_id, waiting, { actor: opts.actor, kind: 'interactive' });
