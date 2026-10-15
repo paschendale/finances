@@ -605,8 +605,9 @@ they belong to a later period.
    until a later statement clears it.
 
 **Locking.** Cleared entries belong to a closed period. A plan item that would update or delete a cleared
-entry is flagged `reopens_reconciliation`; the applier refuses it unless the user explicitly keeps the
-flag, and then marks the affected reconciliation `open` again with a note. The Ledger shows a small check
+entry may be flagged `reopens_reconciliation` as a hint; approving the plan is enough — the applier
+marks the affected reconciliation `open` again with a note and closes it again after apply when it
+still balances (2026-10-15: the old "refuse unless flagged" rule blocked simple recategorisations). The Ledger shows a small check
 glyph on cleared rows and, in the expanded row, which statement cleared it and the raw statement text
 (mockup board "Ledger · cleared glyph"). Editing a cleared entry in the Ledger asks for confirmation and
 reopens the reconciliation the same way.
@@ -678,7 +679,7 @@ ids, household of two) and add:
 - **Applier** (`plan/apply.ts`): runs items in `seq` order, each through PostgREST with
   `p_metadata` provenance (including `statement_line`, which also teaches `merchant_aliases` inside the
   RPC); `update` re-sends full entries; `delete` only for items Claude marked and the user kept; items
-  flagged `reopens_reconciliation` only when the user kept the flag; `adjust` as in §8; `budget_upsert`
+  on cleared entries reopen the period automatically; `adjust` as in §8; `budget_upsert`
   → `upsert_budget_item`; `mark_checked` → `PATCH /accounts?id=eq.<id>` with `last_checked = now()`.
   Per-item status and error; partial failure leaves the plan `failed` with applied items recorded, never
   rolled back silently. After apply: `open_reconciliation` + `set_reconciliation_items` +

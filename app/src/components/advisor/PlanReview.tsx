@@ -39,7 +39,7 @@ export function PlanReview({ planId, onBack, mobile }: { planId: string; onBack:
     onError: (e: Error) => setNotice((e as AdvisorApiError).body ? `Essa alteração não é válida: ${JSON.stringify(((e as AdvisorApiError).body as { issues?: unknown }).issues ?? e.message)}` : e.message),
   });
   const approve = useMutation({
-    mutationFn: () => approvePlan(planId, data!.plan.version, data!.items.some((i) => Boolean(i.payload?.reopens_reconciliation))),
+    mutationFn: () => approvePlan(planId, data!.plan.version),
     onSuccess: (r) => {
       invalidate();
       void qc.invalidateQueries({ queryKey: ['transactions'] });

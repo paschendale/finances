@@ -273,8 +273,8 @@ export const fetchPlans = (status?: string) => request<Plan[]>(`/plans${status ?
 export const fetchPlan = (id: string) => request<PlanDetail>(`/plans/${id}`);
 export const patchPlanItem = (planId: string, itemId: string, patch: Partial<Pick<PlanItem, 'kind' | 'date' | 'description' | 'entries' | 'payload'>> & { status?: 'proposed' | 'edited' | 'removed' }) =>
   request<{ item: PlanItem; version: number }>(`/plans/${planId}/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(patch) });
-export const approvePlan = (id: string, version: number, keepReopenFlags = false) =>
-  request<ApplyResult>(`/plans/${id}/approve`, { method: 'POST', body: JSON.stringify({ version, keep_reopen_flags: keepReopenFlags }) });
+export const approvePlan = (id: string, version: number) =>
+  request<ApplyResult>(`/plans/${id}/approve`, { method: 'POST', body: JSON.stringify({ version }) });
 export const rejectPlan = (id: string) => request<Plan>(`/plans/${id}/reject`, { method: 'POST' });
 export const replan = (id: string, message: string) => request<{ accepted: boolean }>(`/plans/${id}/replan`, { method: 'POST', body: JSON.stringify({ message }) });
 export const fetchReconciliationStatus = () => request<ReconciliationStatus[]>('/accounts/reconciliation-status');

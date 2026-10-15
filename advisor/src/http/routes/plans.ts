@@ -28,6 +28,7 @@ const itemPatchSchema = z.object({
   status: z.enum(['proposed', 'edited', 'removed']).optional(),
 });
 
+// keep_reopen_flags is accepted and ignored: cleared entries are reopened automatically.
 const approveSchema = z.object({ version: z.number().int(), keep_reopen_flags: z.boolean().optional() });
 const replanSchema = z.object({ message: z.string().min(1).max(10_000) });
 
@@ -97,7 +98,7 @@ export function planRoutes(ctx: AppContext): Hono<Env> {
     const body = approveSchema.parse(await c.req.json());
     const actor = c.get('actor');
     try {
-      const result = await approveAndApply(ctx, c.req.param('id'), { actor: actor.id, version: body.version, keepReopenFlags: body.keep_reopen_flags });
+      const result = await approveAndApply(ctx, c.req.param('id'), { actor: actor.id, version: body.version });
       return c.json(result, result.status === 'applied' ? 200 : 207);
     } catch (err) {
       if (err instanceof ApplyError) return c.json({ error: err.message }, err.status as 400);

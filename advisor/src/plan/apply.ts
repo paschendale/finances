@@ -131,7 +131,7 @@ export async function reconcileAppliedPlan(ctx: AppContext, planId: string, acto
   return outcome;
 }
 
-export async function approveAndApply(ctx: AppContext, planId: string, opts: { actor: string; version: number; keepReopenFlags?: boolean }): Promise<ApplyResult> {
+export async function approveAndApply(ctx: AppContext, planId: string, opts: { actor: string; version: number }): Promise<ApplyResult> {
   const plan = await getPlan(ctx.db, planId);
   if (!plan) throw new ApplyError('Plano não encontrado.', 404);
   if (plan.status !== 'pending_approval') throw new ApplyError(plan.status === 'applied' ? 'Este plano já foi gravado.' : plan.status === 'rejected' ? 'Este plano já foi descartado.' : 'Este plano não está mais esperando aprovação.', 409);
@@ -301,21 +301,17 @@ async function updateAccount(ctx: AppContext, p: AccountUpdatePayload): Promise<
 }
 
 /**
- * An update/delete on an entry cleared by a closed reconciliation needs the item's
- * `reopens_reconciliation` flag; the reconciliation is reopened (and remembered in `reopened`, so it
- * can be closed again after apply when it still balances). Open reconciliations are remembered too.
+ * An update/delete on an entry cleared by a closed reconciliation reopens that reconciliation (and
+ * remembers it in `reopened`, so it is closed again after apply when it still balances). No flag or
+ * extra confirmation is needed: approving the plan is the confirmation. Open reconciliations are
+ * remembered too.
  */
-async function guardCleared(ctx: AppContext, item: PlanItem, actor: string, keepReopenFlags: boolean | undefined, reopened: Map<string, string>): Promise<void> {
+async function guardCleared(ctx: AppContext, item: PlanItem, actor: string, reopened: Map<string, string>): Promise<void> {
   if (!item.transaction_id) return;
   const clearings = await clearingsForTransaction(ctx, item.transaction_id);
   if (clearings.length === 0) return;
   const closed = clearings.filter((c) => c.status === 'balanced' || c.status === 'adjusted');
   for (const c of clearings) if (!reopened.has(c.reconciliation_id)) reopened.set(c.reconciliation_id, c.status);
-  if (closed.length === 0) return;
-  const flagged = Boolean((item.payload as Record<string, unknown>).reopens_reconciliation);
-  if (!flagged || keepReopenFlags === false) {
-    throw new Error(`este lançamento já foi conferido com o extrato até ${closed[0]!.period_end}; para alterá-lo é preciso reabrir essa conferência`);
-  }
   for (const c of new Map(closed.map((c) => [c.reconciliation_id, c])).values()) {
     await ctx.pg.rpc('reopen_reconciliation', { p_id: c.reconciliation_id, p_notes: `reopened by plan ${item.plan_id} item #${item.seq} (${item.kind}) approved by ${actor}` });
   }
@@ -347,7 +343,7 @@ async function recloseReopened(ctx: AppContext, planId: string, reopened: Map<st
   return out;
 }
 
-async function applyItem(ctx: AppContext, plan: PlanWithCounts, item: PlanItem, statement: Statement | null, opts: { actor: string; keepReopenFlags?: boolean; reopened: Map<string, string> }): Promise<string | null> {
+async function applyItem(ctx: AppContext, plan: PlanWithCounts, item: PlanItem, statement: Statement | null, opts: { actor: string; reopened: Map<string, string> }): Promise<string | null> {
   const payload = item.payload as Record<string, unknown>;
   switch (item.kind) {
     case 'skip':
@@ -363,7 +359,7 @@ async function applyItem(ctx: AppContext, plan: PlanWithCounts, item: PlanItem, 
       return res.id;
     }
     case 'update': {
-      await guardCleared(ctx, item, opts.actor, opts.keepReopenFlags, opts.reopened);
+      await guardCleared(ctx, item, opts.actor, opts.reopened);
       // update_transaction recreates the entries, which drops their clearings: carry them over.
       const snapshot = await snapshotClearings(ctx.db, item.transaction_id!);
       const res = await ctx.pg.rpc<{ id: string }>('update_transaction', {
@@ -377,7 +373,7 @@ async function applyItem(ctx: AppContext, plan: PlanWithCounts, item: PlanItem, 
       return res.id;
     }
     case 'delete': {
-      await guardCleared(ctx, item, opts.actor, opts.keepReopenFlags, opts.reopened);
+      await guardCleared(ctx, item, opts.actor, opts.reopened);
       const okDel = await ctx.pg.rpc<boolean>('delete_transaction', { p_id: item.transaction_id });
       if (okDel === false) throw new Error('transaction not found');
       return item.transaction_id;

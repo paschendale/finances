@@ -1,5 +1,9 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-10-15 — Advisor: recategorising cleared entries no longer blocked
+
+In the production conversation "Reclassificar vestuário", 15 Nubank card purchases (Jul–Oct 2026) could not be moved out of `vestuario`: the applier refused every update/delete on an entry cleared by a closed reconciliation unless the item carried `reopens_reconciliation` *and* the approval sent `keep_reopen_flags`. Three plans failed on the first such item. The maintainer called the rule unnecessary. `guardCleared` (`advisor/src/plan/apply.ts`) now always reopens the closed periods it touches; after apply `recloseReopened` closes them again when they still balance (a category change never moves the card balance). `keep_reopen_flags` is accepted and ignored; the flag stays only as a review hint. Prompt, README and ADVISOR.md updated.
+
 ## 2026-10-15 — App: one page width for every view
 
 After the Ledger kept a 1024px column while the other views went full width, switching views changed the width and the Ledger looked cramped (and would look stretched at full width). Every view now shares one centred column: `PAGE_WIDTH` (`max-w-7xl`, 1280px) on the header, the pending-plans banner and `main`, with side padding on the page wrapper (16px phones, 24px tablets, 32px desktop). `PendingPlansBanner` takes a `className` instead of `boxed`.

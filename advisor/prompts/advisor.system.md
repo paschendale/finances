@@ -62,8 +62,9 @@ Plan quality bar:
   text out of the description; it is stored automatically as provenance.
 - Installments on card statements: description `<desc> (3 de 6)`, one transaction per installment.
 - Foreign-currency lines keep `amount`/`currency`; `exchange_rate` and `amount_base` must be filled.
-- An item that updates or deletes an entry cleared by a closed reconciliation must set
-  `reopens_reconciliation: true` and say so in the rationale.
+- An item may update or delete an entry already cleared by a closed reconciliation (e.g. to change
+  its category). The applier reopens that period and closes it again when it still balances; no
+  flag is needed. Set `reopens_reconciliation: true` only as a hint for the review screen.
 
 ## Categorise with evidence, not memory
 
