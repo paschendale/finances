@@ -28,7 +28,7 @@ export async function ignoreDuplicateStatements(ctx: AppContext): Promise<number
        AND d.institution IS NOT DISTINCT FROM s.institution AND d.kind = s.kind
        AND d.period_start IS NOT DISTINCT FROM s.period_start AND d.period_end IS NOT DISTINCT FROM s.period_end
        AND s.period_start IS NOT NULL
-       AND NOT EXISTS (SELECT 1 FROM advisor_plans p WHERE p.statement_id = s.id)
+       AND NOT EXISTS (SELECT 1 FROM advisor_plans p WHERE p.status <> 'rejected' AND (p.statement_id = s.id OR s.id = ANY(COALESCE(p.statement_ids, '{}'::uuid[]))))
        AND NOT EXISTS (SELECT 1 FROM advisor_messages m WHERE m.conversation_id = s.conversation_id)
      RETURNING s.id, s.conversation_id`,
   );
@@ -66,7 +66,7 @@ export async function findWaitingStatements(ctx: AppContext, conversationId?: st
      JOIN advisor_conversations c ON c.id = s.conversation_id
      WHERE s.source = 'gmail' AND s.status IN ('parsed','failed') AND s.conversation_id IS NOT NULL
        AND ($1::uuid IS NULL OR s.conversation_id = $1::uuid)
-       AND NOT EXISTS (SELECT 1 FROM advisor_plans p WHERE p.statement_id = s.id)
+       AND NOT EXISTS (SELECT 1 FROM advisor_plans p WHERE p.status <> 'rejected' AND (p.statement_id = s.id OR s.id = ANY(COALESCE(p.statement_ids, '{}'::uuid[]))))
        AND (
          (c.channel = 'system' AND (SELECT count(*) FROM advisor_messages m WHERE m.conversation_id = s.conversation_id AND m.role = 'user' AND m.created_at > s.created_at) < $3)
          OR (c.channel <> 'system' AND NOT EXISTS (SELECT 1 FROM advisor_messages m WHERE m.conversation_id = s.conversation_id AND m.role = 'user' AND m.created_at > s.created_at))

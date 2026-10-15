@@ -78,7 +78,7 @@ export function registerAdvisorTools(server: McpServer, ctx: AppContext, session
           `SELECT s.id, s.filename, s.institution, s.kind, s.format, s.status, s.period_start, s.period_end, s.opening_balance, s.closing_balance,
                   s.account_id, s.source, s.created_at, s.conversation_id, c.title AS conversation_title,
                   COALESCE(jsonb_array_length(s.lines), 0)::int AS line_count,
-                  (s.status IN ('parsed','failed') AND NOT EXISTS (SELECT 1 FROM advisor_plans p WHERE p.statement_id = s.id)) AS waiting
+                  (s.status IN ('parsed','failed') AND NOT EXISTS (SELECT 1 FROM advisor_plans p WHERE p.status <> 'rejected' AND (p.statement_id = s.id OR s.id = ANY(COALESCE(p.statement_ids, '{}'::uuid[]))))) AS waiting
            FROM advisor_statements s LEFT JOIN advisor_conversations c ON c.id = s.conversation_id
            WHERE ($1::text IS NULL OR s.institution = $1) AND ($2::text IS NULL OR s.kind = $2)
            ORDER BY s.created_at DESC LIMIT $3`,
@@ -117,7 +117,7 @@ export function registerAdvisorTools(server: McpServer, ctx: AppContext, session
           const st = await getStatement(db, id);
           if (!st) throw new Error(`statement ${id} not found`);
           if (st.conversation_id !== session.conversationId) {
-            const planned = await maybeOne(db, 'SELECT 1 FROM advisor_plans WHERE statement_id = $1', [id]);
+            const planned = await maybeOne(db, `SELECT 1 FROM advisor_plans WHERE status <> 'rejected' AND (statement_id = $1 OR $1 = ANY(COALESCE(statement_ids, '{}'::uuid[])))`, [id]);
             if (planned) throw new Error(`statement ${id} already has a plan in conversation ${st.conversation_id}`);
             if (st.conversation_id && ctx.sessions.isBusy(st.conversation_id)) throw new Error(`statement ${id} is being planned right now in conversation ${st.conversation_id}`);
             const source = st.conversation_id;
@@ -179,7 +179,7 @@ export function registerAdvisorTools(server: McpServer, ctx: AppContext, session
         if (st.conversation_id !== session.conversationId) throw new Error('statement belongs to another conversation (statement_claim it first)');
         const updated = await updateStatement(db, id, patch);
         const { lines, ...rest } = updated;
-        const applied = await maybeOne<{ id: string }>(db, `SELECT id FROM advisor_plans WHERE statement_id = $1 AND status = 'applied' ORDER BY applied_at DESC LIMIT 1`, [id]);
+        const applied = await maybeOne<{ id: string }>(db, `SELECT id FROM advisor_plans WHERE status = 'applied' AND (statement_id = $1 OR $1 = ANY(COALESCE(statement_ids, '{}'::uuid[]))) ORDER BY applied_at DESC LIMIT 1`, [id]);
         let reconciliation: unknown = null;
         if (applied) {
           try {

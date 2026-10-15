@@ -413,6 +413,12 @@ export async function rejectPlan(ctx: AppContext, planId: string, actor: string)
   if (!plan) throw new ApplyError('Plano não encontrado.', 404);
   if (!['draft', 'pending_approval'].includes(plan.status)) throw new ApplyError(plan.status === 'applied' ? 'Este plano já foi gravado e não pode ser descartado.' : 'Este plano já foi tratado.', 409);
   await updatePlan(ctx.db, planId, { status: 'rejected', approved_by: actor, result: { ...(plan.result ?? {}), rejected_by: actor, rejected_at: new Date().toISOString() } });
+  // Its statements go back to waiting unless another live plan still covers them.
+  await ctx.db.query(
+    `UPDATE advisor_statements s SET status = 'parsed' WHERE s.status = 'planned' AND s.id = ANY($1::uuid[])
+       AND NOT EXISTS (SELECT 1 FROM advisor_plans p WHERE p.id <> $2 AND p.status <> 'rejected' AND (p.statement_id = s.id OR s.id = ANY(COALESCE(p.statement_ids, '{}'::uuid[]))))`,
+    [planStatementIds(plan), planId],
+  );
   const fresh = (await getPlan(ctx.db, planId))!;
   ctx.bus.emitConversation(plan.conversation_id, { type: 'plan', planId, status: fresh.status, version: fresh.version });
   ctx.bus.emitGlobal({ type: 'plan', planId, conversationId: plan.conversation_id, status: fresh.status });
