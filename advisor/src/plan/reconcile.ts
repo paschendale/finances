@@ -8,7 +8,7 @@ import { balanceCheck, planDeltasByAccount, round2, type AccountInfo, type Balan
 export async function loadAccounts(q: Queryable): Promise<Map<string, AccountInfo>> {
   const rows = await many<AccountInfo>(
     q,
-    `SELECT h.id, h.full_name, h.type, a.hidden FROM account_names_hierarchical h JOIN accounts a ON a.id = h.id`,
+    `SELECT h.id, h.full_name, h.type, a.hidden, a.subtype FROM account_names_hierarchical h JOIN accounts a ON a.id = h.id`,
   );
   return new Map(rows.map((r) => [r.id, r]));
 }

@@ -12,7 +12,8 @@ export type ConversationEvent =
 export type GlobalEvent =
   | { type: 'plan'; planId: string; conversationId: string; status: string }
   | { type: 'statement'; statementId: string; conversationId: string | null; status: string }
-  | { type: 'health'; claude: boolean };
+  | { type: 'health'; claude: boolean }
+  | { type: 'accounts'; planId: string };
 
 export class Bus {
   private emitter = new EventEmitter();

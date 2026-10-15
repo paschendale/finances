@@ -148,10 +148,14 @@ export function registerLedgerReadTools(server: McpServer, pg: PostgrestClient):
     'list_accounts_hierarchical',
     {
       title: 'List Accounts Hierarchical',
-      description: 'All visible accounts with their full hierarchical name (e.g. alimentacao:basica), type, subtype, parent.',
+      description:
+        'All visible accounts with their full hierarchical name (e.g. alimentacao:basica), type, subtype, parent, balance. Subtypes checking/emergency/investments/liabilities are shown on the dashboard as money; property (a house, a car) and loan (a mortgage) are tracked but not shown as money; null is not grouped.',
       inputSchema: z.object({}),
     },
-    async () => runTool(() => pg.get('account_names_hierarchical', new URLSearchParams({ hidden: 'is.false', order: 'full_name.asc' }))),
+    async () =>
+      runTool(() =>
+        pg.get('account_balances', new URLSearchParams({ select: 'id:account_id,full_name:account_name,type:account_type,subtype,parent_id,balance,last_checked', hidden: 'is.false', order: 'account_name.asc' })),
+      ),
   );
 
   server.registerTool(

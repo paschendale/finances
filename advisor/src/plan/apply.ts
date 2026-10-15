@@ -4,7 +4,8 @@ import type { PlanItem, PlanWithCounts, Statement, StatementLine } from '../db/t
 import { getPlan, listPlanItems, updatePlan, updatePlanItem } from '../db/repo/plans.js';
 import { getStatement, updateStatement } from '../db/repo/statements.js';
 import { ensureStatementAccount, loadAccounts, reconcileAfterApply, type ReconcileOutcome } from './reconcile.js';
-import { validatePlanItems, type PlanItemInputShape } from './schema.js';
+import { validatePlanItems, type AccountCreatePayload, type AccountUpdatePayload, type PlanItemInputShape } from './schema.js';
+import { PostgrestError } from '../postgrest/client.js';
 import { scoped } from '../log.js';
 
 const log = scoped('plan.apply');
@@ -95,9 +96,20 @@ export async function approveAndApply(ctx: AppContext, planId: string, opts: { a
   let statement = plan.statement_id ? await getStatement(ctx.db, plan.statement_id) : null;
   if (statement) statement = await ensureStatementAccount(ctx.db, statement, items);
   const result: ApplyResult = { plan_id: planId, status: 'applied', applied: 0, failed: 0, skipped: 0, items: [], reconciliation: null };
+  /** `new:<ref>` → id of the account created by an earlier item of this run */
+  const created = new Map<string, string>();
 
-  for (const item of items) {
+  for (const rawItem of items) {
+    const item = resolveNewAccounts(rawItem, created);
     try {
+      if (item.kind === 'account_create') {
+        const id = await createAccount(ctx, item.payload as unknown as AccountCreatePayload);
+        created.set(`new:${(item.payload as unknown as AccountCreatePayload).ref}`, id);
+        await updatePlanItem(ctx.db, planId, item.id, { status: 'applied', payload: { ...item.payload, account_id: id }, error: null });
+        result.applied++;
+        result.items.push({ id: item.id, seq: item.seq, kind: item.kind, status: 'applied', transaction_id: null, error: null });
+        continue;
+      }
       const txId = await applyItem(ctx, plan, item, statement, opts);
       await updatePlanItem(ctx.db, planId, item.id, { status: 'applied', applied_transaction_id: txId, error: null });
       if (item.kind === 'skip') result.skipped++;
@@ -124,6 +136,8 @@ export async function approveAndApply(ctx: AppContext, planId: string, opts: { a
     await updateStatement(ctx.db, statement.id, { status: 'applied' });
     ctx.bus.emitGlobal({ type: 'statement', statementId: statement.id, conversationId: statement.conversation_id, status: 'applied' });
   }
+
+  if (created.size > 0 || items.some((i) => i.kind === 'account_update')) ctx.bus.emitGlobal({ type: 'accounts', planId });
 
   result.status = result.failed > 0 ? 'failed' : 'applied';
   const stored = await updatePlan(ctx.db, planId, {
@@ -169,6 +183,42 @@ function summarise(r: ApplyResult): Record<string, unknown> {
         }
       : null,
   };
+}
+
+/** Replace `new:<ref>` placeholders (entries and payload account ids) with the ids created earlier in this run. */
+function resolveNewAccounts(item: PlanItem, created: Map<string, string>): PlanItem {
+  if (created.size === 0) return item;
+  const sub = (v: unknown): unknown => (typeof v === 'string' && created.has(v) ? created.get(v) : v);
+  const payload = { ...(item.payload as Record<string, unknown>) };
+  for (const k of ['account_id', 'parent_id']) if (k in payload) payload[k] = sub(payload[k]);
+  return { ...item, payload, entries: item.entries.map((e) => ({ ...e, account_id: String(sub(e.account_id)) })) };
+}
+
+const ACCOUNT_COLUMNS = 'id,name,type,subtype,parent_id,hidden';
+
+/** Creates the account through PostgREST; an identical account that already exists is reused. */
+async function createAccount(ctx: AppContext, p: AccountCreatePayload): Promise<string> {
+  const body: Record<string, unknown> = { name: p.name, type: p.type, subtype: p.subtype ?? null, parent_id: p.parent_id ?? null, hidden: Boolean(p.hidden) };
+  if (p.icon) body.icon = p.icon;
+  if (p.color) body.color = p.color;
+  try {
+    const row = await ctx.pg.post<{ id: string }>('accounts', body);
+    return row.id;
+  } catch (err) {
+    if (err instanceof PostgrestError && err.status === 409) {
+      const params = new URLSearchParams({ select: ACCOUNT_COLUMNS, name: `eq.${p.name}`, parent_id: p.parent_id ? `eq.${p.parent_id}` : 'is.null' });
+      const rows = await ctx.pg.get<Array<{ id: string; type: string }>>('accounts', params);
+      const same = rows.find((r) => r.type === p.type);
+      if (same) return same.id;
+    }
+    throw err;
+  }
+}
+
+async function updateAccount(ctx: AppContext, p: AccountUpdatePayload): Promise<void> {
+  const patch: Record<string, unknown> = {};
+  for (const k of ['name', 'subtype', 'parent_id', 'icon', 'color', 'hidden'] as const) if (p[k] !== undefined) patch[k] = p[k];
+  await ctx.pg.patch('accounts', new URLSearchParams({ id: `eq.${p.account_id}` }), patch);
 }
 
 async function guardCleared(ctx: AppContext, item: PlanItem, actor: string, keepReopenFlags: boolean | undefined): Promise<void> {
@@ -231,6 +281,10 @@ async function applyItem(ctx: AppContext, plan: PlanWithCounts, item: PlanItem, 
     }
     case 'budget_delete': {
       await ctx.pg.rpc('delete_budget_item', { p_id: payload.id });
+      return null;
+    }
+    case 'account_update': {
+      await updateAccount(ctx, payload as unknown as AccountUpdatePayload);
       return null;
     }
     case 'mark_checked': {

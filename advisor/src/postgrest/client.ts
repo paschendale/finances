@@ -35,6 +35,7 @@ function decodeJwtExp(jwt: string): number {
 export interface PostgrestClient {
   rpc<T = unknown>(name: string, args: Record<string, unknown>): Promise<T>;
   get<T = unknown>(view: string, params?: URLSearchParams, headers?: Record<string, string>): Promise<T>;
+  post<T = unknown>(table: string, body: Record<string, unknown>): Promise<T>;
   patch<T = unknown>(table: string, params: URLSearchParams, body: Record<string, unknown>): Promise<T>;
   login(): Promise<string>;
 }
@@ -101,6 +102,17 @@ export function createPostgrestClient(baseUrl: string, rawToken: string, fetchIm
         fetchImpl(`${base}/${view}${qs ? `?${qs}` : ''}`, { headers: { Authorization: `Bearer ${jwt}`, ...headers } }),
       );
       return parse<T>(res);
+    },
+    async post<T>(table: string, body: Record<string, unknown>): Promise<T> {
+      const res = await withRetry((jwt) =>
+        fetchImpl(`${base}/${table}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}`, Prefer: 'return=representation' },
+          body: JSON.stringify(body),
+        }),
+      );
+      const rows = await parse<T[] | T>(res);
+      return (Array.isArray(rows) ? rows[0] : rows) as T;
     },
     async patch<T>(table: string, params: URLSearchParams, body: Record<string, unknown>): Promise<T> {
       const res = await withRetry((jwt) =>

@@ -92,7 +92,7 @@ export interface Statement {
 }
 
 export type PlanStatus = 'draft' | 'pending_approval' | 'approved' | 'applying' | 'applied' | 'rejected' | 'failed';
-export type PlanItemKind = 'create' | 'update' | 'delete' | 'adjust' | 'budget_upsert' | 'budget_delete' | 'mark_checked' | 'skip';
+export type PlanItemKind = 'create' | 'update' | 'delete' | 'adjust' | 'budget_upsert' | 'budget_delete' | 'mark_checked' | 'skip' | 'account_create' | 'account_update';
 export type PlanItemStatus = 'proposed' | 'edited' | 'removed' | 'applied' | 'failed';
 
 export interface PlanEntry {

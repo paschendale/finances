@@ -41,6 +41,32 @@ describe('validatePlanItems', () => {
     const mc = planItemInputSchema.parse({ kind: 'mark_checked', payload: { account_id: A } });
     expect(validatePlanItems([mc], accounts)).toEqual([]);
   });
+  it('validates account_create and lets later items use new:<ref>', () => {
+    const create = planItemInputSchema.parse({ kind: 'account_create', payload: { ref: 'casa', name: 'casa-imovel', type: 'asset', subtype: 'property' } });
+    const use = planItemInputSchema.parse({ kind: 'create', date: '2026-09-11', description: 'ITBI', entries: [entry('new:casa', 13400), entry(A, -13400)] });
+    expect(validatePlanItems([create, use], accounts)).toEqual([]);
+    // the placeholder must be declared earlier in the plan
+    expect(validatePlanItems([use, create], accounts).map((i) => i.message)).toContain('new:casa is not created by an earlier account_create item');
+    // bad payloads
+    const bad = planItemInputSchema.parse({ kind: 'account_create', payload: { ref: 'x', name: 'Casa Imóvel', type: 'asset', subtype: 'loan' } });
+    const msgs = validatePlanItems([bad], accounts).map((i) => i.message);
+    expect(msgs.some((m) => m.includes('lowercase slug'))).toBe(true);
+    expect(msgs.some((m) => m.includes('does not fit a asset'))).toBe(true);
+    // an existing account must be reused, not recreated
+    const dup = planItemInputSchema.parse({ kind: 'account_create', payload: { ref: 'nu', name: 'nu-conta', type: 'asset' } });
+    expect(validatePlanItems([dup], accounts).map((i) => i.message)[0]).toMatch(/already exists/);
+    // parent must exist and share the type
+    const child = planItemInputSchema.parse({ kind: 'account_create', payload: { ref: 'c', name: 'juros', type: 'expense', parent_id: A } });
+    expect(validatePlanItems([child], accounts).map((i) => i.message)[0]).toMatch(/child must be asset/);
+  });
+  it('validates account_update payloads', () => {
+    const ok = planItemInputSchema.parse({ kind: 'account_update', payload: { account_id: A, subtype: 'property' } });
+    expect(validatePlanItems([ok], accounts)).toEqual([]);
+    const nothing = planItemInputSchema.parse({ kind: 'account_update', payload: { account_id: A } });
+    expect(validatePlanItems([nothing], accounts).map((i) => i.message)[0]).toMatch(/changes nothing/);
+    const unknown = planItemInputSchema.parse({ kind: 'account_update', payload: { account_id: '55555555-5555-4555-8555-555555555555', hidden: true } });
+    expect(validatePlanItems([unknown], accounts).map((i) => i.message)[0]).toMatch(/known account_id/);
+  });
   it('tolerates floating point noise under half a cent', () => {
     const item = planItemInputSchema.parse({ kind: 'create', date: '2026-10-01', description: 'x', entries: [entry(CAT, 0.1 + 0.2), entry(A, -0.3)] });
     expect(validatePlanItems([item], accounts)).toEqual([]);
