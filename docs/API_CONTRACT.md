@@ -466,7 +466,7 @@ Supports filtering: `?plan_id=eq.<uuid>`
 
 ---
 
-## Provenance, classification and reconciliation (migrations 0047–0052)
+## Provenance, classification and reconciliation (migrations 0047–0054)
 
 Added for the AI advisor (`docs/ADVISOR.md`). Everything below is plain PostgREST; the advisor daemon's
 own HTTP API is documented in `advisor/README.md`.
@@ -510,6 +510,13 @@ averages, `n_matches`, `last_seen`, `alias`, `same_amount_count`, `same_account_
 `match_description_memory(p_input)` keeps its previous shape and is now a wrapper over this function;
 `description_memories_with_names` is a derived view over `transaction_lines` with the same columns as
 before (`description_memories` is no longer written).
+
+### Performance (migration 0054)
+
+`transactions.norm_description` and `transactions.norm_raw` are stored generated columns
+(`normalize_text(description)`, `normalize_merchant(metadata #>> '{statement_line,raw}')`) with pg_trgm GIN
+indexes; `transaction_lines` reads them and `classify_candidates` pre-filters with `%` / `<%` at the
+eligibility threshold before scoring. Same results, about 20x faster on a 10k-transaction history.
 
 ### `merchant_aliases` (table), `normalize_merchant(text)`, `transaction_lines` (view)
 
