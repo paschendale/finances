@@ -16,7 +16,7 @@ import { computePlanBalance, ensureStatementAccount, loadAccounts, reconciliatio
  * with the system prompt it forms the conversation's `prompt_hash`; a mismatch on resume tells the
  * assistant its capabilities changed.
  */
-export const CAPABILITIES_VERSION = '2026-10-15.1';
+export const CAPABILITIES_VERSION = '2026-10-15.2';
 
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD');
 
