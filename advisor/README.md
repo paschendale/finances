@@ -49,6 +49,7 @@ npm run dev               # tsx watch, ADVISOR_CHANNELS=web by default
 | `FINANCES_TOKEN` | required | Plaintext finances token the daemon logs in with (dedicated row, revocable) |
 | `JWT_SECRET` | required | Verifies the web app's JWT (same value PostgREST uses) |
 | `PUBLIC_WEB_ORIGINS` | `http://localhost:5173,http://localhost:8080` | CORS allowlist for the web app |
+| `WEB_APP_URL` | unset | Public URL of the web app; when set, Discord trackers carry a deep link to the conversation/plan |
 | `ADVISOR_CHANNELS` | `web` | Comma list of `web`, `discord`, `gmail` |
 | `ADVISOR_ENV` / `PROD_DATABASE_NAME` | `dev` / `finances` | Safety rail: `prod` must point at the prod DB name, anything else must not |
 | `PORT` / `MCP_PORT` | `3100` / `3101` | HTTP API (0.0.0.0) and local MCP server (127.0.0.1 only) |
@@ -90,12 +91,32 @@ Create a bot application, enable the **Message Content** intent, invite it with 
 `DISCORD_OBEYED_USER_IDS` (comma list; everyone else is ignored). Add `discord` to
 `ADVISOR_CHANNELS` and restart.
 
-- A message in the channel starts a thread and a conversation; messages in a thread are turns.
-- Attachments are ingested as uploads (≤ `UPLOAD_MAX_MB`).
-- A pending plan posts a summary with a CSV of the items; ✅ on the latest summary (or "aprova",
-  "pode aplicar") applies it; "rejeita" rejects.
-- "Nubank tá com 657,21" is a balance check-in; "sem movimento" after a stale nudge marks the account checked (via a plan).
-- Stale accounts (> `STALE_DAYS` since last check) and plans pending > 24 h are posted at most once a day.
+The channel is laid out for a phone. Every topic is one short **tracker** message in the channel,
+edited in place as the topic moves along; everything else happens in the topic's thread.
+
+- A message in the channel gets a tracker reply ("⏳ Pensando…") with a thread; the conversation runs
+  in the thread and the tracker ends as "✅ Respondido · <first sentence>" (or "⚠️" on failure).
+  Messages in a thread are turns; attachments are ingested as uploads (≤ `UPLOAD_MAX_MB`).
+- A plan waiting for approval sets the tracker to "🟡 Plano aguardando aprovação" with the counts and
+  the balance check, and posts a compact summary in the thread. ✅ on the summary or on the tracker
+  (or "aprova", "pode aplicar" in the thread) applies it; "rejeita" rejects. The tracker then reads
+  "✅ Aplicado · N lançamentos · conciliação fechada até dd/mm" (or "❌ Plano rejeitado").
+- Plans drafted from the web or Gmail that need approval open a tracker + thread in the channel too.
+- Replies are reformatted for mobile (one paragraph per line, tables as code blocks) and the assistant is
+  told to keep Discord answers to a few lines, offering detail on request.
+- Daily notices (accounts unchecked for > `STALE_DAYS`, plans pending > 24 h) are a tracker with a
+  one-line status plus the list in the thread; replying in that thread ("Nubank tá com 657,21", "sem
+  movimento") runs the check-in. The same notice on the same day edits the tracker instead of posting again.
+- Operational alerts (Claude re-auth) are a single short message.
+
+## Accounts from the advisor
+
+Plans may contain `account_create` items (`payload {ref, name, type, subtype, parent_id?}`) and
+`account_update` items (`payload {account_id, name?, subtype?, parent_id?, icon?, color?, hidden?}`).
+Later items in the same plan reference a new account as `account_id: "new:<ref>"`; the applier
+creates the account through PostgREST (`POST /accounts`, reusing an identical existing one) and
+substitutes the id before posting the entries. Subtypes `property` (asset) and `loan` (liability) keep
+an account out of the dashboard money cards and net worth while it stays a normal ledger account.
 
 ## Gmail (optional)
 

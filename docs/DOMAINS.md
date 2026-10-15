@@ -362,9 +362,16 @@ Fields:
 id
 name
 type
+subtype      -- checking | emergency | investments | liabilities | category | property | loan | null
 parent_id
+icon, color
+hidden       -- out of every list and out of the advisor's scope
+last_checked -- last balance check-in
 created_at
 ```
+
+`subtype` drives the dashboard: `checking`, `emergency`, `investments`, `liabilities` are money;
+`property` (a house, a car) and `loan` (a mortgage, a financing) are tracked but never shown as money.
 
 Example rows:
 

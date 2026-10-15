@@ -466,7 +466,7 @@ Supports filtering: `?plan_id=eq.<uuid>`
 
 ---
 
-## Provenance, classification and reconciliation (migrations 0047–0051)
+## Provenance, classification and reconciliation (migrations 0047–0052)
 
 Added for the AI advisor (`docs/ADVISOR.md`). Everything below is plain PostgREST; the advisor daemon's
 own HTTP API is documented in `advisor/README.md`.
@@ -535,6 +535,15 @@ Views: `entry_clearings` (cleared entry → reconciliation), `account_reconcilia
 (`reconciled_through`, `last_status`, `open_difference`, `suspense_balance` per asset/liability account).
 `account_balances` gained `reconciled_through` and `cleared_balance`; `transactions_with_entries` gained
 `clearing` (`{reconciliation_id, period_end, account_id, statement_ref}` or null).
+
+### `accounts.subtype` (migration 0052)
+
+`subtype` accepts `checking | emergency | investments | liabilities | category | property | loan`. The
+web dashboard shows `checking`, `emergency`, `investments` and `liabilities` as money (cards and net
+worth); `property` (an owned asset that is not money) and `loan` (a long-term liability) are ordinary
+ledger accounts that stay out of those cards; `null` is not grouped. Accounts are created and changed
+with plain table writes (`POST /accounts`, `PATCH /accounts?id=eq.<id>`), which the advisor also uses
+for its `account_create` / `account_update` plan items.
 
 ### `ajustes`
 

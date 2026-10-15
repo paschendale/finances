@@ -302,10 +302,13 @@ advisor_plans            id uuid pk, conversation_id fk, statement_id uuid null 
                          version int default 1, created_by text, approved_by text, approved_at,
                          applied_at, result jsonb, created_at, updated_at
 advisor_plan_items       id uuid pk, plan_id fk, seq int, kind text
-                         (create|update|delete|adjust|budget_upsert|budget_delete|mark_checked|skip),
+                         (create|update|delete|adjust|budget_upsert|budget_delete|mark_checked|skip|
+                          account_create|account_update),   -- the last two since migration 0052
                          transaction_id uuid null, date date, description text,
                          entries jsonb,               -- [{account_id, amount, currency, exchange_rate, amount_base}]
-                         payload jsonb,               -- kind-specific (budget fields, account for mark_checked)
+                                                      -- account_id may be "new:<ref>" → an account_create item earlier in the plan
+                         payload jsonb,               -- kind-specific (budget fields, account for mark_checked,
+                                                      -- {ref,name,type,subtype,parent_id} for account_create)
                          source_ref jsonb,            -- {statement_id, line_hash, fitid}
                          confidence numeric, rationale text,
                          status text (proposed|edited|removed|applied|failed), applied_transaction_id uuid,

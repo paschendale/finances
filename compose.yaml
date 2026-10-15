@@ -117,6 +117,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:-local-docker-jwt-not-for-production}
       PUBLIC_WEB_ORIGINS: ${APP_ORIGIN:-http://localhost:8080,http://127.0.0.1:8080}
       ADVISOR_CHANNELS: ${ADVISOR_CHANNELS:-web}
+      WEB_APP_URL: ${WEB_APP_URL:-}
       DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
       DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:-}
       DISCORD_CHANNEL_ID: ${DISCORD_CHANNEL_ID:-}

@@ -1,5 +1,22 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-10-15 — Advisor: first review feedback (Discord for mobile, dashboard CTA, accounts from plans)
+
+### What was implemented
+- **Discord redesigned for a phone.** One short *tracker* message per topic in the channel, edited in place as the topic moves along (`⏳ Pensando…` → `✅ Respondido · <headline>`; `🟡 Plano aguardando aprovação` → `⏳ Aplicando…` → `✅ Aplicado · N lançamentos · conciliação fechada até dd/mm`, or `❌ Plano rejeitado`); everything else in the topic's thread. Replies pass through `formatReply` (tables → code blocks, one paragraph per line, headings bold) and the system prompt tells the assistant to answer Discord turns in a few lines, offering detail on request. ✅ approves on the thread summary or on the tracker. The CSV attachment is gone; `WEB_APP_URL` (optional) adds a deep link to the plan. Daily nudges became `Notice`s (tracker + list in the thread; same key same day edits instead of re-posting), and the nudge thread is a conversation with the nudge as hidden context so replies run the check-in. `advisor/src/discord/{bot,poster}.ts`, `src/notify.ts`, `src/jobs/nudges.ts`, `src/config.ts`.
+- **Accounts from the advisor.** Plan item kinds `account_create` (`payload {ref, name, type, subtype, parent_id?}`; later items use `account_id: "new:<ref>"`) and `account_update` (`{account_id, name?, subtype?, parent_id?, icon?, color?, hidden?}`), validated against the ledger (slug names, subtype fits the type, parent type, no duplicate full name, placeholder declared earlier) and applied through `POST/PATCH /accounts` with placeholder substitution before entries are posted. Migration 0052 widens the kind check and adds account subtypes `property` (asset) and `loan` (liability), which the dashboard already leaves out of the money cards and net worth. Prompt section "Accounts and subtypes" tells the assistant to put the account in the plan instead of sending the person to the app, and never to use `hidden` for that. `src/plan/{schema,apply}.ts`, `src/postgrest/client.ts` (`post`), `src/mcp/tools/{advisor,ledger-read}.ts`, `prompts/advisor.system.md`.
+- **Dashboard call to action.** `AdvisorCta` under the balances, shown only when the advisor is reachable and there is something to do: accounts that moved after their last check, accounts unchecked for 30+ days, uncategorised entries (`sem-categoria`) in the selected range. Each row opens a conversation with the right message and hidden context. `app/src/lib/advisor-reasons.ts`, `app/src/components/advisor/AdvisorCta.tsx`.
+- **App.** Account form offers `property` / `loan` with a one-line explanation; plan review renders account items (label, payload) without a money column.
+- **Docs.** `advisor/README.md` (Discord behaviour, accounts, `WEB_APP_URL`), `docs/ADVISOR.md` kinds, `docs/API_CONTRACT.md` subtypes, `docs/DOMAINS.md` accounts fields, `LEDGER.md` Gmail steps, compose files.
+
+### Why
+Review of the first day on the dev instance: Discord messages were long walls of text unreadable on a phone and the channel had no state; the advisor told the user to create the house asset account in the app and said it could not post to hidden accounts (the right tool was a subtype, not `hidden`); the dashboard had no entry point when the ledger needed attention.
+
+### Tests
+`advisor/`: 67 tests (new: account item validation and placeholders, `mobileify`/`headline`/tracker build+parse). `app/`: 60 tests (new: `advisorReasons`), build clean, lint parity.
+
+---
+
 ## 2026-10-14 — AI Finances Advisor: implementation (phases 0–3) and dev deployment
 
 ### What was implemented

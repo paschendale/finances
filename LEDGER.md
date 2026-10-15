@@ -38,7 +38,7 @@ On the maintainer's history `classify_candidates('TAMPOPO ALIMENTOS LTDA', …)`
 
 ## Advisor: Gmail channel needs a Google OAuth client
 
-The watcher is implemented (`advisor/src/gmail`) but no Google Cloud desktop OAuth client exists yet, so the maintainer's dev instance runs `ADVISOR_CHANNELS=web,discord`. Run `node advisor/ops/gmail-auth.mjs <client_id> <client_secret>` once a client is created and add `gmail` to the channels.
+The watcher is implemented (`advisor/src/gmail`) but no Google Cloud desktop OAuth client exists yet, so the maintainer's dev instance runs `ADVISOR_CHANNELS=web,discord`. Steps: create a project, enable the Gmail API, configure the OAuth consent screen (External) and **publish** it (an app left in "Testing" gets refresh tokens that expire after 7 days), create a *Desktop app* OAuth client, run `node advisor/ops/gmail-auth.mjs <client_id> <client_secret>` on a machine with a browser logged into the mailbox, put the three values in the daemon's environment and add `gmail` to `ADVISOR_CHANNELS`. The unverified-app warning during consent is expected for a personal client.
 
 ## Advisor: second household member on Discord
 
