@@ -4,7 +4,9 @@ import type { AppContext } from '../../context.js';
 import type { McpSession } from '../tokens.js';
 import { runTool } from '../result.js';
 import { many, maybeOne } from '../../db/client.js';
-import { getStatement } from '../../db/repo/statements.js';
+import { getStatement, updateStatement } from '../../db/repo/statements.js';
+import { toCsv } from '../../ingest/normalize.js';
+import { ApplyError, reconcileAppliedPlan } from '../../plan/apply.js';
 import { addNote, listNotes } from '../../db/repo/misc.js';
 import { createPlan, getPlan, listPlanItems, replacePlanItems, updatePlan } from '../../db/repo/plans.js';
 import { getConversation, updateConversation } from '../../db/repo/conversations.js';
@@ -16,7 +18,7 @@ import { computePlanBalance, ensureStatementAccount, loadAccounts, reconciliatio
  * with the system prompt it forms the conversation's `prompt_hash`; a mismatch on resume tells the
  * assistant its capabilities changed.
  */
-export const CAPABILITIES_VERSION = '2026-10-15.4';
+export const CAPABILITIES_VERSION = '2026-10-15.5';
 
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD');
 
@@ -55,6 +57,138 @@ export function registerAdvisorTools(server: McpServer, ctx: AppContext, session
         if (!s) throw new Error(`statement ${id} not found`);
         const lines = s.lines ?? [];
         return { total: lines.length, offset, limit, lines: lines.slice(offset, offset + limit) };
+      }),
+  );
+
+  server.registerTool(
+    'statement_list',
+    {
+      title: 'Statement List',
+      description:
+        'Recent statements across all conversations (newest first): id, filename, institution, kind, period, status, line count, the conversation they sit in and whether they are still waiting for their planning turn. Use it when a person says they sent statements by email, before saying nothing arrived.',
+      inputSchema: z.object({ institution: z.string().optional(), kind: z.enum(['account', 'card', 'investment', 'other']).optional(), limit: z.number().int().min(1).max(100).default(30) }),
+    },
+    async ({ institution, kind, limit }) =>
+      runTool(async () =>
+        many(
+          db,
+          `SELECT s.id, s.filename, s.institution, s.kind, s.format, s.status, s.period_start, s.period_end, s.opening_balance, s.closing_balance,
+                  s.account_id, s.source, s.created_at, s.conversation_id, c.title AS conversation_title,
+                  COALESCE(jsonb_array_length(s.lines), 0)::int AS line_count,
+                  (s.status IN ('parsed','failed')
+                    AND NOT EXISTS (SELECT 1 FROM advisor_plans p WHERE p.statement_id = s.id)
+                    AND NOT EXISTS (SELECT 1 FROM advisor_messages m WHERE m.conversation_id = s.conversation_id AND m.role = 'user')) AS waiting
+           FROM advisor_statements s LEFT JOIN advisor_conversations c ON c.id = s.conversation_id
+           WHERE ($1::text IS NULL OR s.institution = $1) AND ($2::text IS NULL OR s.kind = $2)
+           ORDER BY s.created_at DESC LIMIT $3`,
+          [institution ?? null, kind ?? null, limit],
+        ),
+      ),
+  );
+
+  server.registerTool(
+    'mailbox_check',
+    {
+      title: 'Mailbox Check',
+      description:
+        'Reads the watched mailbox now instead of waiting for the next scheduled check, and returns the mails handled with the statements they produced. Call it when a person says they sent or forwarded statements by email; then statement_list / statement_claim.',
+      inputSchema: z.object({}),
+    },
+    async () =>
+      runTool(async () => {
+        if (!ctx.gmail) throw new Error('no mailbox is connected to this advisor');
+        return ctx.gmail.tick({ interactive: { actor: session.actor ?? 'advisor' } });
+      }),
+  );
+
+  server.registerTool(
+    'statement_claim',
+    {
+      title: 'Statement Claim',
+      description:
+        'Brings statements that arrived elsewhere (mailed statements waiting in their own conversation) into this conversation so you can plan them here, now. Only statements still waiting for their planning turn can be claimed. Returns their metadata; plan them oldest first, one plan per period.',
+      inputSchema: z.object({ ids: z.array(z.string().uuid()).min(1).max(24) }),
+    },
+    async ({ ids }) =>
+      runTool(async () => {
+        const out = [];
+        for (const id of ids) {
+          const st = await getStatement(db, id);
+          if (!st) throw new Error(`statement ${id} not found`);
+          if (st.conversation_id !== session.conversationId) {
+            const planned = await maybeOne(db, 'SELECT 1 FROM advisor_plans WHERE statement_id = $1', [id]);
+            const spoken = st.conversation_id ? await maybeOne(db, `SELECT 1 FROM advisor_messages WHERE conversation_id = $1 AND role = 'user'`, [st.conversation_id]) : null;
+            if (planned || spoken) throw new Error(`statement ${id} is already being handled in conversation ${st.conversation_id}`);
+            const source = st.conversation_id;
+            await updateStatement(db, id, { conversation_id: session.conversationId });
+            if (source) {
+              await db.query(
+                `UPDATE advisor_conversations SET status = 'archived'
+                 WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM advisor_statements x WHERE x.conversation_id = $1 AND x.status <> 'ignored')
+                   AND NOT EXISTS (SELECT 1 FROM advisor_messages m WHERE m.conversation_id = $1)`,
+                [source],
+              );
+            }
+            ctx.bus.emitGlobal({ type: 'statement', statementId: id, conversationId: session.conversationId, status: st.status });
+          }
+          if (st.storage_path) await ctx.sessions.attachStatement(session.conversationId, st, st.storage_path, st.lines ? toCsv(st.lines) : null);
+          const lines = st.lines ?? [];
+          out.push({
+            id: st.id,
+            filename: st.filename,
+            institution: st.institution,
+            kind: st.kind,
+            format: st.format,
+            status: st.status,
+            account_id: st.account_id,
+            period_start: st.period_start,
+            period_end: st.period_end,
+            opening_balance: st.opening_balance,
+            closing_balance: st.closing_balance,
+            line_count: lines.length,
+            already_in_ledger: lines.filter((l) => l.already_in_ledger).length,
+            likely_duplicate: lines.filter((l) => l.likely_duplicate && !l.already_in_ledger).length,
+            error: st.error,
+          });
+        }
+        out.sort((a, b) => (a.period_start ?? '9999').localeCompare(b.period_start ?? '9999'));
+        return { statements: out, note: 'Files are now under statements/ in the workspace. Plan them oldest first, one plan per period (plan_create with the statement_id), checking continuity between periods.' };
+      }),
+  );
+
+  server.registerTool(
+    'statement_set_meta',
+    {
+      title: 'Statement Set Meta',
+      description:
+        'Records the period, balances and/or ledger account of a statement the system could not read (a PDF with no recognised lines), from what you read in the file. Do it before plan_finalize: without period, closing balance and account the app cannot open the reconciliation and the account never shows as checked. When the plan was already applied, the reconciliation is opened now.',
+      inputSchema: z.object({
+        id: z.string().uuid(),
+        period_start: dateSchema.optional(),
+        period_end: dateSchema.optional(),
+        opening_balance: z.number().optional(),
+        closing_balance: z.number().optional(),
+        account_id: z.string().uuid().optional(),
+      }),
+    },
+    async ({ id, ...patch }) =>
+      runTool(async () => {
+        const st = await getStatement(db, id);
+        if (!st) throw new Error(`statement ${id} not found`);
+        if (st.conversation_id !== session.conversationId) throw new Error('statement belongs to another conversation (statement_claim it first)');
+        const updated = await updateStatement(db, id, patch);
+        const { lines, ...rest } = updated;
+        const applied = await maybeOne<{ id: string }>(db, `SELECT id FROM advisor_plans WHERE statement_id = $1 AND status = 'applied' ORDER BY applied_at DESC LIMIT 1`, [id]);
+        let reconciliation: unknown = null;
+        if (applied) {
+          try {
+            const r = await reconcileAppliedPlan(ctx, applied.id, session.actor);
+            reconciliation = { id: r.reconciliation.id, status: r.reconciliation.status, difference: r.reconciliation.difference, cleared: r.cleared_count, outstanding: r.outstanding_count, missing: r.missing_count };
+          } catch (err) {
+            reconciliation = { error: err instanceof ApplyError ? err.message : (err as Error).message };
+          }
+        }
+        return { ...rest, line_count: lines?.length ?? 0, reconciliation };
       }),
   );
 

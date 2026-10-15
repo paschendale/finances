@@ -40,6 +40,8 @@ const schema = z.object({
   STALE_DAYS: intEnv(30),
   UPLOAD_MAX_MB: intEnv(15),
   CHEAP_TICK_MS: intEnv(15 * 60_000),
+  /** Mailbox checks are cheap (one history call); keep them frequent so mailed statements show up within minutes. */
+  GMAIL_TICK_MS: intEnv(3 * 60_000),
   CLAUDE_TICK_MS: intEnv(5 * 60_000),
   TZ: z.string().default('UTC'),
   ADVISOR_BUDGET_REVIEW: z

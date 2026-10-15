@@ -79,6 +79,43 @@ function provenance(plan: PlanWithCounts, item: PlanItem, statement: Statement |
 }
 
 /** Approve (version-checked) and apply a plan, item by item, through PostgREST RPCs. */
+/**
+ * Opens the reconciliation of a plan that was applied without one, because its statement had no
+ * period, balances or account at the time (a PDF the parser could not read). Called after the
+ * session or a person filled those in.
+ */
+export async function reconcileAppliedPlan(ctx: AppContext, planId: string, actor: string | null): Promise<ReconcileOutcome> {
+  const plan = await getPlan(ctx.db, planId);
+  if (!plan) throw new ApplyError('Plano não encontrado.', 404);
+  if (plan.status !== 'applied') throw new ApplyError('Este plano ainda não foi gravado.', 409);
+  if (!plan.statement_id) throw new ApplyError('Este plano não veio de um extrato.', 409);
+  const statement = await getStatement(ctx.db, plan.statement_id);
+  if (!statement) throw new ApplyError('Extrato não encontrado.', 404);
+  const existing = await maybeOne<{ id: string }>(ctx.db, `SELECT id FROM reconciliations WHERE statement_ref = $1 AND status <> 'abandoned' LIMIT 1`, [statement.id]);
+  if (existing) throw new ApplyError('Este extrato já tem uma conferência registrada.', 409);
+  const items = await listPlanItems(ctx.db, planId);
+  const outcome = await reconcileAfterApply(ctx.db, ctx.pg, plan, items, statement, actor);
+  if (!outcome) throw new ApplyError('O extrato ainda não tem período, saldo final e conta; informe-os primeiro.', 409);
+  const prev = (plan.result ?? {}) as Record<string, unknown>;
+  await updatePlan(ctx.db, planId, {
+    result: {
+      ...prev,
+      reconciliation: {
+        id: outcome.reconciliation.id,
+        status: outcome.reconciliation.status,
+        difference: outcome.reconciliation.difference,
+        period_end: outcome.reconciliation.period_end,
+        cleared: outcome.cleared_count,
+        outstanding: outcome.outstanding_count,
+        missing: outcome.missing_count,
+        notes: outcome.reconciliation.notes,
+      },
+    },
+  });
+  log.info({ planId, reconciliationId: outcome.reconciliation.id, status: outcome.reconciliation.status }, 'reconciliation opened for an applied plan');
+  return outcome;
+}
+
 export async function approveAndApply(ctx: AppContext, planId: string, opts: { actor: string; version: number; keepReopenFlags?: boolean }): Promise<ApplyResult> {
   const plan = await getPlan(ctx.db, planId);
   if (!plan) throw new ApplyError('Plano não encontrado.', 404);

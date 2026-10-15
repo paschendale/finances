@@ -37,8 +37,13 @@ export class GmailSync {
     this.client = new GmailClient({ clientId: c.GMAIL_CLIENT_ID!, clientSecret: c.GMAIL_CLIENT_SECRET!, refreshToken: c.GMAIL_REFRESH_TOKEN! });
   }
 
-  /** One cheap tick: walk history (or the 14-day initial query), route each new message. */
-  async tick(): Promise<void> {
+  /**
+   * One cheap tick: walk history (or the 14-day initial query), route each new message. With
+   * `interactive` (a person asked, through a tool) unknown senders are routed right away instead of
+   * waiting for the usage gate.
+   */
+  async tick(opts: { interactive?: { actor: string } } = {}): Promise<{ seen: number; handled: Array<{ id: string; outcome: string; conversation_id: string | null }> }> {
+    const handled: Array<{ id: string; outcome: string; conversation_id: string | null }> = [];
     const cursor = await getState<{ historyId: string; email?: string }>(this.ctx.db, 'gmail_cursor');
     let ids: string[] = [];
     let nextHistoryId: string;
@@ -69,15 +74,18 @@ export class GmailSync {
     for (const id of ids) {
       if (!(await claimEvent(this.ctx.db, { source: 'gmail', external_id: id, kind: 'message' }))) continue;
       try {
-        const outcome = await this.handleMessage(id);
-        log.info({ id, outcome }, 'gmail message handled');
-        await setEventOutcome(this.ctx.db, 'gmail', id, outcome);
+        const r = await this.processMessage(id, opts.interactive ? { interactive: true, actor: opts.interactive.actor } : undefined);
+        log.info({ id, outcome: r.outcome }, 'gmail message handled');
+        await setEventOutcome(this.ctx.db, 'gmail', id, r.outcome);
+        handled.push({ id, ...r });
       } catch (err) {
         log.error({ err, id }, 'gmail message failed');
         await setEventOutcome(this.ctx.db, 'gmail', id, `error: ${(err as Error).message.slice(0, 200)}`);
+        handled.push({ id, outcome: `error: ${(err as Error).message.slice(0, 200)}`, conversation_id: null });
       }
     }
     await setState(this.ctx.db, 'gmail_cursor', { ...(cursor ?? {}), historyId: nextHistoryId, at: new Date().toISOString() });
+    return { seen: ids.length, handled };
   }
 
   /** Mails matching a Gmail query, with their attachment names (for "is the card statement there?"). */
@@ -108,7 +116,7 @@ export class GmailSync {
       const prev = await this.ctx.db.query<{ payload: unknown }>('SELECT payload FROM advisor_events WHERE source = $1 AND external_id = $2', ['gmail', id]);
       return { outcome: `already handled: ${JSON.stringify(prev.rows[0]?.payload ?? {})}`, conversation_id: null };
     }
-    const r = await this.handleMessage(id, { interactive: true, actor: opts.actor });
+    const r = await this.processMessage(id, { interactive: true, actor: opts.actor });
     await setEventOutcome(this.ctx.db, 'gmail', id, r.outcome);
     if (r.conversation_id) {
       // Plan right away, together with whatever else of that account is still waiting.
@@ -116,13 +124,6 @@ export class GmailSync {
       if (waiting.length > 0) void startPlanningTurn(this.ctx, r.conversation_id, waiting, { actor: opts.actor, kind: 'interactive' });
     }
     return r;
-  }
-
-  private async handleMessage(id: string): Promise<string>;
-  private async handleMessage(id: string, turn: { interactive: true; actor: string }): Promise<{ outcome: string; conversation_id: string | null }>;
-  private async handleMessage(id: string, turn?: { interactive: true; actor: string }): Promise<string | { outcome: string; conversation_id: string | null }> {
-    const r = await this.processMessage(id, turn);
-    return turn ? r : r.outcome;
   }
 
   private async processMessage(id: string, turn?: { interactive: true; actor: string }): Promise<{ outcome: string; conversation_id: string | null }> {

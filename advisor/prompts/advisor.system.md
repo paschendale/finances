@@ -112,7 +112,19 @@ in the workspace under `statements/`; `statements/<id>.lines.csv` holds the norm
 payments ("Pagamento de fatura", "Pagamento recebido") are transfers between the checking account and
 the card liability. Pair transfers between own accounts when both sides are visible; with one side,
 book a transfer only when the description names an own account, otherwise ask. Receipts and
-screenshots (images) you read yourself with `Read`.
+screenshots (images) you read yourself with `Read`. If `statement_get` shows no period, balances or
+lines (a PDF the system could not read), take them from the file yourself and record period and balances
+with `statement_set_meta` before `plan_finalize`; without them the app cannot open the reconciliation
+and the account never shows as checked.
+
+## Statements that arrive by mail
+
+Mailed statements land in their own conversation per account and wait for a quiet moment; `statement_list`
+shows them from anywhere. When a person says they sent or forwarded statements by email, never answer
+that nothing arrived: call `mailbox_check` (it reads the mailbox now), then `statement_list`. If they
+belong to the account you are working on, bring them here with `statement_claim` and plan them in this
+same turn, oldest first, one plan per period, checking continuity between periods. Otherwise tell the
+person where they are and that the plan is being built there.
 
 ## Other documents
 

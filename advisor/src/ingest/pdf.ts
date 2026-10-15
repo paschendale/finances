@@ -107,3 +107,82 @@ export function parseNubankPdfText(text: string): ParsedStatement {
     warnings,
   };
 }
+
+const ITAU_DATE = /^(\d{2})\/(\d{2})\/(\d{4})$/;
+const isoFromBr = (d: string): string => {
+  const m = ITAU_DATE.exec(d)!;
+  return `${m[3]}-${m[2]}-${m[1]}`;
+};
+
+/**
+ * Itaú current-account PDF ("extrato conta / lançamentos"): rows `dd/mm/yyyy DESCRIPTION amount`,
+ * newest first, with a `SALDO DO DIA` row per day holding the day's closing balance. The row for the
+ * day before the first movement carries the opening balance; the header gives the period and the
+ * agency/account numbers.
+ */
+export function parseItauPdfText(text: string): ParsedStatement {
+  const warnings: string[] = [];
+  const lines: StatementLine[] = [];
+  const dayBalance = new Map<string, number>();
+  const seen = new Map<string, number>();
+  const period = text.match(/per[ií]odo de visualiza[çc][ãa]o:\s*(\d{2}\/\d{2}\/\d{4})\s+at[ée]\s+(\d{2}\/\d{2}\/\d{4})/i);
+  const acct = text.match(/ag[êe]ncia:\s*(\d+)\s+conta:\s*([\d-]+)/i);
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    const m = line.match(/^(\d{2}\/\d{2}\/\d{4})\s+(.+?)\s{2,}(-?[\d.]+,\d{2})\s*$/) ?? line.match(/^(\d{2}\/\d{2}\/\d{4})\s+(.+?)\s+(-?[\d.]+,\d{2})\s*$/);
+    if (!m) continue;
+    const date = isoFromBr(m[1]!);
+    const desc = m[2]!.trim();
+    const value = brl(m[3]!);
+    if (value === null || !desc) continue;
+    if (/^SALDO\b/i.test(desc)) {
+      dayBalance.set(date, value);
+      continue;
+    }
+    const amount = round2(value);
+    let hash = lineHash({ date, amount, raw: desc });
+    const dup = seen.get(hash) ?? 0;
+    seen.set(hash, dup + 1);
+    if (dup > 0) hash = lineHash({ date, amount, raw: `${desc}#dup${dup}` });
+    lines.push({ hash, date, amount, currency: 'BRL', raw: desc, description_hint: descriptionHint(desc), kind: amount < 0 ? 'debit' : 'credit' });
+  }
+  lines.sort((a, b) => a.date.localeCompare(b.date));
+  if (lines.length === 0) warnings.push('no movements recognised in PDF text');
+
+  const balanceDates = [...dayBalance.keys()].sort();
+  const firstMove = lines[0]?.date ?? null;
+  const openingDate = firstMove ? balanceDates.filter((d) => d < firstMove).pop() : undefined;
+  const closingDate = balanceDates[balanceDates.length - 1];
+  const closing = closingDate !== undefined ? dayBalance.get(closingDate)! : null;
+  const sum = round2(lines.reduce((acc, l) => acc + l.amount, 0));
+  const opening = openingDate !== undefined ? dayBalance.get(openingDate)! : closing !== null ? round2(closing - sum) : null;
+  if (opening !== null && closing !== null && Math.abs(round2(opening + sum) - closing) >= 0.005) {
+    warnings.push(`day balances do not add up: opening ${opening} + movements ${sum} = ${round2(opening + sum)}, but the last balance printed is ${closing}`);
+  }
+  if (opening !== null) {
+    let running = opening;
+    for (const l of lines) {
+      running = round2(running + l.amount);
+      l.balance_after = running;
+    }
+  }
+  return {
+    institution: 'itau',
+    kind: 'account',
+    account_ref: acct ? `${acct[1]}-${acct[2]}` : null,
+    currency: 'BRL',
+    period_start: period ? isoFromBr(period[1]!) : (lines[0]?.date ?? null),
+    period_end: period ? isoFromBr(period[2]!) : (closingDate ?? lines[lines.length - 1]?.date ?? null),
+    opening_balance: opening,
+    closing_balance: closing,
+    lines,
+    warnings,
+  };
+}
+
+/** Picks the PDF reader from the text: Itaú's day-balance layout, else the Nubank reader. */
+export function parsePdfText(text: string): ParsedStatement {
+  if (/SALDO DO DIA/.test(text) && /lan[çc]amentos/i.test(text)) return parseItauPdfText(text);
+  return parseNubankPdfText(text);
+}

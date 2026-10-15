@@ -61,7 +61,7 @@ async function main(): Promise<void> {
     const { GmailSync } = await import('./gmail/sync.js');
     const gmail = new GmailSync(ctx);
     ctx.gmail = gmail;
-    scheduler.every(config.CHEAP_TICK_MS, { name: 'gmail-sync', run: () => gmail.tick() }, true);
+    scheduler.every(config.GMAIL_TICK_MS, { name: 'gmail-sync', run: () => gmail.tick().then(() => undefined) }, true);
   }
   scheduler.every(config.CHEAP_TICK_MS, { name: 'stale-accounts', run: staleAccountsJob }, true);
   scheduler.every(config.CHEAP_TICK_MS, { name: 'pending-plans', run: pendingPlansJob }, false);

@@ -47,6 +47,10 @@ The production bot runs with the token that sits in the infra repo's git history
 
 `DISCORD_OBEYED_USER_IDS` on the dev instance lists one user id. Add the second member's id so both can approve from Discord (web approvals already work for any finances token).
 
+## Advisor: Itaú PDF prints a balance the movements do not reach
+
+The Itaú statement PDF lists a `SALDO DO DIA` for the emission date that can exceed the sum of the printed movements (R$ 0,05 of unposted yield on 2026-10-15). The parser keeps the printed closing and warns; a reconciliation over the full period then stays open by those cents until a later statement explains them or the person says "ajustar".
+
 ## Advisor: documents the session cannot read
 
 Uploads accept any file now. The session reads text, CSV, PDF and images itself; a `.docx`/`.xls` or an archive is stored but unreadable, and the session can only say so. Converting those (or extracting text server-side) is not done.

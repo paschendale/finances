@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { StatementFormat } from '../db/types.js';
 import { decodeOfxBuffer, parseOfx } from './ofx.js';
 import { parseNubankCsv } from './nubank-csv.js';
-import { parseNubankPdfText, pdfToText } from './pdf.js';
+import { parsePdfText, pdfToText } from './pdf.js';
 import type { ParsedStatement } from './normalize.js';
 
 export function detectFormat(filename: string, buf: Buffer): StatementFormat {
@@ -42,6 +42,7 @@ export function detectInstitution(input: { filename: string; sender?: string | n
     return { institution: 'nubank', kind: 'account' };
   }
   if (sender.includes('@wise.com') || /\bwise\b/.test(subject) || /\bwise\b/i.test(filename)) return { institution: 'wise', kind: 'account' };
+  if (/ita[uú]/i.test(filename) || sender.includes('@itau') || /ita[uú]\.com\.br|banco ita[uú]/.test(text)) return { institution: 'itau', kind: 'account' };
   return { institution: null, kind: 'other' };
 }
 
@@ -60,7 +61,7 @@ export async function parseStatementFile(filePath: string, filename: string, hin
     let parsed: ParsedStatement | null = null;
     if (format === 'ofx') parsed = parseOfx(decodeOfxBuffer(buf));
     else if (format === 'csv') parsed = parseNubankCsv(buf.toString('utf8'), filename);
-    else if (format === 'pdf') parsed = parseNubankPdfText(await pdfToText(filePath));
+    else if (format === 'pdf') parsed = parsePdfText(await pdfToText(filePath));
     if (parsed) {
       if (!parsed.institution && guess.institution) parsed.institution = guess.institution;
       if (parsed.kind === 'other' && guess.kind !== 'other') parsed.kind = guess.kind;

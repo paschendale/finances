@@ -6,7 +6,7 @@ import pg from 'pg';
 import { decodeOfxBuffer, parseOfx, parseOfxDate, parseOfxAmount } from '../src/ingest/ofx.js';
 import { parseNubankCsv, parseNubankAccountFilename, parsePtCompactDate } from '../src/ingest/nubank-csv.js';
 import { parseCsv } from '../src/ingest/csv.js';
-import { parseNubankPdfText } from '../src/ingest/pdf.js';
+import { parseItauPdfText, parseNubankPdfText, parsePdfText } from '../src/ingest/pdf.js';
 import { detectFormat, detectInstitution, parseStatementFile } from '../src/ingest/detect.js';
 import { descriptionHint, detectInstallment, lineHash, normalizeMerchantJs, titleCase, toCsv } from '../src/ingest/normalize.js';
 import { extractCounterparty, isCardPayment, matchLines, pairTransfers } from '../src/ingest/match.js';
@@ -344,5 +344,44 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('matchLines against a database',
     expect(m!.candidates?.[0]?.category_name).toBe('zz-test-categoria');
     expect(m!.candidates?.[0]?.confidence).toBeGreaterThan(0.5);
     expect(m!.alias?.canonical_description).toBe('Zztestmercante');
+  });
+});
+
+describe('itau pdf text', () => {
+  const text = [
+    '                    FULANO DE TAL           000.000.000-00    agência: 1234    conta: 56789-0',
+    'saldo em conta               Limite da Conta utilizado',
+    'R$ 1.580,48                  R$ 0,00',
+    'extrato conta / lançamentos',
+    'período de visualização: 17/07/2026 até 15/10/2026                 emitido em: 15/10/2026      14:19:15',
+    'data              lançamentos                                     valor (R$)                  saldo (R$)',
+    '15/10/2026 SALDO DO DIA                                                                 1.580,48',
+    '13/10/2026 PIX QRS CHAPADA IND10/10                                   -339,60',
+    '13/10/2026 PIX TRANSF Laura R13/10                                     170,00',
+    '13/10/2026 REND PAGO APLIC AUT MAIS                                      0,01',
+    '13/10/2026 SALDO DO DIA                                                                 1.580,43',
+    '05/10/2026 FINANC IMOBILIARIO 001/420                               -6.555,64',
+    '05/10/2026 SALDO DO DIA                                                                 1.750,02',
+    '05/10/2026 PIX TRANSF MUNDO N03/10                                    -128,00',
+    '01/10/2026 TED 001.3826.FULANO D T                                  8.433,66',
+    '01/10/2026 SALDO DO DIA                                                                 8.433,66',
+    '16/07/2026 SALDO DO DIA                                                                     0,00',
+    'Aviso! Os saldos acima são baseados nas informações disponíveis.',
+  ].join('\n');
+
+  it('reads rows, day balances, period, account and warns when the balances do not add up', () => {
+    const s = parseItauPdfText(text);
+    expect(s.institution).toBe('itau');
+    expect(s.account_ref).toBe('1234-56789-0');
+    expect(s.period_start).toBe('2026-07-17');
+    expect(s.period_end).toBe('2026-10-15');
+    expect(s.opening_balance).toBe(0);
+    expect(s.closing_balance).toBe(1580.48);
+    expect(s.lines.map((l) => l.date)).toEqual(['2026-10-01', '2026-10-05', '2026-10-05', '2026-10-13', '2026-10-13', '2026-10-13']);
+    expect(s.lines.find((l) => l.raw.startsWith('FINANC'))!.amount).toBe(-6555.64);
+    expect(s.lines[s.lines.length - 1]!.balance_after).toBe(1580.43);
+    expect(s.warnings.some((w) => w.includes('do not add up'))).toBe(true);
+    expect(parsePdfText(text).institution).toBe('itau');
+    expect(detectInstitution({ filename: 'itau_extrato_072026.pdf' })).toEqual({ institution: 'itau', kind: 'account' });
   });
 });

@@ -3,13 +3,21 @@ import { z } from 'zod';
 import type { AppContext } from '../../context.js';
 import type { Actor } from '../auth.js';
 import { getPlan, getPlanItem, listPlanItems, listPlans, updatePlan, updatePlanItem } from '../../db/repo/plans.js';
-import { getStatement } from '../../db/repo/statements.js';
+import { getStatement, updateStatement } from '../../db/repo/statements.js';
 import { getConversation } from '../../db/repo/conversations.js';
-import { approveAndApply, ApplyError, rejectPlan } from '../../plan/apply.js';
+import { approveAndApply, ApplyError, reconcileAppliedPlan, rejectPlan } from '../../plan/apply.js';
 import { computePlanBalance, ensureStatementAccount, loadAccounts } from '../../plan/reconcile.js';
 import { planEntrySchema, validatePlanItems, type PlanItemInputShape } from '../../plan/schema.js';
 
 type Env = { Variables: { actor: Actor } };
+
+const reconcileSchema = z.object({
+  period_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  period_end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  opening_balance: z.number().optional(),
+  closing_balance: z.number().optional(),
+  account_id: z.string().uuid().optional(),
+});
 
 const itemPatchSchema = z.object({
   kind: z.enum(['create', 'update', 'delete', 'adjust', 'budget_upsert', 'budget_delete', 'mark_checked', 'skip']).optional(),
@@ -90,6 +98,25 @@ export function planRoutes(ctx: AppContext): Hono<Env> {
     try {
       const plan = await rejectPlan(ctx, c.req.param('id'), actor.id);
       return c.json(plan);
+    } catch (err) {
+      if (err instanceof ApplyError) return c.json({ error: err.message }, err.status as 400);
+      throw err;
+    }
+  });
+
+  /**
+   * Opens the reconciliation of an applied statement plan that did not get one because the file had
+   * no period or balances. The optional body fills those in on the statement first.
+   */
+  app.post('/plans/:id/reconcile', async (c) => {
+    const actor = c.get('actor');
+    const body = reconcileSchema.parse(await c.req.json().catch(() => ({})));
+    try {
+      const plan = await getPlan(ctx.db, c.req.param('id'));
+      if (!plan) return c.json({ error: 'not found' }, 404);
+      if (plan.statement_id && Object.values(body).some((v) => v !== undefined)) await updateStatement(ctx.db, plan.statement_id, body);
+      const r = await reconcileAppliedPlan(ctx, plan.id, actor.id);
+      return c.json({ reconciliation: r.reconciliation, cleared: r.cleared_count, outstanding: r.outstanding_count, missing: r.missing_count });
     } catch (err) {
       if (err instanceof ApplyError) return c.json({ error: err.message }, err.status as 400);
       throw err;

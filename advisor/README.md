@@ -63,7 +63,7 @@ npm run dev               # tsx watch, ADVISOR_CHANNELS=web by default
 | `GATE_MAX_7D_PCT`, `GATE_MAX_5H_PCT`, `GATE_MAX_CALLS_PER_WINDOW`, `GATE_TAIL_MINUTES`, `GATE_IDLE_MINUTES` | `85`, `70`, `40`, `60`, `15` | Usage gate for routine work only |
 | `STALE_DAYS` | `30` | Accounts unchecked for longer get a nudge |
 | `UPLOAD_MAX_MB` | `15` | Upload cap |
-| `CHEAP_TICK_MS` / `CLAUDE_TICK_MS` | `900000` / `300000` | Scheduler intervals |
+| `CHEAP_TICK_MS` / `CLAUDE_TICK_MS` / `GMAIL_TICK_MS` | `900000` / `300000` / `180000` | Scheduler intervals (nudges and pending-plan reminders / Claude background turns / mailbox checks) |
 | `TZ` | `UTC` | Time zone for dates in prompts and nudges |
 | `ADVISOR_BUDGET_REVIEW` | `false` | Monthly budget review post (off by default) |
 | `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, `DISCORD_CHANNEL_ID`, `DISCORD_OBEYED_USER_IDS` | — | Required when `discord` is enabled |
@@ -145,6 +145,13 @@ attachments, detected institution/kind and whether the sync already handled them
 planning turn right away as an interactive turn, together with whatever else of that account is still
 waiting. Of several attachments of one statement (OFX + CSV + PDF) only the preferred one is ingested
 unless it yields no lines.
+
+From inside a conversation the session can read the mailbox on demand (`mailbox_check`), see every
+statement with `statement_list` and pull waiting mailed ones into the conversation with
+`statement_claim`, planning them in the same interactive turn (no gate). A statement the parser could
+not read (PDF) gets its period and balances from the session through `statement_set_meta`;
+`POST /plans/:id/reconcile` (web token, optional body with period/balances/account) opens the
+reconciliation of a plan that was applied before those were known.
 
 Mailed statements are grouped **per account**: a statement joins the conversation of its account
 (`external_ref` `gmail:<account_id>`, or `gmail:<institution>:<kind>` until the account is known) as long
