@@ -6,6 +6,7 @@ import type { McpTokenRegistry } from './mcp/tokens.js';
 import type { SessionPool, ConversationLocks } from './claude/pool.js';
 import type { SessionManager } from './claude/session.js';
 import type { Notifier } from './notify.js';
+import type { GmailSync } from './gmail/sync.js';
 
 export interface AppContext {
   config: Config;
@@ -18,4 +19,6 @@ export interface AppContext {
   sessions: SessionManager;
   notifier: Notifier;
   promptsDir: string;
+  /** Set when the gmail channel is enabled (manual pick-up endpoints) */
+  gmail?: GmailSync;
 }

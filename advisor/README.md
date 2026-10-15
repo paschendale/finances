@@ -132,6 +132,12 @@ client: a *Desktop app* client works as is; a *Web application* client must list
 `http://127.0.0.1:8765/callback` under its authorized redirect URIs. Put the three values in the
 daemon's environment and add `gmail` to `ADVISOR_CHANNELS`.
 
+Manual pick-up (web token): `GET /gmail/messages?q=<gmail query>&limit=20` lists mails with their
+attachments, detected institution/kind and whether the sync already handled them;
+`POST /gmail/messages/:id/ingest` (`{"force":true}` to redo one) ingests that mail and starts the
+planning turn right away as an interactive turn. Of several attachments of one statement (OFX + CSV +
+PDF) only the preferred one is ingested unless it yields no lines.
+
 Every cheap tick the daemon walks `users.history` from its cursor (first run: `GMAIL_LOOKBACK_DAYS`
 of mail with attachments). Known senders (Nubank account and card statements, Wise) are ingested by
 rule; unknown senders with statement-like attachments are routed by a Sonnet single-shot call

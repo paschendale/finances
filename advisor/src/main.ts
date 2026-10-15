@@ -60,6 +60,7 @@ async function main(): Promise<void> {
   if (config.channels.has('gmail')) {
     const { GmailSync } = await import('./gmail/sync.js');
     const gmail = new GmailSync(ctx);
+    ctx.gmail = gmail;
     scheduler.every(config.CHEAP_TICK_MS, { name: 'gmail-sync', run: () => gmail.tick() }, true);
   }
   scheduler.every(config.CHEAP_TICK_MS, { name: 'stale-accounts', run: staleAccountsJob }, true);

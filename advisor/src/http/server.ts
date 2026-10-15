@@ -9,6 +9,7 @@ import { planRoutes } from './routes/plans.js';
 import { uploadRoutes } from './routes/uploads.js';
 import { healthRoutes } from './routes/health.js';
 import { accountRoutes } from './routes/accounts.js';
+import { gmailRoutes } from './routes/gmail.js';
 import { scoped } from '../log.js';
 
 const log = scoped('http');
@@ -47,6 +48,7 @@ export function createHttpApp(ctx: AppContext): Hono<Env> {
   api.route('/', planRoutes(ctx));
   api.route('/', uploadRoutes(ctx));
   api.route('/', accountRoutes(ctx));
+  api.route('/', gmailRoutes(ctx));
   app.route('/', api);
   return app;
 }
