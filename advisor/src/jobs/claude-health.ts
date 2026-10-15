@@ -7,10 +7,9 @@ import { scoped } from '../log.js';
 const log = scoped('jobs.claude-health');
 
 export const REAUTH_RUNBOOK = [
-  'Claude Code login on the advisor host needs attention.',
-  '1. `docker compose exec -it advisor claude login` (or `claude login` where the advisor runs)',
-  '2. open the printed URL on any device and finish the login',
-  '3. check GET /health shows claude.loggedIn = true',
+  '⚠️ O assistente perdeu o acesso ao Claude e vai parar de responder até alguém religar.',
+  'Nada foi alterado nos seus registros; extratos que chegarem ficam guardados.',
+  'Para religar: no servidor do assistente, rode "docker compose exec -it advisor claude login", abra o link que aparecer em qualquer aparelho e conclua o login.',
 ].join('\n');
 
 /**

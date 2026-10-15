@@ -45,14 +45,14 @@ export async function staleAccountsJob(ctx: AppContext): Promise<void> {
   if (stale.length === 0) return;
   const moved = stale.filter((a) => a.last_checked && a.last_entry_date && a.last_entry_date > a.last_checked.slice(0, 10));
   const details = stale.map(
-    (a) => `${a.account_name} · ${fmt(Number(a.balance))} · ${a.last_checked ? `${a.days_since_check} d` : 'nunca'}${moved.includes(a) ? ' · com movimento' : ''}`,
+    (a) => `${a.account_name} · ${fmt(Number(a.balance))} · ${a.last_checked ? `conferida há ${a.days_since_check} dias` : 'nunca conferida'}${moved.includes(a) ? ' · teve movimento depois' : ''}`,
   );
   await ctx.notifier.notice({
     key: 'stale-accounts',
-    title: 'Contas sem conferência',
-    status: `🔔 ${stale.length} conta${stale.length > 1 ? 's' : ''} há mais de ${ctx.config.STALE_DAYS} dias`,
-    lines: moved.length ? [`${moved.length} com movimento desde a última conferência: ${moved.slice(0, 3).map((a) => a.account_name).join(', ')}${moved.length > 3 ? '…' : ''}`] : [],
-    details: [...details, '', 'Responda aqui com o saldo atual ("Nubank tá com 657,21"), "sem movimento" para marcar como conferida, ou envie o extrato.'],
+    title: 'Contas para conferir',
+    status: `🔔 ${stale.length} conta${stale.length > 1 ? 's' : ''} sem conferência há mais de ${ctx.config.STALE_DAYS} dias`,
+    lines: moved.length ? [`${moved.length} tiveram movimento depois da última conferência: ${moved.slice(0, 3).map((a) => a.account_name).join(', ')}${moved.length > 3 ? '…' : ''}`] : [],
+    details: [...details, '', 'Para conferir, responda aqui com o saldo que aparece no banco ("Nubank tá com 657,21"), ou "sem movimento" se nada mudou, ou mande o extrato.'],
     context: `Daily stale-accounts nudge. Accounts without a balance check for more than ${ctx.config.STALE_DAYS} days: ${stale.map((a) => `${a.account_name} (${a.account_id}, balance ${a.balance}, last_checked ${a.last_checked ?? 'never'}, last entry ${a.last_entry_date})`).join('; ')}. The person replies with balances or "sem movimento"; follow the check-in procedure.`,
   });
   await setState(ctx.db, 'last_stale_nudge', { day: key, accounts: stale.map((a) => a.account_id) });
@@ -68,10 +68,10 @@ export async function pendingPlansJob(ctx: AppContext): Promise<void> {
   if (plans.length === 0) return;
   await ctx.notifier.notice({
     key: 'pending-plans',
-    title: 'Planos aguardando aprovação',
-    status: `🟡 ${plans.length} plano${plans.length > 1 ? 's' : ''} há mais de 24 h`,
+    title: 'Planos esperando sua aprovação',
+    status: `🟡 ${plans.length} plano${plans.length > 1 ? 's' : ''} esperando há mais de um dia`,
     lines: plans.slice(0, 3).map((p) => `${p.title} · ${p.item_count - p.skip_count} itens`),
-    details: plans.map((p) => `${p.title} · v${p.version} · ${p.item_count - p.skip_count} itens`),
+    details: plans.map((p) => `${p.title} · ${p.item_count - p.skip_count} itens`),
     context: `Reminder about plans pending approval: ${plans.map((p) => `${p.title} (plan ${p.id}, conversation ${p.conversation_id})`).join('; ')}. Approval happens in each plan's own thread or in the web app; here, answer questions about them.`,
   });
   await setState(ctx.db, 'last_pending_reminder', { day: key, plans: plans.map((p) => p.id) });

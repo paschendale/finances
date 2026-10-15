@@ -81,17 +81,17 @@ function provenance(plan: PlanWithCounts, item: PlanItem, statement: Statement |
 /** Approve (version-checked) and apply a plan, item by item, through PostgREST RPCs. */
 export async function approveAndApply(ctx: AppContext, planId: string, opts: { actor: string; version: number; keepReopenFlags?: boolean }): Promise<ApplyResult> {
   const plan = await getPlan(ctx.db, planId);
-  if (!plan) throw new ApplyError('plan not found', 404);
-  if (plan.status !== 'pending_approval') throw new ApplyError(`plan is ${plan.status}, not pending approval`, 409);
-  if (plan.version !== opts.version) throw new ApplyError(`plan changed (version ${plan.version}, you approved ${opts.version}); review it again`, 409);
+  if (!plan) throw new ApplyError('Plano não encontrado.', 404);
+  if (plan.status !== 'pending_approval') throw new ApplyError(plan.status === 'applied' ? 'Este plano já foi gravado.' : plan.status === 'rejected' ? 'Este plano já foi descartado.' : 'Este plano não está mais esperando aprovação.', 409);
+  if (plan.version !== opts.version) throw new ApplyError('O plano mudou depois que você o abriu. Revise de novo antes de aprovar.', 409);
 
   const allItems = await listPlanItems(ctx.db, planId);
   const items = allItems.filter((i) => i.status !== 'removed' && i.status !== 'applied');
-  if (items.length === 0) throw new ApplyError('plan has no items to apply', 400);
+  if (items.length === 0) throw new ApplyError('Este plano não tem nada para gravar.', 400);
 
   const accounts = await loadAccounts(ctx.db);
   const issues = validatePlanItems(items as unknown as PlanItemInputShape[], accounts);
-  if (issues.length > 0) throw new ApplyError(`plan has invalid items: ${issues.map((i) => `#${items[i.index]?.seq}: ${i.message}`).join('; ')}`, 400);
+  if (issues.length > 0) throw new ApplyError(`Alguns itens do plano estão inválidos: ${issues.map((i) => `item ${items[i.index]?.seq}: ${i.message}`).join('; ')}`, 400);
 
   await updatePlan(ctx.db, planId, { status: 'applying', approved_by: opts.actor, approved_at: 'now' });
   ctx.bus.emitConversation(plan.conversation_id, { type: 'plan', planId, status: 'applying', version: plan.version });
@@ -250,7 +250,7 @@ async function guardCleared(ctx: AppContext, item: PlanItem, actor: string, keep
   if (closed.length === 0) return;
   const flagged = Boolean((item.payload as Record<string, unknown>).reopens_reconciliation);
   if (!flagged || keepReopenFlags === false) {
-    throw new Error(`transaction is cleared by a closed reconciliation (period ending ${closed[0]!.period_end}); keep the reopens_reconciliation flag to proceed`);
+    throw new Error(`este lançamento já foi conferido com o extrato até ${closed[0]!.period_end}; para alterá-lo é preciso reabrir essa conferência`);
   }
   for (const c of new Map(closed.map((c) => [c.reconciliation_id, c])).values()) {
     await ctx.pg.rpc('reopen_reconciliation', { p_id: c.reconciliation_id, p_notes: `reopened by plan ${item.plan_id} item #${item.seq} (${item.kind}) approved by ${actor}` });
@@ -352,8 +352,8 @@ async function applyItem(ctx: AppContext, plan: PlanWithCounts, item: PlanItem, 
 
 export async function rejectPlan(ctx: AppContext, planId: string, actor: string): Promise<PlanWithCounts> {
   const plan = await getPlan(ctx.db, planId);
-  if (!plan) throw new ApplyError('plan not found', 404);
-  if (!['draft', 'pending_approval'].includes(plan.status)) throw new ApplyError(`plan is ${plan.status}`, 409);
+  if (!plan) throw new ApplyError('Plano não encontrado.', 404);
+  if (!['draft', 'pending_approval'].includes(plan.status)) throw new ApplyError(plan.status === 'applied' ? 'Este plano já foi gravado e não pode ser descartado.' : 'Este plano já foi tratado.', 409);
   await updatePlan(ctx.db, planId, { status: 'rejected', approved_by: actor, result: { ...(plan.result ?? {}), rejected_by: actor, rejected_at: new Date().toISOString() } });
   const fresh = (await getPlan(ctx.db, planId))!;
   ctx.bus.emitConversation(plan.conversation_id, { type: 'plan', planId, status: fresh.status, version: fresh.version });

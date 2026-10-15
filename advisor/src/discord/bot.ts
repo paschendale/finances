@@ -39,7 +39,7 @@ interface NoticeRef {
 }
 
 const HINT_THREAD = 'Detalhes na thread.';
-const HINT_APPROVE = 'Reaja ✅ para aplicar · "rejeita" descarta.';
+const HINT_APPROVE = 'Reaja com ✅ para aprovar, ou responda "rejeita".';
 
 /**
  * Discord channel, designed for a phone: every topic (a question, a statement, a nudge) is one short
@@ -148,7 +148,7 @@ export class DiscordBot implements NotifyTarget {
           if (APPROVE_WORDS.test(text)) await this.applyPlan(pending.id, actor, thread);
           else {
             await rejectPlan(this.ctx, pending.id, actor);
-            await thread.send('Plano rejeitado.');
+            await thread.send('Tudo bem, descartei esse plano.');
           }
           return;
         }
@@ -218,25 +218,25 @@ export class DiscordBot implements NotifyTarget {
     if (!plan) return;
     const ref = this.summaries.get(planId);
     if (ref && ref.version !== plan.version) {
-      await thread.send(`O plano mudou desde o último resumo (v${ref.version} → v${plan.version}). Confira o novo resumo antes de aprovar.`);
+      await thread.send('O plano mudou depois desse resumo. Veja o novo resumo antes de aprovar.');
       await this.postSummary(plan, thread);
       return;
     }
     try {
-      await this.setTracker(thread, { status: '⏳ Aplicando…', hint: null });
+      await this.setTracker(thread, { status: '⏳ Gravando…', hint: null });
       const r = await approveAndApply(this.ctx, planId, { actor, version: plan.version });
       const rec = r.reconciliation?.reconciliation;
       const lines = [
-        r.status === 'applied' ? `✅ Aplicado: ${r.applied} lançamento${r.applied === 1 ? '' : 's'}${r.skipped ? `, ${r.skipped} já estavam no ledger` : ''}.` : `⚠️ Parou no item ${r.items.find((i) => i.status === 'failed')?.seq ?? '?'}: ${r.applied} ok, ${r.failed} falhou.`,
-        ...r.items.filter((i) => i.status === 'failed').map((i) => `Item ${i.seq} (${i.kind}): ${i.error}`),
+        r.status === 'applied' ? `✅ Pronto: ${r.applied} lançamento${r.applied === 1 ? '' : 's'} gravado${r.applied === 1 ? '' : 's'}${r.skipped ? `, ${r.skipped} já estavam registrados` : ''}.` : `⚠️ Parou no item ${r.items.find((i) => i.status === 'failed')?.seq ?? '?'}: ${r.applied} gravado${r.applied === 1 ? '' : 's'}, ${r.failed} deu erro.`,
+        ...r.items.filter((i) => i.status === 'failed').map((i) => `Item ${i.seq}: ${i.error}`),
         rec ? reconciliationLine(rec) : '',
-        ...r.reopened.map((x) => (x.status === 'open' ? `Conciliação até ${fmtDay(x.period_end)} continua aberta: diferença ${fmtBRL(Number(x.difference ?? 0))}.` : `Conciliação até ${fmtDay(x.period_end)} fechada de novo: saldo bate.`)),
+        ...r.reopened.map((x) => (x.status === 'open' ? `A conferência do extrato até ${fmtDay(x.period_end)} ficou em aberto: diferença de ${fmtBRL(Number(x.difference ?? 0))}.` : `A conferência do extrato até ${fmtDay(x.period_end)} foi refeita: o saldo bate.`)),
       ].filter(Boolean);
       await this.send(thread, lines.join('\n'));
     } catch (err) {
       const msg = err instanceof ApplyError ? err.message : (err as Error).message;
-      await thread.send(`Não consegui aplicar: ${msg}`);
-      await this.setTracker(thread, { status: '⚠️ Falhou ao aplicar', lines: [msg.slice(0, 160)], hint: HINT_THREAD });
+      await thread.send(`Não consegui gravar: ${msg}`);
+      await this.setTracker(thread, { status: '⚠️ Não consegui gravar', lines: [msg.slice(0, 160)], hint: HINT_THREAD });
     }
   }
 
@@ -295,7 +295,7 @@ export class DiscordBot implements NotifyTarget {
     // A pending plan owns the tracker; otherwise the tracker shows the answer's headline.
     const pending = (await listPlans(this.ctx.db, { conversation_id: conv.id, status: ['pending_approval'] }))[0];
     if (pending) return;
-    if (status === 'failed') await this.setTracker(thread, { status: '⚠️ A resposta falhou', lines: [headline(content, 140)], hint: HINT_THREAD });
+    if (status === 'failed') await this.setTracker(thread, { status: '⚠️ Deu erro na resposta', lines: [headline(content, 140)], hint: HINT_THREAD });
     else await this.setTracker(thread, { status: '✅ Respondido', lines: [headline(content)], hint: HINT_THREAD, link: this.webLink(conv.id) });
   }
 
@@ -307,24 +307,24 @@ export class DiscordBot implements NotifyTarget {
     const other = items.length - plan.create_count - plan.update_count - plan.adjust_count - plan.skip_count - accounts;
     const counts = [
       plan.create_count ? `${plan.create_count} novo${plan.create_count === 1 ? '' : 's'}` : '',
-      plan.update_count ? `${plan.update_count} alteraç${plan.update_count === 1 ? 'ão' : 'ões'}` : '',
+      plan.update_count ? `${plan.update_count} correç${plan.update_count === 1 ? 'ão' : 'ões'}` : '',
       plan.adjust_count ? `${plan.adjust_count} ajuste${plan.adjust_count === 1 ? '' : 's'}` : '',
       accounts ? `${accounts} conta${accounts === 1 ? '' : 's'}` : '',
-      plan.skip_count ? `${plan.skip_count} já no ledger` : '',
+      plan.skip_count ? `${plan.skip_count} já registrado${plan.skip_count === 1 ? '' : 's'}` : '',
       other > 0 ? `${other} outro${other === 1 ? '' : 's'}` : '',
     ].filter(Boolean);
     return [
       counts.join(' · '),
-      balance ? (balance.ok ? `✓ Saldo bate com o extrato${balance.account_name ? ` (${balance.account_name})` : ''}` : `✗ Diferença de ${fmtBRL(balance.difference)} contra o extrato`) : '',
+      balance ? (balance.ok ? `✓ O saldo bate com o extrato${balance.account_name ? ` (${balance.account_name})` : ''}` : `✗ Falta explicar ${fmtBRL(balance.difference)} em relação ao extrato`) : '',
     ].filter(Boolean);
   }
 
   /** Compact plan summary in the thread (approval by ✅ on it), and the tracker set to "waiting". */
   private async postSummary(plan: PlanWithCounts, thread: ThreadChannel): Promise<void> {
     const lines = await this.planLines(plan);
-    const text = [`**Plano v${plan.version} pronto para aprovar**`, ...lines, headline(plan.summary ?? '', 200), HINT_APPROVE].filter(Boolean).join('\n');
+    const text = [plan.version > 1 ? '**Plano revisado, pronto para você aprovar**' : '**Plano pronto para você aprovar**', ...lines, headline(plan.summary ?? '', 200), HINT_APPROVE].filter(Boolean).join('\n');
     const msg = await this.send(thread, text);
-    await this.setTracker(thread, { status: '🟡 Plano aguardando aprovação', lines, hint: HINT_APPROVE, link: this.webLink(plan.conversation_id, plan.id) });
+    await this.setTracker(thread, { status: '🟡 Esperando sua aprovação', lines, hint: HINT_APPROVE, link: this.webLink(plan.conversation_id, plan.id) });
     const ids: string[] = [];
     if (msg) {
       await msg.react('✅').catch(() => undefined);
@@ -344,7 +344,7 @@ export class DiscordBot implements NotifyTarget {
     const conv = await getConversation(this.ctx.db, n.conversationId);
     const plan = await getPlan(this.ctx.db, n.planId);
     if (!conv || !plan) return;
-    const thread = await this.threadFor(conv, n.title, { title: n.title, status: '🟡 Plano aguardando aprovação', hint: HINT_APPROVE });
+    const thread = await this.threadFor(conv, n.title, { title: n.title, status: '🟡 Esperando sua aprovação', hint: HINT_APPROVE });
     if (!thread) return;
     await this.postSummary(plan, thread);
   }
@@ -358,11 +358,11 @@ export class DiscordBot implements NotifyTarget {
     const applied = Number(n.result.applied ?? 0);
     const ok = n.status === 'applied';
     const lines = [
-      ok ? `${applied} lançamento${applied === 1 ? '' : 's'} gravado${applied === 1 ? '' : 's'}` : `${applied} ok, ${String(n.result.failed ?? 0)} falhou`,
+      ok ? `${applied} lançamento${applied === 1 ? '' : 's'} gravado${applied === 1 ? '' : 's'}` : `${applied} gravado${applied === 1 ? '' : 's'}, ${String(n.result.failed ?? 0)} com erro`,
       rec ? reconciliationLine(rec) : '',
-      ...reopened.map((x) => (x.status === 'open' ? `Conciliação até ${fmtDay(x.period_end)} aberta: diferença ${fmtBRL(Number(x.difference ?? 0))}` : `Conciliação até ${fmtDay(x.period_end)} fechada de novo`)),
+      ...reopened.map((x) => (x.status === 'open' ? `Conferência até ${fmtDay(x.period_end)} em aberto: diferença de ${fmtBRL(Number(x.difference ?? 0))}` : `Conferência até ${fmtDay(x.period_end)} refeita: o saldo bate`)),
     ].filter(Boolean);
-    await this.setTracker(thread, { status: ok ? '✅ Aplicado' : '⚠️ Aplicado em parte', lines, hint: ok ? null : HINT_THREAD, link: this.webLink(n.conversationId, n.planId) });
+    await this.setTracker(thread, { status: ok ? '✅ Gravado' : '⚠️ Gravado em parte', lines, hint: ok ? null : HINT_THREAD, link: this.webLink(n.conversationId, n.planId) });
     // The thread already got the result line from applyPlan when approval came from Discord; approvals
     // from the web only get the tracker update.
     if (!this.summaries.has(n.planId)) return;
@@ -373,7 +373,7 @@ export class DiscordBot implements NotifyTarget {
   private async onPlanRejected(conversationId: string, planId: string): Promise<void> {
     const thread = await this.threadOf(conversationId);
     if (!thread) return;
-    await this.setTracker(thread, { status: '❌ Plano rejeitado', lines: [], hint: null });
+    await this.setTracker(thread, { status: '❌ Plano descartado', lines: [], hint: null });
     if (this.summaries.delete(planId)) await setState(this.ctx.db, 'discord_summaries', Object.fromEntries(this.summaries));
   }
 
@@ -436,9 +436,9 @@ export class DiscordBot implements NotifyTarget {
 
 function reconciliationLine(rec: { status?: string; difference?: number | null; period_end?: string | null; notes?: string | null }): string {
   const until = rec.period_end ? ` até ${fmtDay(rec.period_end)}` : '';
-  if (rec.status === 'balanced') return `Conciliação fechada${until}: saldo bate.`;
-  if (rec.status === 'adjusted') return `Conciliação fechada com ajuste de ${fmtBRL(Number(rec.difference ?? 0))}${until}.`;
-  return `Conciliação aberta${until}: diferença ${fmtBRL(Number(rec.difference ?? 0))}.`;
+  if (rec.status === 'balanced') return `Extrato conferido${until}: o saldo bate.`;
+  if (rec.status === 'adjusted') return `Extrato conferido${until} com um ajuste de ${fmtBRL(Number(rec.difference ?? 0))}.`;
+  return `Conferência do extrato${until} ficou em aberto: diferença de ${fmtBRL(Number(rec.difference ?? 0))}.`;
 }
 
 /** Reads title/status/hint/link back from a tracker message so partial edits keep the rest. */

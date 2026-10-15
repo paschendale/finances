@@ -148,12 +148,12 @@ describe('discord poster', () => {
 
 describe('session helpers', () => {
   it('humanizes login and limit errors', () => {
-    expect(humanizeError('Not logged in', '')).toMatch(/claude login/);
-    expect(humanizeError(null, 'Error: rate limit reached, resets at 15:30')).toMatch(/usage limit/i);
+    expect(humanizeError('Not logged in', '')).toMatch(/login do Claude/);
+    expect(humanizeError(null, 'Error: rate limit reached, resets at 15:30')).toMatch(/limite de uso/i);
   });
   it('describes tool calls briefly', () => {
-    expect(describeTool('mcp__advisor__ledger_balance_as_of', { date: '2026-09-30' })).toBe('checking balance as of 2026-09-30');
-    expect(describeTool('Bash', { command: 'python3 -c "print(1)"' })).toMatch(/^running python3/);
+    expect(describeTool('mcp__advisor__ledger_balance_as_of', { date: '2026-09-30' })).toBe('conferindo o saldo em 30/09');
+    expect(describeTool('Bash', { command: 'python3 -c "print(1)"' })).toBe('fazendo uma conta');
   });
 });
 

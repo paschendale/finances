@@ -47,47 +47,79 @@ export interface TurnOutcome {
 export function describeTool(name: string, input: unknown): string {
   const i = (input ?? {}) as Record<string, unknown>;
   const short = name.replace(/^mcp__advisor__/, '');
+  const q = (v: unknown, n = 40) => `“${String(v ?? '').slice(0, n)}”`;
   switch (short) {
     case 'statement_lines':
-      return `reading statement lines ${i.offset ?? 0}–${Number(i.offset ?? 0) + Number(i.limit ?? 50)}`;
+      return `lendo o extrato (linhas ${Number(i.offset ?? 0) + 1} a ${Number(i.offset ?? 0) + Number(i.limit ?? 50)})`;
     case 'statement_get':
-      return 'reading statement';
+      return 'lendo o extrato';
     case 'classify_candidates':
-      return `classifying "${String(i.description ?? i.raw ?? '').slice(0, 40)}"`;
+      return `procurando a categoria de ${q(i.description ?? i.raw)}`;
     case 'ledger_balance_as_of':
-      return `checking balance as of ${i.date ?? ''}`;
+      return `conferindo o saldo em ${fmtDayBR(i.date)}`;
     case 'list_transactions':
-      return `listing transactions${i.start_date ? ` ${i.start_date}…${i.end_date ?? ''}` : ''}`;
+      return `olhando os lançamentos${i.start_date ? ` de ${fmtDayBR(i.start_date)} a ${fmtDayBR(i.end_date)}` : ''}`;
     case 'list_account_balances':
-      return 'reading account balances';
+      return 'lendo os saldos das contas';
+    case 'list_accounts_hierarchical':
+      return 'lendo a lista de contas e categorias';
     case 'match_account':
-      return `resolving account "${String(i.input ?? '').slice(0, 30)}"`;
+      return `procurando a conta ${q(i.input, 30)}`;
+    case 'match_description_memory':
+    case 'list_description_memories':
+      return 'lembrando como você costuma registrar';
     case 'plan_create':
-      return 'creating plan';
+      return 'começando um plano';
     case 'plan_set_items':
-      return `writing ${Array.isArray(i.items) ? i.items.length : ''} plan items`;
+      return `montando o plano (${Array.isArray(i.items) ? i.items.length : ''} itens)`;
     case 'plan_finalize':
-      return 'finalising plan';
+      return 'fechando o plano para você aprovar';
+    case 'plan_get':
+    case 'plan_list':
+      return 'relendo o plano';
     case 'reconciliation_history':
-      return 'reading reconciliation history';
+    case 'reconciliation_get':
+    case 'account_reconciliation_status':
+      return 'olhando as conferências anteriores';
     case 'uncleared_entries':
-      return 'listing uncleared entries';
+      return 'listando lançamentos ainda não conferidos';
     case 'note_list':
-      return 'reading notes';
+      return 'lendo anotações';
     case 'note_add':
-      return 'saving a note';
+      return 'guardando uma anotação';
+    case 'merchant_alias_get':
+      return 'lembrando o nome que você usa';
     case 'merchant_alias_set':
-      return `teaching alias "${String(i.canonical_description ?? '')}"`;
+      return `aprendendo o nome ${q(i.canonical_description)}`;
+    case 'get_category_totals':
+    case 'get_category_monthly_history':
+      return 'somando os gastos por categoria';
+    case 'get_dashboard_data':
+    case 'get_monthly_balances':
+    case 'get_daily_balances':
+    case 'list_daily_account_balances':
+      return 'olhando a evolução dos saldos';
+    case 'list_budget_plans':
+    case 'list_budget_items':
+    case 'list_budget_monthly_spending':
+      return 'lendo o orçamento';
+    case 'conversation_summary_set':
+      return 'anotando um resumo da conversa';
     case 'Bash':
-      return `running ${String(i.command ?? '').slice(0, 60)}`;
+      return 'fazendo uma conta';
     case 'Read':
-      return `reading ${path.basename(String(i.file_path ?? ''))}`;
+      return `lendo ${path.basename(String(i.file_path ?? ''))}`;
     case 'Grep':
     case 'Glob':
-      return `searching workspace`;
+      return 'procurando nos arquivos';
     default:
-      return short.replace(/_/g, ' ');
+      return `consultando ${short.replace(/_/g, ' ')}`;
   }
+}
+
+function fmtDayBR(v: unknown): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v ?? ''));
+  return m ? `${m[3]}/${m[2]}` : String(v ?? '');
 }
 
 export class SessionManager {
@@ -334,11 +366,12 @@ export class SessionManager {
 export function humanizeError(error: string | null, stderr: string): string {
   const all = `${error ?? ''}\n${stderr}`;
   if (/not logged in|login|authentication|OAuth token|credentials/i.test(all)) {
-    return 'Claude Code is not logged in on the advisor host. Run `claude login` in the advisor container (see advisor/README.md) and try again.';
+    return 'O assistente perdeu o acesso ao Claude. É preciso refazer o login do Claude no servidor do assistente (veja o aviso no Discord ou o advisor/README.md) e tentar de novo.';
   }
   if (/rate limit|usage limit|out of (extra )?usage|resets at/i.test(all)) {
-    return `Claude usage limit reached. ${(all.match(/resets? (at|in)[^.\n]*/i) ?? [''])[0]}`.trim();
+    const when = (all.match(/resets? (at|in)[^.\n]*/i) ?? [''])[0];
+    return `O limite de uso do Claude foi atingido por enquanto. ${when ? `Volta ${when.replace(/^resets? /i, '')}.` : 'Tente mais tarde.'}`.trim();
   }
-  if (/timed out/i.test(all)) return error ?? 'The advisor timed out.';
-  return `The advisor failed: ${error ?? 'unknown error'}`;
+  if (/timed out/i.test(all)) return 'O assistente demorou demais e a resposta foi interrompida. Tente de novo.';
+  return `O assistente não conseguiu responder: ${error ?? 'erro desconhecido'}`;
 }
