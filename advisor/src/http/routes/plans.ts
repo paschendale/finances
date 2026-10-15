@@ -116,6 +116,30 @@ export function planRoutes(ctx: AppContext): Hono<Env> {
     }
   });
 
+  /** Recomputes and stores the per-period balance checks of a pending plan (no Claude turn). */
+  app.post('/plans/:id/recheck', async (c) => {
+    const plan = await getPlan(ctx.db, c.req.param('id'));
+    if (!plan) return c.json({ error: 'not found' }, 404);
+    if (!['draft', 'pending_approval'].includes(plan.status)) return c.json({ error: 'Este plano já foi tratado.' }, 409);
+    const items = await listPlanItems(ctx.db, plan.id);
+    const statements = [];
+    for (const sid of planStatementIds(plan)) {
+      const st = await getStatement(ctx.db, sid);
+      if (st) statements.push(await ensureStatementAccount(ctx.db, st, items));
+    }
+    statements.sort((a, b) => (a.period_start ?? '9999').localeCompare(b.period_start ?? '9999'));
+    const balances = [];
+    const ctxs = periodContexts(statements);
+    for (const [i, st] of statements.entries()) {
+      const b = await computePlanBalance(ctx.db, plan, items, st, ctxs[i]);
+      if (b) balances.push(b);
+    }
+    const balance = balances[balances.length - 1] ?? null;
+    await updatePlan(ctx.db, plan.id, { result: { ...(plan.result ?? {}), balance, balances } });
+    ctx.bus.emitConversation(plan.conversation_id, { type: 'plan', planId: plan.id, status: plan.status, version: plan.version });
+    return c.json({ balance, balances });
+  });
+
   /**
    * Opens the reconciliation of an applied statement plan that did not get one because the file had
    * no period or balances. The optional body fills those in on the statement first.

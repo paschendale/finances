@@ -6,7 +6,7 @@ import { appendPlanItems, createPlan, updatePlan, type PlanItemInput } from '../
 import { findNoteByPrefix } from '../db/repo/misc.js';
 import { matchLines } from '../ingest/match.js';
 import { accountConversationTitle } from '../gmail/grouping.js';
-import { entriesInPeriod, loadAccounts } from './reconcile.js';
+import { entriesInPeriod, loadAccounts, periodContexts } from './reconcile.js';
 import { round2, validatePlanItems, type PlanItemInputShape } from './schema.js';
 import { scoped } from '../log.js';
 
@@ -112,11 +112,12 @@ export async function prepareBatch(ctx: AppContext, input: { conversationId: str
 
   // An entry vouched by any period of the batch is not outstanding in another (card dates straddle bills).
   const vouchedAll = new Set(matched.flatMap((s) => (s.lines ?? []).map((l) => l.ledger_transaction_id).filter((x): x is string => Boolean(x))));
+  const ctxs = periodContexts(matched);
   const digest: DigestStatement[] = [];
-  for (const st of matched) {
+  for (const [i, st] of matched.entries()) {
     const lines = st.lines ?? [];
     const vouchedTx = vouchedAll;
-    const period = st.period_start && st.period_end ? await entriesInPeriod(ctx.db, accountId, st.period_start, st.period_end) : [];
+    const period = st.period_start && st.period_end ? await entriesInPeriod(ctx.db, accountId, st.period_start, ctxs[i]!.endInclusive ?? st.period_end) : [];
     digest.push({
       id: st.id,
       filename: st.filename,

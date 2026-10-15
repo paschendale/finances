@@ -115,13 +115,18 @@ export interface PeriodContext {
   previousClosing?: number | null;
   /** Transactions vouched by the other statements of the plan: never outstanding here */
   vouchedElsewhere?: Set<string>;
+  /** Last day that counts as this period's: the day before the next period starts when bills overlap by a day (May 01–Jun 01, Jun 01–Jul 01) */
+  endInclusive?: string;
+  /** Which statement of the plan vouches each transaction (the earliest wins): an item on that transaction belongs to that period */
+  txOwner?: Map<string, string>;
 }
 
-/** Whether an item belongs to this statement: by source_ref, else by date within the period. */
-function itemBelongs(it: PlanItem, statement: Statement): boolean {
+/** Whether an item belongs to this statement: by source_ref, else by the bill that vouches its transaction, else by date within the period. */
+function itemBelongs(it: PlanItem, statement: Statement, ctx: PeriodContext): boolean {
   if (it.source_ref?.statement_id) return it.source_ref.statement_id === statement.id;
+  if (it.transaction_id && ctx.txOwner?.has(it.transaction_id)) return ctx.txOwner.get(it.transaction_id) === statement.id;
   if (!it.date || !statement.period_start || !statement.period_end) return true;
-  return it.date >= statement.period_start && it.date <= statement.period_end;
+  return it.date >= statement.period_start && it.date <= (ctx.endInclusive ?? statement.period_end);
 }
 
 /**
@@ -130,10 +135,14 @@ function itemBelongs(it: PlanItem, statement: Statement): boolean {
  */
 export function periodContexts(sorted: Statement[]): PeriodContext[] {
   const vouchedBy = sorted.map((s) => new Set((s.lines ?? []).map((l) => l.ledger_transaction_id).filter((x): x is string => Boolean(x))));
-  return sorted.map((_, i) => {
+  const txOwner = new Map<string, string>();
+  sorted.forEach((s, i) => { for (const id of vouchedBy[i]!) if (!txOwner.has(id)) txOwner.set(id, s.id); });
+  return sorted.map((s, i) => {
     const elsewhere = new Set<string>();
     vouchedBy.forEach((set, j) => { if (j !== i) for (const id of set) elsewhere.add(id); });
-    return { previousClosing: i > 0 ? sorted[i - 1]!.closing_balance : undefined, vouchedElsewhere: elsewhere };
+    const next = sorted[i + 1];
+    const endInclusive = next && s.period_end && next.period_start === s.period_end ? dayBefore(s.period_end) : (s.period_end ?? undefined);
+    return { previousClosing: i > 0 ? sorted[i - 1]!.closing_balance : undefined, vouchedElsewhere: elsewhere, endInclusive, txOwner };
   });
 }
 
@@ -161,7 +170,8 @@ export async function computePlanBalance(db: Db, plan: Plan, allItems: PlanItem[
   const accountId = statement.account_id;
   const acc = await maybeOne<{ full_name: string }>(db, 'SELECT full_name FROM account_names_hierarchical WHERE id = $1', [accountId]);
   const opening = await openingFor(db, statement, ctx.previousClosing);
-  const items = allItems.filter((it) => it.status !== 'removed' && itemBelongs(it, statement));
+  const endInclusive = ctx.endInclusive ?? statement.period_end;
+  const items = allItems.filter((it) => it.status !== 'removed' && itemBelongs(it, statement, ctx));
 
   const vouched = new Set<string>();
   for (const line of statement.lines ?? []) {
@@ -175,11 +185,11 @@ export async function computePlanBalance(db: Db, plan: Plan, allItems: PlanItem[
   for (const it of allItems) if (it.transaction_id && it.status !== 'removed') touched.add(it.transaction_id);
   const elsewhere = ctx.vouchedElsewhere ?? new Set<string>();
 
-  const rows = await entriesVouchedOrInPeriod(db, accountId, statement.period_start, statement.period_end, [...vouched]);
+  const rows = await entriesVouchedOrInPeriod(db, accountId, statement.period_start, endInclusive, [...vouched]);
   let cleared = 0;
   let planDelta = 0;
   const outstanding: PlanBalanceReport['outstanding'] = [];
-  const periodTotal = rows.filter((e) => e.date >= statement.period_start! && e.date <= statement.period_end!).reduce((s, e) => s + e.amount_base, 0);
+  const periodTotal = rows.filter((e) => e.date >= statement.period_start! && e.date <= endInclusive).reduce((s, e) => s + e.amount_base, 0);
   for (const e of rows) {
     if (vouched.has(e.transaction_id)) {
       if (!isUpdatedOrDeleted(items, e.transaction_id)) cleared = round2(cleared + e.amount_base);
@@ -236,7 +246,7 @@ export async function reconcileAfterApply(
 ): Promise<ReconcileOutcome | null> {
   if (!statement.account_id || statement.closing_balance === null || !statement.period_start || !statement.period_end) return null;
   const accountId = statement.account_id;
-  const items = allItems.filter((it) => it.status !== 'removed' && itemBelongs(it, statement));
+  const items = allItems.filter((it) => it.status !== 'removed' && itemBelongs(it, statement, ctx));
 
   const vouchedTx = new Set<string>();
   const lineByTx = new Map<string, string>();
@@ -260,7 +270,7 @@ export async function reconcileAfterApply(
   const alreadyCleared = new Set(
     (await many<{ entry_id: string }>(db, `SELECT ri.entry_id FROM reconciliation_items ri JOIN reconciliations r ON r.id = ri.reconciliation_id WHERE ri.kind = 'cleared' AND r.account_id = $1 AND r.status <> 'abandoned' AND ri.entry_id IS NOT NULL`, [accountId])).map((r) => r.entry_id),
   );
-  const rows = await entriesVouchedOrInPeriod(db, accountId, statement.period_start, statement.period_end, [...vouchedTx]);
+  const rows = await entriesVouchedOrInPeriod(db, accountId, statement.period_start, ctx.endInclusive ?? statement.period_end, [...vouchedTx]);
   const recItems: Array<Record<string, unknown>> = [];
   const clearedEntries = new Set<string>();
   for (const e of rows) {
