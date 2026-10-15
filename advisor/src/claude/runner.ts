@@ -146,6 +146,11 @@ export class StreamParser {
         break;
       case 'stream_event': {
         const ev = j.event;
+        // A new text block after earlier text (tool calls in between): keep the paragraphs apart.
+        if (ev?.type === 'content_block_start' && ev.content_block?.type === 'text' && !j.parent_tool_use_id && this.sawDelta && this.deltaText && !/\n\s*$/.test(this.deltaText)) {
+          this.deltaText += '\n\n';
+          this.onEvent?.({ type: 'text', delta: '\n\n' });
+        }
         if (ev?.type === 'content_block_delta' && ev.delta?.type === 'text_delta' && typeof ev.delta.text === 'string' && !j.parent_tool_use_id) {
           this.sawDelta = true;
           this.deltaText += ev.delta.text;

@@ -128,3 +128,19 @@ describe('runSession with a fake claude binary', () => {
     expect(r.errorMessage).toMatch(/not logged in/i);
   });
 });
+
+describe('StreamParser text blocks', () => {
+  it('keeps a blank line between text blocks separated by tool calls', () => {
+    const deltas: string[] = [];
+    const p = new StreamParser((ev) => { if (ev.type === 'text') deltas.push(ev.delta); });
+    const line = (o: unknown) => JSON.stringify(o) + '\n';
+    p.push(line({ type: 'stream_event', event: { type: 'content_block_start', index: 0, content_block: { type: 'text' } } }));
+    p.push(line({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Resolvi a conta.' } } }));
+    p.push(line({ type: 'stream_event', event: { type: 'content_block_start', index: 1, content_block: { type: 'tool_use' } } }));
+    p.push(line({ type: 'stream_event', event: { type: 'content_block_start', index: 2, content_block: { type: 'text' } } }));
+    p.push(line({ type: 'stream_event', event: { type: 'content_block_delta', index: 2, delta: { type: 'text_delta', text: 'Plano pronto.' } } }));
+    p.end();
+    expect(p.text).toBe('Resolvi a conta.\n\nPlano pronto.');
+    expect(deltas.join('')).toBe(p.text);
+  });
+});
