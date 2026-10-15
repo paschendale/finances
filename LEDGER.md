@@ -43,6 +43,10 @@ The maintainer's personal mailbox is connected (Desktop OAuth client, scope `gma
 
 `DISCORD_OBEYED_USER_IDS` on the dev instance lists one user id. Add the second member's id so both can approve from Discord (web approvals already work for any finances token).
 
+## Advisor: empty draft plans linger
+
+When every line of a statement is already in the ledger the assistant sometimes calls `plan_create` and then leaves the draft empty (two such drafts on the dev copy from the re-sent September and the duplicate July mails). Harmless, but they show up in plan lists. Options: have `plan_create` require at least one item before it is listed, or a daily job that rejects empty drafts older than a day.
+
 ## Advisor: plan review has no "split item" action
 
 The mockup shows a split action on a plan row; the implementation covers it through the "ask the advisor to change this plan" box (the advisor rewrites the items). A direct split needs an "insert item" API on the plan.
