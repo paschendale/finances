@@ -123,10 +123,14 @@ an account out of the dashboard money cards and net worth while it stays a norma
 
 ## Gmail (optional)
 
-`node advisor/ops/gmail-auth.mjs <client_id> <client_secret>` walks the one-time consent flow for a
-Google Cloud *Desktop* OAuth client with scope `gmail.readonly` (+ `gmail.modify` to label processed
-mail) and prints the refresh token. Set `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`,
-`GMAIL_REFRESH_TOKEN`, add `gmail` to `ADVISOR_CHANNELS`.
+`node advisor/ops/gmail-auth.mjs --client-json <downloaded client_secret_*.json>` walks the one-time
+consent flow (scope `gmail.readonly`; add `--modify` to let the daemon label processed mail) and writes
+`GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN` to `~/.config/finances-advisor/gmail.env`
+(mode 600; `--out` changes the path). Google Cloud side: enable the Gmail API, **publish** the OAuth
+consent screen (an app in "Testing" gets refresh tokens that expire after 7 days) and create an OAuth
+client: a *Desktop app* client works as is; a *Web application* client must list
+`http://127.0.0.1:8765/callback` under its authorized redirect URIs. Put the three values in the
+daemon's environment and add `gmail` to `ADVISOR_CHANNELS`.
 
 Every cheap tick the daemon walks `users.history` from its cursor (first run: `GMAIL_LOOKBACK_DAYS`
 of mail with attachments). Known senders (Nubank account and card statements, Wise) are ingested by
