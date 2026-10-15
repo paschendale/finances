@@ -15,9 +15,38 @@ const CHECK_FILE_MESSAGE = 'Confira este arquivo com o que está registrado e me
  * conversation with that message; with files attached (any kind: a list of compras, a comprovante, a
  * planilha) the files go up together with the text and the assistant reads them.
  */
-export function EmptyState({ onStart, onUpload, busy }: { onStart: (message: string) => void; onUpload: (files: File[], message?: string) => void; busy?: boolean }) {
+/** Files staged next to a composer, each removable. */
+export function AttachmentChips({ files, onRemove }: { files: File[]; onRemove: (index: number) => void }) {
+  if (files.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5 px-1 pb-2">
+      {files.map((f, i) => (
+        <span key={`${f.name}-${f.size}-${i}`} className="flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-md border border-white/[0.1] bg-white/[0.04] text-[11px] text-muted-foreground max-w-[220px]">
+          <span className="truncate">{f.name}</span>
+          <button onClick={() => onRemove(i)} className="w-4 h-4 rounded hover:bg-white/[0.1] flex items-center justify-center" aria-label={`Remover ${f.name}`}><X className="w-3 h-3" /></button>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+export function EmptyState({
+  onStart,
+  onUpload,
+  busy,
+  files,
+  onAttach,
+  onRemoveAttachment,
+}: {
+  onStart: (message: string) => void;
+  onUpload: (files: File[], message?: string) => void;
+  busy?: boolean;
+  /** Files staged for the first message (dropped on the pane or picked with the clip); sent with the text */
+  files: File[];
+  onAttach: (files: File[]) => void;
+  onRemoveAttachment: (index: number) => void;
+}) {
   const [text, setText] = useState('');
-  const [files, setFiles] = useState<File[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const canSend = !busy && (text.trim().length > 0 || files.length > 0);
 
@@ -27,7 +56,6 @@ export function EmptyState({ onStart, onUpload, busy }: { onStart: (message: str
     if (files.length > 0) onUpload(files, message || undefined);
     else onStart(message);
     setText('');
-    setFiles([]);
   };
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
@@ -63,18 +91,9 @@ export function EmptyState({ onStart, onUpload, busy }: { onStart: (message: str
 
       {/* Composer */}
       <div className="shrink-0 px-3 sm:px-5 pb-4 pt-2 border-t border-white/[0.06] bg-[#050505]/95 backdrop-blur-md">
-        {files.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 px-1 pb-2">
-            {files.map((f, i) => (
-              <span key={`${f.name}-${i}`} className="flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-md border border-white/[0.1] bg-white/[0.04] text-[11px] text-muted-foreground max-w-[220px]">
-                <span className="truncate">{f.name}</span>
-                <button onClick={() => setFiles((fs) => fs.filter((_, j) => j !== i))} className="w-4 h-4 rounded hover:bg-white/[0.1] flex items-center justify-center" aria-label={`Remover ${f.name}`}><X className="w-3 h-3" /></button>
-              </span>
-            ))}
-          </div>
-        )}
+        <AttachmentChips files={files} onRemove={onRemoveAttachment} />
         <div className="flex items-end gap-1.5 px-1.5 py-1.5 rounded-2xl border border-white/[0.12] bg-white/[0.03] focus-within:border-white/[0.25] transition-colors">
-          <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { const fs = Array.from(e.target.files ?? []); if (fs.length) setFiles((prev) => [...prev, ...fs]); e.target.value = ''; }} />
+          <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { const fs = Array.from(e.target.files ?? []); if (fs.length) onAttach(fs); e.target.value = ''; }} />
           <button onClick={() => pickFile()} disabled={busy} className="w-10 h-10 rounded-xl text-muted-foreground/70 hover:text-foreground hover:bg-white/[0.06] flex items-center justify-center shrink-0 transition-colors" aria-label="Anexar arquivo"><Paperclip className="w-4 h-4" /></button>
           <textarea
             value={text}
@@ -82,7 +101,7 @@ export function EmptyState({ onStart, onUpload, busy }: { onStart: (message: str
             onKeyDown={onKey}
             rows={1}
             disabled={busy}
-            placeholder="Pergunte, ou anexe um arquivo e diga o que fazer com ele…"
+            placeholder={files.length > 0 ? 'Diga o que fazer com o arquivo… (Enter envia)' : 'Pergunte, ou anexe um arquivo e diga o que fazer com ele…'}
             className="flex-1 min-h-[40px] max-h-40 resize-none bg-transparent outline-none text-[14px] leading-[22px] py-2 placeholder:text-muted-foreground/40"
             style={{ height: Math.min(160, 24 + 22 * Math.max(1, text.split('\n').length)) }}
           />

@@ -5,6 +5,7 @@ import { Paperclip, ArrowUp, Square, ChevronRight, Loader2, FileText, MoreHorizo
 import { cn } from '@/lib/utils';
 import { type Conversation, type Plan, type StatementSummary } from '@/lib/advisor-api';
 import { Markdown } from './Markdown';
+import { AttachmentChips } from './AdvisorStates';
 import { PlanCard } from './PlanCard';
 import { ChannelBadge } from './ConversationList';
 import type { LiveMessage } from './useConversation';
@@ -39,7 +40,9 @@ export function ChatPanel({
   busy,
   onSend,
   onStop,
-  onUpload,
+  files,
+  onAttach,
+  onRemoveAttachment,
   onReviewPlan,
   onApprovePlan,
   onRejectPlan,
@@ -55,9 +58,13 @@ export function ChatPanel({
   plans: Plan[];
   statements: StatementSummary[];
   busy: boolean;
-  onSend: (text: string) => void;
+  /** Sends the text with the staged files (either may be empty, not both) */
+  onSend: (text: string, files: File[]) => void;
   onStop: () => void;
-  onUpload: (files: File[]) => void;
+  /** Files staged for the next message: dropped on the pane or picked with the clip */
+  files: File[];
+  onAttach: (files: File[]) => void;
+  onRemoveAttachment: (index: number) => void;
   onReviewPlan: (id: string) => void;
   onApprovePlan: (plan: Plan) => void;
   onRejectPlan: (plan: Plan) => void;
@@ -93,10 +100,10 @@ export function ChatPanel({
     return { out, tail };
   }, [plans, messages]);
 
+  const canSend = text.trim().length > 0 || files.length > 0;
   const submit = () => {
-    const t = text.trim();
-    if (!t) return;
-    onSend(t);
+    if (!canSend) return;
+    onSend(text.trim(), files);
     setText('');
     textRef.current?.focus();
   };
@@ -197,8 +204,9 @@ export function ChatPanel({
 
       {/* Composer */}
       <div className="shrink-0 px-3 sm:px-5 pb-4 pt-2 border-t border-white/[0.06] bg-[#050505]/95 backdrop-blur-md">
+        <AttachmentChips files={files} onRemove={onRemoveAttachment} />
         <div className="flex items-end gap-1.5 px-1.5 py-1.5 rounded-2xl border border-white/[0.12] bg-white/[0.03] focus-within:border-white/[0.25] transition-colors">
-          <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { const fs = Array.from(e.target.files ?? []); if (fs.length) onUpload(fs); e.target.value = ''; }} />
+          <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { const fs = Array.from(e.target.files ?? []); if (fs.length) onAttach(fs); e.target.value = ''; }} />
           <button onClick={() => fileRef.current?.click()} className="w-10 h-10 rounded-xl text-muted-foreground/70 hover:text-foreground hover:bg-white/[0.06] flex items-center justify-center shrink-0 transition-colors" aria-label="Anexar arquivo"><Paperclip className="w-4 h-4" /></button>
           <textarea
             ref={textRef}
@@ -206,14 +214,14 @@ export function ChatPanel({
             onChange={(e) => setText(e.target.value)}
             onKeyDown={onKey}
             rows={1}
-            placeholder="Escreva para o assistente… (Enter envia, Shift+Enter pula linha)"
+            placeholder={files.length > 0 ? 'Diga o que fazer com o arquivo… (Enter envia)' : 'Escreva para o assistente… (Enter envia, Shift+Enter pula linha)'}
             className="flex-1 min-h-[40px] max-h-40 resize-none bg-transparent outline-none text-[14px] leading-[22px] py-2 placeholder:text-muted-foreground/40"
             style={{ height: Math.min(160, 24 + 22 * Math.max(1, text.split('\n').length)) }}
           />
           {busy ? (
             <button onClick={onStop} className="w-10 h-10 rounded-xl bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 flex items-center justify-center shrink-0 transition-colors" aria-label="Parar"><Square className="w-3.5 h-3.5" /></button>
           ) : (
-            <button onClick={submit} disabled={!text.trim()} className="w-10 h-10 rounded-xl bg-white/[0.1] hover:bg-white/[0.18] disabled:opacity-30 flex items-center justify-center shrink-0 transition-colors" aria-label="Enviar"><ArrowUp className="w-4 h-4" /></button>
+            <button onClick={submit} disabled={!canSend} className="w-10 h-10 rounded-xl bg-white/[0.1] hover:bg-white/[0.18] disabled:opacity-30 flex items-center justify-center shrink-0 transition-colors" aria-label="Enviar"><ArrowUp className="w-4 h-4" /></button>
           )}
         </div>
       </div>

@@ -43,6 +43,13 @@ export function AdvisorPage({ conversationId, planId, onNavigate }: { conversati
   const qc = useQueryClient();
   const mobile = useIsMobile();
   const [listOpen, setListOpen] = useState(false);
+  // Files dropped on the pane or picked with the clip wait here and go out with the next message.
+  // They belong to the conversation they were dropped in: switching conversations shows an empty tray.
+  const [staged, setStaged] = useState<{ conversationId: string | null; files: File[] }>({ conversationId: null, files: [] });
+  const attachments = staged.conversationId === conversationId ? staged.files : [];
+  const setAttachments = useCallback((files: File[]) => setStaged({ conversationId, files }), [conversationId]);
+  const attach = useCallback((files: File[]) => setStaged((prev) => ({ conversationId, files: [...(prev.conversationId === conversationId ? prev.files : []), ...files] })), [conversationId]);
+  const removeAttachment = useCallback((i: number) => setStaged((prev) => ({ conversationId, files: (prev.conversationId === conversationId ? prev.files : []).filter((_, j) => j !== i) })), [conversationId]);
   const { data: rows = [], isLoading: listLoading } = useQuery({ queryKey: ['advisorConversations'], queryFn: fetchConversations, refetchInterval: 30_000 });
   const { data: health } = useAdvisorHealth();
   const conv = useConversation(conversationId);
@@ -62,11 +69,19 @@ export function AdvisorPage({ conversationId, planId, onNavigate }: { conversati
     mutationFn: (input: { message?: string; title?: string }) => createConversation(input),
     onSuccess: (c) => { void qc.invalidateQueries({ queryKey: ['advisorConversations'] }); select(c.id); },
   });
-  const send = useMutation({ mutationFn: (text: string) => sendMessage(conversationId!, text) });
+  const send = useMutation({
+    mutationFn: async (input: { text: string; files: File[] }): Promise<void> => {
+      if (input.files.length > 0) await uploadFiles(input.files, { conversationId: conversationId!, message: input.text || undefined });
+      else await sendMessage(conversationId!, input.text);
+    },
+    onSuccess: () => { setAttachments([]); void conv.refetch(); },
+    onError: (e: Error) => window.alert(e.message),
+  });
   const stop = useMutation({ mutationFn: () => stopConversation(conversationId!) });
+  // First message of a new conversation with files attached.
   const upload = useMutation({
-    mutationFn: (input: { files: File[]; message?: string }) => uploadFiles(input.files, { conversationId: conversationId ?? undefined, message: input.message }),
-    onSuccess: (r) => { void qc.invalidateQueries({ queryKey: ['advisorConversations'] }); if (!conversationId) select(r.conversation_id); else void conv.refetch(); },
+    mutationFn: (input: { files: File[]; message?: string }) => uploadFiles(input.files, { message: input.message }),
+    onSuccess: (r) => { setAttachments([]); void qc.invalidateQueries({ queryKey: ['advisorConversations'] }); select(r.conversation_id); },
     onError: (e: Error) => window.alert(e.message),
   });
   const approve = useMutation({
@@ -112,9 +127,11 @@ export function AdvisorPage({ conversationId, planId, onNavigate }: { conversati
       plans={conv.plans}
       statements={conv.statements}
       busy={conv.busy}
-      onSend={(t) => send.mutate(t)}
+      onSend={(text, files) => send.mutate({ text, files })}
       onStop={() => stop.mutate()}
-      onUpload={(files) => upload.mutate({ files })}
+      files={attachments}
+      onAttach={attach}
+      onRemoveAttachment={removeAttachment}
       onReviewPlan={(id) => onNavigate({ conversationId, planId: id })}
       onApprovePlan={(p) => approve.mutate(p)}
       onRejectPlan={(p) => { if (window.confirm('Descartar este plano?')) reject.mutate(p); }}
@@ -135,7 +152,14 @@ export function AdvisorPage({ conversationId, planId, onNavigate }: { conversati
       {newConversation.isPending ? (
         <div className="flex items-center justify-center h-full text-muted-foreground/50 text-[13px]"><Loader2 className="w-4 h-4 animate-spin mr-2" /> Começando…</div>
       ) : (
-        <EmptyState onStart={(message) => newConversation.mutate({ message })} onUpload={(files, message) => upload.mutate({ files, message })} busy={upload.isPending} />
+        <EmptyState
+          onStart={(message) => newConversation.mutate({ message })}
+          onUpload={(files, message) => upload.mutate({ files, message })}
+          busy={upload.isPending}
+          files={attachments}
+          onAttach={attach}
+          onRemoveAttachment={removeAttachment}
+        />
       )}
     </div>
   );
@@ -143,7 +167,7 @@ export function AdvisorPage({ conversationId, planId, onNavigate }: { conversati
   return (
     <div className="w-full space-y-3 pb-6">
       <OfflineBanner health={health} />
-      <UploadDrop onFiles={(files) => upload.mutate({ files })} disabled={upload.isPending} className="rounded-2xl border border-white/[0.06] bg-white/[0.015] overflow-hidden" >
+      <UploadDrop onFiles={attach} disabled={upload.isPending || send.isPending} className="rounded-2xl border border-white/[0.06] bg-white/[0.015] overflow-hidden" >
         <div className="flex h-[calc(100dvh-150px)] sm:h-[calc(100vh-170px)] min-h-[420px] sm:min-h-[520px]">
           {!mobile && (
             <aside className="w-[280px] shrink-0 border-r border-white/[0.06] flex flex-col">
@@ -151,7 +175,7 @@ export function AdvisorPage({ conversationId, planId, onNavigate }: { conversati
             </aside>
           )}
           <section className="flex-1 min-w-0 flex flex-col relative">
-            {upload.isPending && <div className="absolute top-2 right-3 z-20 text-[11px] text-muted-foreground flex items-center gap-1.5 bg-black/60 px-2 py-1 rounded-lg"><Loader2 className="w-3 h-3 animate-spin" /> Enviando…</div>}
+            {(upload.isPending || (send.isPending && attachments.length > 0)) && <div className="absolute top-2 right-3 z-20 text-[11px] text-muted-foreground flex items-center gap-1.5 bg-black/60 px-2 py-1 rounded-lg"><Loader2 className="w-3 h-3 animate-spin" /> Enviando…</div>}
             {right}
           </section>
         </div>
