@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { ConversationLocks, SessionPool } from '../src/claude/pool.js';
 import { assertDatabaseMatchesEnv, databaseNameOf, loadConfig } from '../src/config.js';
 import { detectCheckin, parseBrazilianAmount } from '../src/jobs/checkin.js';
-import { APPROVE_WORDS, REJECT_WORDS, chunkMessage, discordify } from '../src/discord/poster.js';
+import { APPROVE_WORDS, REJECT_WORDS, chunkMessage, discordify, headline, mobileify, trackerText } from '../src/discord/poster.js';
+import { parseTracker } from '../src/discord/bot.js';
 import { humanizeError, describeTool } from '../src/claude/session.js';
 import { originMatcher } from '../src/http/server.js';
 
@@ -122,6 +123,20 @@ describe('discord poster', () => {
     const out = discordify('intro\n| a | b |\n|---|---|\n| 1 | 2 |\nfim');
     expect(out).toContain('```');
     expect(out.split('```').length).toBe(3);
+  });
+  it('lays text out for a phone: one paragraph per line, headings bold, code blocks intact', () => {
+    const out = mobileify('## Título\nlinha 1\nlinha 2\n\n\n```\na\nb\n```\nfim');
+    expect(out).toBe('**Título**\n\nlinha 1\n\nlinha 2\n\n```\na\nb\n```\n\nfim');
+  });
+  it('extracts a headline from a reply', () => {
+    expect(headline('**O plano está pronto.** Nada foi gravado ainda.\n\nmais texto')).toBe('O plano está pronto.');
+    expect(headline('x'.repeat(200), 50).length).toBeLessThanOrEqual(50);
+    expect(headline('| a | b |\n\nResposta aqui')).toBe('Resposta aqui');
+  });
+  it('builds and parses tracker messages', () => {
+    const text = trackerText({ title: 'Extrato set/2026', status: '🟡 Plano aguardando aprovação', lines: ['16 novos · 21 já no ledger', ''], hint: 'Detalhes na thread.', link: 'https://app.example/?view=advisor' });
+    expect(text.split('\n\n')).toEqual(['**Extrato set/2026**', '🟡 Plano aguardando aprovação', '16 novos · 21 já no ledger', 'Detalhes na thread.', '<https://app.example/?view=advisor>']);
+    expect(parseTracker(text)).toEqual({ title: 'Extrato set/2026', status: '🟡 Plano aguardando aprovação', hint: 'Detalhes na thread.', link: 'https://app.example/?view=advisor' });
   });
   it('recognises approval words', () => {
     expect(APPROVE_WORDS.test('aprova')).toBe(true);

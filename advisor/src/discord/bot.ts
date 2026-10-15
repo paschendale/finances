@@ -1,5 +1,4 @@
 import {
-  AttachmentBuilder,
   ChannelType,
   Client,
   Events,
@@ -14,36 +13,49 @@ import {
   type User,
 } from 'discord.js';
 import type { AppContext } from '../context.js';
-import type { NotifyTarget, PlanNotification } from '../notify.js';
+import type { Conversation, PlanWithCounts } from '../db/types.js';
+import type { Notice, NotifyTarget, PlanNotification } from '../notify.js';
 import { createConversation, findConversationByExternalRef, getConversation, updateConversation } from '../db/repo/conversations.js';
-import { getPlan, listPlanItems, listPlans } from '../db/repo/plans.js';
+import { getPlan, listPlans } from '../db/repo/plans.js';
 import { claimEvent, getState, setState } from '../db/repo/misc.js';
 import { approveAndApply, ApplyError, rejectPlan } from '../plan/apply.js';
 import { ingestBuffer } from '../jobs/ingest-statement.js';
 import { detectCheckin, checkinInstruction } from '../jobs/checkin.js';
-import { APPROVE_WORDS, REJECT_WORDS, chunkMessage, discordify } from './poster.js';
+import { APPROVE_WORDS, REJECT_WORDS, chunkMessage, fmtBRL, fmtDay, formatReply, headline, mobileify, trackerText, type TrackerState } from './poster.js';
 import { setChannelStatus } from '../http/routes/health.js';
 import { scoped } from '../log.js';
 
 const log = scoped('discord');
-const fmt = (n: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
 
 interface SummaryRef {
-  messageId: string;
+  /** messages that accept a ✅ reaction as approval (thread summary and channel tracker) */
+  messageIds: string[];
   version: number;
 }
 
+interface NoticeRef {
+  day: string;
+  threadId: string;
+}
+
+const HINT_THREAD = 'Detalhes na thread.';
+const HINT_APPROVE = 'Reaja ✅ para aplicar · "rejeita" descarta.';
+
 /**
- * Discord channel: one thread per statement/plan and per ad-hoc question; messages in a thread are
- * turns of that conversation; ✅ on the latest plan summary (or "aprova") applies the plan. Only
- * DISCORD_OBEYED_USER_IDS are acted on.
+ * Discord channel, designed for a phone: every topic (a question, a statement, a nudge) is one short
+ * **tracker** message in the channel that is edited in place as the topic moves along (thinking →
+ * answered, plan waiting → applied); everything else happens in the topic's thread. Messages in a
+ * thread are turns of that conversation; ✅ on the latest plan summary or on the tracker (or "aprova")
+ * applies the plan. Only DISCORD_OBEYED_USER_IDS are acted on.
  */
 export class DiscordBot implements NotifyTarget {
   name = 'discord';
   private client: Client;
   private channel: TextChannel | null = null;
-  /** plan id → latest summary message (approval by reaction is accepted only on this one) */
+  /** plan id → messages whose ✅ approves it, at a given version */
   private summaries = new Map<string, SummaryRef>();
+  /** notice key → thread of today's notice */
+  private notices = new Map<string, NoticeRef>();
   private ready = false;
 
   constructor(private readonly ctx: AppContext) {
@@ -67,12 +79,21 @@ export class DiscordBot implements NotifyTarget {
     this.channel = ch as TextChannel;
     this.ready = true;
     setChannelStatus({ name: 'discord', enabled: true, ok: true, detail: `connected as ${this.client.user?.tag}` });
-    const saved = await getState<Record<string, SummaryRef>>(this.ctx.db, 'discord_summaries');
-    if (saved) for (const [k, v] of Object.entries(saved)) this.summaries.set(k, v);
-    // Assistant replies for Discord conversations go back to their thread.
+    const saved = await getState<Record<string, SummaryRef | { messageId: string; version: number }>>(this.ctx.db, 'discord_summaries');
+    if (saved) {
+      for (const [k, v] of Object.entries(saved)) {
+        this.summaries.set(k, 'messageIds' in v ? v : { messageIds: [v.messageId], version: v.version });
+      }
+    }
+    const notices = await getState<Record<string, NoticeRef>>(this.ctx.db, 'discord_notices');
+    if (notices) for (const [k, v] of Object.entries(notices)) this.notices.set(k, v);
+    // Assistant replies for Discord conversations go back to their thread; the tracker follows.
     this.ctx.bus.onAnyConversation((conversationId, ev) => {
       if (ev.type === 'message' && ev.role === 'assistant' && (ev.status === 'done' || ev.status === 'failed')) {
-        void this.relayAssistant(conversationId, ev.content).catch((err) => log.warn({ err }, 'relay failed'));
+        void this.relayAssistant(conversationId, ev.content, ev.status).catch((err) => log.warn({ err }, 'relay failed'));
+      }
+      if (ev.type === 'plan' && ev.status === 'rejected') {
+        void this.onPlanRejected(conversationId, ev.planId).catch((err) => log.warn({ err }, 'tracker update failed'));
       }
     });
     await this.catchUp().catch((err) => log.warn({ err }, 'catch-up failed'));
@@ -92,6 +113,16 @@ export class DiscordBot implements NotifyTarget {
     if (m.channelId === this.ctx.config.DISCORD_CHANNEL_ID) return true;
     const ch = m.channel;
     return ch.isThread() && ch.parentId === this.ctx.config.DISCORD_CHANNEL_ID;
+  }
+
+  private webLink(conversationId: string, planId?: string | null): string | null {
+    const base = this.ctx.config.WEB_APP_URL;
+    if (!base) return null;
+    const u = new URL(base);
+    u.searchParams.set('view', 'advisor');
+    u.searchParams.set('conversation', conversationId);
+    if (planId) u.searchParams.set('plan', planId);
+    return u.toString();
   }
 
   // ---- inbound -------------------------------------------------------------------------------
@@ -124,7 +155,7 @@ export class DiscordBot implements NotifyTarget {
       }
     }
 
-    // Conversation: existing thread or a new thread off the channel
+    // Conversation: existing thread, or a new tracker + thread off the channel
     let conversationId: string;
     let target: ThreadChannel;
     if (thread) {
@@ -137,10 +168,12 @@ export class DiscordBot implements NotifyTarget {
       target = thread;
     } else {
       const title = (text || m.attachments.first()?.name || 'Conversa').replace(/\s+/g, ' ').slice(0, 80);
-      target = await m.startThread({ name: title, autoArchiveDuration: 1440 });
+      const tracker = await m.reply({ content: trackerText({ title, status: '⏳ Pensando…', hint: HINT_THREAD }), allowedMentions: { repliedUser: false } });
+      target = await tracker.startThread({ name: title.slice(0, 90), autoArchiveDuration: 1440 });
       const c = await createConversation(this.ctx.db, { channel: 'discord', title, external_ref: target.id, created_by: actor });
       conversationId = c.id;
     }
+    await this.setTracker(target, { status: '⏳ Pensando…' });
 
     // Attachments → uploads into the conversation (15 MB cap)
     const maxBytes = this.ctx.config.UPLOAD_MAX_MB * 1024 * 1024;
@@ -171,138 +204,197 @@ export class DiscordBot implements NotifyTarget {
     if (reaction.partial) await reaction.fetch();
     if (reaction.emoji.name !== '✅' && reaction.emoji.name !== '👍') return;
     const msg = reaction.message.partial ? await reaction.message.fetch() : reaction.message;
-    const planId = [...this.summaries.entries()].find(([, ref]) => ref.messageId === msg.id)?.[0];
+    const planId = [...this.summaries.entries()].find(([, ref]) => ref.messageIds.includes(msg.id))?.[0];
     if (!planId) return;
     if (!(await claimEvent(this.ctx.db, { source: 'discord', external_id: `react:${msg.id}:${user.id}:${reaction.emoji.name}`, kind: 'reaction' }))) return;
-    const thread = msg.channel.isThread() ? (msg.channel as ThreadChannel) : null;
-    await this.applyPlan(planId, `discord:${user.id}`, thread ?? this.channel!);
+    const plan = await getPlan(this.ctx.db, planId);
+    const thread = msg.channel.isThread() ? (msg.channel as ThreadChannel) : plan ? await this.threadOf(plan.conversation_id) : null;
+    if (!thread) return;
+    await this.applyPlan(planId, `discord:${user.id}`, thread);
   }
 
-  private async applyPlan(planId: string, actor: string, target: ThreadChannel | TextChannel): Promise<void> {
+  private async applyPlan(planId: string, actor: string, thread: ThreadChannel): Promise<void> {
     const plan = await getPlan(this.ctx.db, planId);
     if (!plan) return;
     const ref = this.summaries.get(planId);
     if (ref && ref.version !== plan.version) {
-      await target.send(`O plano mudou desde o último resumo (v${ref.version} → v${plan.version}). Confira o novo resumo antes de aprovar.`);
-      await this.postSummary(plan.id, target);
+      await thread.send(`O plano mudou desde o último resumo (v${ref.version} → v${plan.version}). Confira o novo resumo antes de aprovar.`);
+      await this.postSummary(plan, thread);
       return;
     }
     try {
-      await target.send('Aplicando…');
+      await this.setTracker(thread, { status: '⏳ Aplicando…', hint: null });
       const r = await approveAndApply(this.ctx, planId, { actor, version: plan.version });
       const rec = r.reconciliation?.reconciliation;
       const lines = [
-        r.status === 'applied' ? `✅ Plano aplicado: ${r.applied} itens, ${r.skipped} ignorados.` : `⚠️ Plano parcialmente aplicado: ${r.applied} ok, ${r.failed} falhou.`,
-        ...r.items.filter((i) => i.status === 'failed').map((i) => `• item ${i.seq} (${i.kind}): ${i.error}`),
-        rec
-          ? rec.status === 'balanced'
-            ? `Conciliação fechada: saldo bate até ${rec.period_end}.`
-            : rec.status === 'adjusted'
-              ? `Conciliação fechada com ajuste de ${fmt(Number(rec.difference ?? 0))} até ${rec.period_end}.`
-              : `Conciliação aberta: diferença ${fmt(Number(rec.difference ?? 0))} até ${rec.period_end}. ${rec.notes ?? ''}`
-          : '',
+        r.status === 'applied' ? `✅ Aplicado: ${r.applied} lançamento${r.applied === 1 ? '' : 's'}${r.skipped ? `, ${r.skipped} já estavam no ledger` : ''}.` : `⚠️ Parou no item ${r.items.find((i) => i.status === 'failed')?.seq ?? '?'}: ${r.applied} ok, ${r.failed} falhou.`,
+        ...r.items.filter((i) => i.status === 'failed').map((i) => `Item ${i.seq} (${i.kind}): ${i.error}`),
+        rec ? reconciliationLine(rec) : '',
       ].filter(Boolean);
-      await this.send(target, lines.join('\n'));
+      await this.send(thread, lines.join('\n'));
     } catch (err) {
       const msg = err instanceof ApplyError ? err.message : (err as Error).message;
-      await target.send(`Não consegui aplicar: ${msg}`);
+      await thread.send(`Não consegui aplicar: ${msg}`);
+      await this.setTracker(thread, { status: '⚠️ Falhou ao aplicar', lines: [msg.slice(0, 160)], hint: HINT_THREAD });
     }
   }
 
   // ---- outbound ------------------------------------------------------------------------------
 
-  private async send(target: ThreadChannel | TextChannel, text: string, files?: AttachmentBuilder[]): Promise<Message | null> {
-    const chunks = chunkMessage(discordify(text));
+  private async send(target: ThreadChannel | TextChannel, text: string): Promise<Message | null> {
+    const chunks = chunkMessage(mobileify(text));
     let last: Message | null = null;
-    for (let i = 0; i < chunks.length; i++) {
-      last = await target.send({ content: chunks[i]!, files: i === chunks.length - 1 ? files : undefined });
-    }
+    for (const chunk of chunks) last = await target.send({ content: chunk });
     return last;
   }
 
-  private async threadFor(conversationId: string, title: string): Promise<ThreadChannel | null> {
+  /** The thread of a conversation on Discord (any channel, once it has reached Discord), if any. */
+  private async threadOf(conversationId: string): Promise<ThreadChannel | null> {
     const conv = await getConversation(this.ctx.db, conversationId);
-    if (!conv || !this.channel) return null;
-    if (conv.channel === 'discord' && conv.external_ref) {
-      const t = await this.client.channels.fetch(conv.external_ref).catch(() => null);
-      if (t && t.isThread()) return t as ThreadChannel;
-    }
-    if (conv.channel !== 'discord' && conv.external_ref) {
-      const t = await this.client.channels.fetch(conv.external_ref).catch(() => null);
-      if (t && t.isThread()) return t as ThreadChannel;
-    }
-    // Web/system conversation that reached Discord for the first time (a plan to approve): open a thread.
-    const starter = await this.channel.send(`🧵 ${title}`);
+    if (!conv?.external_ref) return null;
+    const t = await this.client.channels.fetch(conv.external_ref).catch(() => null);
+    return t && t.isThread() ? (t as ThreadChannel) : null;
+  }
+
+  /** Thread for a conversation, opening a tracker + thread in the channel when it has none yet. */
+  private async threadFor(conv: Conversation, title: string, initial: TrackerState): Promise<ThreadChannel | null> {
+    if (!this.channel) return null;
+    const existing = await this.threadOf(conv.id);
+    if (existing) return existing;
+    const starter = await this.channel.send(trackerText({ ...initial, title }));
     const thread = await starter.startThread({ name: title.slice(0, 90), autoArchiveDuration: 1440 });
     await updateConversation(this.ctx.db, conv.id, { external_ref: thread.id });
     return thread;
   }
 
-  private async relayAssistant(conversationId: string, content: string): Promise<void> {
-    const conv = await getConversation(this.ctx.db, conversationId);
-    if (!conv || conv.channel !== 'discord' || !conv.external_ref || !content.trim()) return;
-    const t = await this.client.channels.fetch(conv.external_ref).catch(() => null);
-    if (!t || !t.isThread()) return;
-    await this.send(t as ThreadChannel, content);
+  /**
+   * Edits the channel message a thread hangs from (a thread started from a message shares its id).
+   * Trackers the bot did not author (legacy threads off a person's message) are left alone.
+   */
+  private async setTracker(thread: ThreadChannel, patch: Partial<TrackerState>): Promise<void> {
+    if (!this.channel) return;
+    const starter = await this.channel.messages.fetch(thread.id).catch(() => null);
+    if (!starter || starter.author.id !== this.client.user?.id) return;
+    const current = parseTracker(starter.content);
+    const next: TrackerState = { title: patch.title ?? current.title ?? thread.name, status: patch.status ?? current.status ?? '', lines: patch.lines ?? [], hint: patch.hint === undefined ? current.hint : patch.hint, link: patch.link === undefined ? current.link : patch.link };
+    const content = trackerText(next);
+    if (content !== starter.content) await starter.edit({ content, allowedMentions: { repliedUser: false } }).catch((err) => log.warn({ err }, 'tracker edit failed'));
   }
 
-  private async postSummary(planId: string, target: ThreadChannel | TextChannel): Promise<void> {
-    const plan = await getPlan(this.ctx.db, planId);
-    if (!plan) return;
-    const items = await listPlanItems(this.ctx.db, planId);
-    const balance = (plan.result as { balance?: { ok: boolean; difference: number; account_name?: string | null } } | null)?.balance;
-    const byAccount = new Map<string, number>();
-    for (const it of items) {
-      if (it.status === 'removed' || !['create', 'adjust', 'update'].includes(it.kind)) continue;
-      for (const e of it.entries) byAccount.set(e.account_id, (byAccount.get(e.account_id) ?? 0) + e.amount_base);
+  private async relayAssistant(conversationId: string, content: string, status: 'done' | 'failed'): Promise<void> {
+    const conv = await getConversation(this.ctx.db, conversationId);
+    if (!conv || conv.channel !== 'discord' || !conv.external_ref) return;
+    const t = await this.client.channels.fetch(conv.external_ref).catch(() => null);
+    if (!t || !t.isThread()) return;
+    const thread = t as ThreadChannel;
+    if (content.trim()) {
+      const chunks = chunkMessage(formatReply(content));
+      for (const chunk of chunks) await thread.send({ content: chunk });
     }
-    const csv = ['seq,kind,date,description,amount_base,confidence,status', ...items.map((i) => {
-      const leg = i.entries.find((e) => e.amount_base < 0) ?? i.entries[0];
-      return [i.seq, i.kind, i.date ?? '', JSON.stringify(i.description ?? ''), leg?.amount_base ?? '', i.confidence ?? '', i.status].join(',');
-    })].join('\n');
-    const text = [
-      `**${plan.title}** · v${plan.version}`,
-      plan.summary ?? '',
-      `Criar ${plan.create_count} · Atualizar ${plan.update_count} · Ignorar ${plan.skip_count} · Ajustar ${plan.adjust_count}`,
-      balance ? (balance.ok ? `✓ Saldo bate com o extrato${balance.account_name ? ` (${balance.account_name})` : ''}` : `✗ Diferença de ${fmt(balance.difference)} contra o extrato`) : '',
-      '',
-      'Reaja com ✅ ou responda "aprova" para aplicar; "rejeita" para descartar; qualquer outra mensagem conversa com o assistente.',
-    ].filter((l) => l !== '').join('\n');
-    const msg = await this.send(target, text, [new AttachmentBuilder(Buffer.from(csv, 'utf8'), { name: `plan-${plan.id.slice(0, 8)}-v${plan.version}.csv` })]);
+    // A pending plan owns the tracker; otherwise the tracker shows the answer's headline.
+    const pending = (await listPlans(this.ctx.db, { conversation_id: conv.id, status: ['pending_approval'] }))[0];
+    if (pending) return;
+    if (status === 'failed') await this.setTracker(thread, { status: '⚠️ A resposta falhou', lines: [headline(content, 140)], hint: HINT_THREAD });
+    else await this.setTracker(thread, { status: '✅ Respondido', lines: [headline(content)], hint: HINT_THREAD, link: this.webLink(conv.id) });
+  }
+
+  private planLines(plan: PlanWithCounts): string[] {
+    const balance = (plan.result as { balance?: { ok: boolean; difference: number; account_name?: string | null } } | null)?.balance;
+    const counts = [
+      plan.create_count ? `${plan.create_count} novo${plan.create_count === 1 ? '' : 's'}` : '',
+      plan.update_count ? `${plan.update_count} alteraç${plan.update_count === 1 ? 'ão' : 'ões'}` : '',
+      plan.adjust_count ? `${plan.adjust_count} ajuste${plan.adjust_count === 1 ? '' : 's'}` : '',
+      plan.skip_count ? `${plan.skip_count} já no ledger` : '',
+      plan.item_count - plan.create_count - plan.update_count - plan.adjust_count - plan.skip_count > 0
+        ? `${plan.item_count - plan.create_count - plan.update_count - plan.adjust_count - plan.skip_count} outro${plan.item_count - plan.create_count - plan.update_count - plan.adjust_count - plan.skip_count === 1 ? '' : 's'}`
+        : '',
+    ].filter(Boolean);
+    return [
+      counts.join(' · '),
+      balance ? (balance.ok ? `✓ Saldo bate com o extrato${balance.account_name ? ` (${balance.account_name})` : ''}` : `✗ Diferença de ${fmtBRL(balance.difference)} contra o extrato`) : '',
+    ].filter(Boolean);
+  }
+
+  /** Compact plan summary in the thread (approval by ✅ on it), and the tracker set to "waiting". */
+  private async postSummary(plan: PlanWithCounts, thread: ThreadChannel): Promise<void> {
+    const text = [`**Plano v${plan.version} pronto para aprovar**`, ...this.planLines(plan), headline(plan.summary ?? '', 200), HINT_APPROVE].filter(Boolean).join('\n');
+    const msg = await this.send(thread, text);
+    await this.setTracker(thread, { status: '🟡 Plano aguardando aprovação', lines: this.planLines(plan), hint: HINT_APPROVE, link: this.webLink(plan.conversation_id, plan.id) });
+    const ids: string[] = [];
     if (msg) {
       await msg.react('✅').catch(() => undefined);
-      this.summaries.set(planId, { messageId: msg.id, version: plan.version });
-      await setState(this.ctx.db, 'discord_summaries', Object.fromEntries(this.summaries));
+      ids.push(msg.id);
     }
+    const starter = this.channel ? await this.channel.messages.fetch(thread.id).catch(() => null) : null;
+    if (starter && starter.author.id === this.client.user?.id) {
+      await starter.react('✅').catch(() => undefined);
+      ids.push(starter.id);
+    }
+    this.summaries.set(plan.id, { messageIds: ids, version: plan.version });
+    await setState(this.ctx.db, 'discord_summaries', Object.fromEntries(this.summaries));
   }
 
   async planPending(n: PlanNotification): Promise<void> {
     if (!this.ready) return;
-    const thread = await this.threadFor(n.conversationId, n.title);
+    const conv = await getConversation(this.ctx.db, n.conversationId);
+    const plan = await getPlan(this.ctx.db, n.planId);
+    if (!conv || !plan) return;
+    const thread = await this.threadFor(conv, n.title, { title: n.title, status: '🟡 Plano aguardando aprovação', hint: HINT_APPROVE });
     if (!thread) return;
-    await this.postSummary(n.planId, thread);
+    await this.postSummary(plan, thread);
   }
 
   async planApplied(n: PlanNotification & { result: Record<string, unknown> }): Promise<void> {
     if (!this.ready) return;
-    const conv = await getConversation(this.ctx.db, n.conversationId);
-    if (!conv?.external_ref) return;
-    const t = await this.client.channels.fetch(conv.external_ref).catch(() => null);
-    if (!t || !t.isThread()) return;
+    const thread = await this.threadOf(n.conversationId);
+    if (!thread) return;
     const rec = (n.result.reconciliation ?? null) as { status?: string; difference?: number; period_end?: string } | null;
-    const text = [
-      n.status === 'applied' ? `✅ ${n.title}: aplicado.` : `⚠️ ${n.title}: ${n.status}.`,
-      rec ? `Conciliação ${rec.status}${rec.period_end ? ` até ${rec.period_end}` : ''}${rec.difference ? `, diferença ${fmt(Number(rec.difference))}` : ''}.` : '',
-    ]
-      .filter(Boolean)
-      .join('\n');
-    await this.send(t as ThreadChannel, text);
+    const applied = Number(n.result.applied ?? 0);
+    const ok = n.status === 'applied';
+    const lines = [ok ? `${applied} lançamento${applied === 1 ? '' : 's'} gravado${applied === 1 ? '' : 's'}` : `${applied} ok, ${String(n.result.failed ?? 0)} falhou`, rec ? reconciliationLine(rec) : ''].filter(Boolean);
+    await this.setTracker(thread, { status: ok ? '✅ Aplicado' : '⚠️ Aplicado em parte', lines, hint: ok ? null : HINT_THREAD, link: this.webLink(n.conversationId, n.planId) });
+    // The thread already got the result line from applyPlan when approval came from Discord; approvals
+    // from the web only get the tracker update.
+    if (!this.summaries.has(n.planId)) return;
+    this.summaries.delete(n.planId);
+    await setState(this.ctx.db, 'discord_summaries', Object.fromEntries(this.summaries));
+  }
+
+  private async onPlanRejected(conversationId: string, planId: string): Promise<void> {
+    const thread = await this.threadOf(conversationId);
+    if (!thread) return;
+    await this.setTracker(thread, { status: '❌ Plano rejeitado', lines: [], hint: null });
+    if (this.summaries.delete(planId)) await setState(this.ctx.db, 'discord_summaries', Object.fromEntries(this.summaries));
   }
 
   async assistantReply(): Promise<void> {
     /* handled through the bus (relayAssistant) */
   }
 
+  /** A daemon-raised topic: tracker in the channel, details in its thread; same key same day → edit. */
+  async notice(n: Notice): Promise<void> {
+    if (!this.ready || !this.channel) return;
+    const day = new Date().toLocaleDateString('sv-SE', { timeZone: this.ctx.config.TZ });
+    const prev = this.notices.get(n.key);
+    if (prev && prev.day === day) {
+      const t = await this.client.channels.fetch(prev.threadId).catch(() => null);
+      if (t && t.isThread()) {
+        await this.setTracker(t as ThreadChannel, { title: n.title, status: n.status, lines: n.lines ?? [], hint: HINT_THREAD });
+        return;
+      }
+    }
+    const starter = await this.channel.send(trackerText({ title: n.title, status: n.status, lines: n.lines, hint: n.details?.length ? HINT_THREAD : null }));
+    const thread = await starter.startThread({ name: n.title.slice(0, 90), autoArchiveDuration: 1440 });
+    const conv = await createConversation(this.ctx.db, { channel: 'discord', title: n.title, external_ref: thread.id, created_by: 'system' });
+    if (n.context) await updateConversation(this.ctx.db, conv.id, { summary: n.context });
+    if (n.details?.length) {
+      for (const chunk of chunkMessage(n.details.join('\n'))) await thread.send({ content: chunk });
+    }
+    this.notices.set(n.key, { day, threadId: thread.id });
+    await setState(this.ctx.db, 'discord_notices', Object.fromEntries(this.notices));
+  }
+
+  /** Short operational alert (health, re-auth): one message in the channel, no thread. */
   async alert(text: string): Promise<void> {
     if (!this.ready || !this.channel) return;
     await this.send(this.channel, text);
@@ -330,4 +422,25 @@ export class DiscordBot implements NotifyTarget {
     await setState(this.ctx.db, 'discord_last_seen', { at: new Date().toISOString() });
     if (replayed) log.info({ replayed }, 'catch-up replayed messages');
   }
+}
+
+function reconciliationLine(rec: { status?: string; difference?: number | null; period_end?: string | null; notes?: string | null }): string {
+  const until = rec.period_end ? ` até ${fmtDay(rec.period_end)}` : '';
+  if (rec.status === 'balanced') return `Conciliação fechada${until}: saldo bate.`;
+  if (rec.status === 'adjusted') return `Conciliação fechada com ajuste de ${fmtBRL(Number(rec.difference ?? 0))}${until}.`;
+  return `Conciliação aberta${until}: diferença ${fmtBRL(Number(rec.difference ?? 0))}.`;
+}
+
+/** Reads title/status/hint/link back from a tracker message so partial edits keep the rest. */
+export function parseTracker(content: string): Partial<TrackerState> {
+  const parts = content.split(/\n\n+/).map((p) => p.trim()).filter(Boolean);
+  const out: Partial<TrackerState> = {};
+  const title = parts[0];
+  if (title && /^\*\*.*\*\*$/.test(title)) out.title = title.slice(2, -2);
+  if (parts[1]) out.status = parts[1];
+  const link = parts.find((p) => /^<https?:\/\/.*>$/.test(p));
+  if (link) out.link = link.slice(1, -1);
+  const hint = parts.find((p) => p === HINT_THREAD || p === HINT_APPROVE);
+  if (hint) out.hint = hint;
+  return out;
 }

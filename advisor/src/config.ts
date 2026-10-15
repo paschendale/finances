@@ -17,6 +17,8 @@ const schema = z.object({
   FINANCES_TOKEN: z.string().min(1),
   JWT_SECRET: z.string().min(1),
   PUBLIC_WEB_ORIGINS: z.string().default('http://localhost:5173,http://localhost:8080'),
+  /** Public URL of the web app, used for deep links in notifications (optional). */
+  WEB_APP_URL: z.string().url().optional(),
   ADVISOR_CHANNELS: z.string().default('web'),
   PORT: intEnv(3100),
   MCP_PORT: intEnv(3101),
