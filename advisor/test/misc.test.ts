@@ -4,6 +4,7 @@ import { assertDatabaseMatchesEnv, databaseNameOf, loadConfig } from '../src/con
 import { detectCheckin, parseBrazilianAmount } from '../src/jobs/checkin.js';
 import { APPROVE_WORDS, REJECT_WORDS, chunkMessage, discordify, headline, mobileify, trackerText } from '../src/discord/poster.js';
 import { parseTracker } from '../src/discord/bot.js';
+import { isoDay, movedSinceCheck } from '../src/jobs/nudges.js';
 import { humanizeError, describeTool } from '../src/claude/session.js';
 import { originMatcher } from '../src/http/server.js';
 
@@ -166,5 +167,19 @@ describe('originMatcher', () => {
     expect(m('https://advisor.finances-94t.pages.dev')).toBe(true);
     expect(m('https://evil.com/?x=.finances-94t.pages.dev')).toBe(false);
     expect(originMatcher('*')('anything')).toBe(true);
+  });
+});
+
+describe('nudges', () => {
+  it('compares last entry and last check whether pg returns Dates or strings', () => {
+    expect(isoDay(new Date('2026-10-12T03:00:00Z'))).toBe('2026-10-12');
+    expect(isoDay('2026-10-12T03:00:00.000Z')).toBe('2026-10-12');
+    expect(isoDay(null)).toBeNull();
+    const rows = [
+      { account_name: 'a', last_checked: new Date('2026-09-11T00:00:00Z'), last_entry_date: '2026-09-18' },
+      { account_name: 'b', last_checked: '2026-09-11T00:00:00Z', last_entry_date: '2026-09-10' },
+      { account_name: 'c', last_checked: null, last_entry_date: '2026-09-10' },
+    ];
+    expect(movedSinceCheck(rows).map((r) => r.account_name)).toEqual(['a']);
   });
 });

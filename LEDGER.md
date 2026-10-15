@@ -39,6 +39,10 @@ On the maintainer's history `classify_candidates('TAMPOPO ALIMENTOS LTDA', …)`
 ## Advisor: Gmail watcher enabled on the dev instance (2026-10-15)
 
 The maintainer's personal mailbox is connected (Desktop OAuth client, scope `gmail.readonly`, consent screen published so the refresh token does not expire). The three `GMAIL_*` values live only in the private infra compose and in `~/.config/finances-advisor/gmail.env` on the maintainer's machine. Production cutover must copy them to the prod service. Labels on processed mail need the `gmail.modify` scope (`--modify` on the helper); not enabled.
+## Advisor: Discord bot token still the pre-pilot one
+
+The production bot runs with the token that sits in the infra repo's git history. Rotate it in the Discord Developer Portal (Bot → Reset Token) and update the compose when convenient.
+
 ## Advisor: second household member on Discord
 
 `DISCORD_OBEYED_USER_IDS` on the dev instance lists one user id. Add the second member's id so both can approve from Discord (web approvals already work for any finances token).

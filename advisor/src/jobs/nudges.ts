@@ -36,6 +36,22 @@ function todayKey(tz: string): string {
 
 const fmt = (n: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
 
+/** pg returns timestamptz as Date and date as string; compare both as ISO dates. */
+export function isoDay(v: unknown): string | null {
+  if (v == null) return null;
+  const s = v instanceof Date ? v.toISOString() : String(v);
+  return s.slice(0, 10);
+}
+
+/** Accounts that had entries after their last balance check. */
+export function movedSinceCheck<T extends { last_checked: unknown; last_entry_date: unknown }>(stale: T[]): T[] {
+  return stale.filter((a) => {
+    const lastEntry = isoDay(a.last_entry_date);
+    const lastChecked = isoDay(a.last_checked);
+    return Boolean(lastEntry && lastChecked && lastEntry > lastChecked);
+  });
+}
+
 /** Posts at most once per day, only when at least one account is stale. No Claude call needed. */
 export async function staleAccountsJob(ctx: AppContext): Promise<void> {
   const key = todayKey(ctx.config.TZ);
@@ -43,7 +59,7 @@ export async function staleAccountsJob(ctx: AppContext): Promise<void> {
   if (last?.day === key) return;
   const stale = await findStaleAccounts(ctx);
   if (stale.length === 0) return;
-  const moved = stale.filter((a) => a.last_checked && a.last_entry_date && a.last_entry_date > a.last_checked.slice(0, 10));
+  const moved = movedSinceCheck(stale);
   const details = stale.map(
     (a) => `${a.account_name} · ${fmt(Number(a.balance))} · ${a.last_checked ? `conferida há ${a.days_since_check} dias` : 'nunca conferida'}${moved.includes(a) ? ' · teve movimento depois' : ''}`,
   );
