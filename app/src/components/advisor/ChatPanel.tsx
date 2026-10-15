@@ -183,8 +183,8 @@ export function ChatPanel({
             <div className="flex items-start gap-2 text-[13px]">
               <Clock className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" />
               <div>
-                <div className="font-semibold text-amber-100">Este extrato está esperando uma folga do Claude</div>
-                <div className="text-[12px] text-amber-200/70 mt-0.5">{statements.map((s) => s.filename).join(', ')}. O plano é montado sozinho quando o uso do Claude baixar, ou agora se você pedir.</div>
+                <div className="font-semibold text-amber-100">{statements.length > 1 ? 'Estes extratos estão esperando uma folga do Claude' : 'Este extrato está esperando uma folga do Claude'}</div>
+                <div className="text-[12px] text-amber-200/70 mt-0.5">{statements.map((s) => s.filename).join(', ')}. {statements.length > 1 ? 'Os planos são montados juntos, um período de cada vez,' : 'O plano é montado sozinho'} quando o uso do Claude baixar, ou agora se você pedir.</div>
               </div>
             </div>
             <button onClick={onPlanNow} disabled={planningNow} className="w-full h-9 rounded-xl bg-amber-400 text-[#1a1200] text-[13px] font-semibold hover:bg-amber-300 disabled:opacity-60 flex items-center justify-center gap-1.5 transition-all active:scale-[0.99]">
@@ -192,14 +192,14 @@ export function ChatPanel({
             </button>
           </div>
         )}
-        {messages.length === 0 && !(onPlanNow && statements.length > 0) && <p className="text-[13px] text-muted-foreground/50 text-center py-10">Diga oi, ou solte um extrato aqui.</p>}
+        {messages.length === 0 && !(onPlanNow && statements.length > 0) && <p className="text-[13px] text-muted-foreground/50 text-center py-10">Diga oi, ou solte um arquivo aqui.</p>}
       </div>
 
       {/* Composer */}
       <div className="shrink-0 px-3 sm:px-5 pb-4 pt-2 border-t border-white/[0.06] bg-[#050505]/95 backdrop-blur-md">
         <div className="flex items-end gap-1.5 px-1.5 py-1.5 rounded-2xl border border-white/[0.12] bg-white/[0.03] focus-within:border-white/[0.25] transition-colors">
           <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { const fs = Array.from(e.target.files ?? []); if (fs.length) onUpload(fs); e.target.value = ''; }} />
-          <button onClick={() => fileRef.current?.click()} className="w-10 h-10 rounded-xl text-muted-foreground/70 hover:text-foreground hover:bg-white/[0.06] flex items-center justify-center shrink-0 transition-colors" aria-label="Anexar extrato ou comprovante"><Paperclip className="w-4 h-4" /></button>
+          <button onClick={() => fileRef.current?.click()} className="w-10 h-10 rounded-xl text-muted-foreground/70 hover:text-foreground hover:bg-white/[0.06] flex items-center justify-center shrink-0 transition-colors" aria-label="Anexar arquivo"><Paperclip className="w-4 h-4" /></button>
           <textarea
             ref={textRef}
             value={text}

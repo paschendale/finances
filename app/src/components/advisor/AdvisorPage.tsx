@@ -65,7 +65,7 @@ export function AdvisorPage({ conversationId, planId, onNavigate }: { conversati
   const send = useMutation({ mutationFn: (text: string) => sendMessage(conversationId!, text) });
   const stop = useMutation({ mutationFn: () => stopConversation(conversationId!) });
   const upload = useMutation({
-    mutationFn: (files: File[]) => uploadFiles(files, { conversationId: conversationId ?? undefined }),
+    mutationFn: (input: { files: File[]; message?: string }) => uploadFiles(input.files, { conversationId: conversationId ?? undefined, message: input.message }),
     onSuccess: (r) => { void qc.invalidateQueries({ queryKey: ['advisorConversations'] }); if (!conversationId) select(r.conversation_id); else void conv.refetch(); },
     onError: (e: Error) => window.alert(e.message),
   });
@@ -114,7 +114,7 @@ export function AdvisorPage({ conversationId, planId, onNavigate }: { conversati
       busy={conv.busy}
       onSend={(t) => send.mutate(t)}
       onStop={() => stop.mutate()}
-      onUpload={(files) => upload.mutate(files)}
+      onUpload={(files) => upload.mutate({ files })}
       onReviewPlan={(id) => onNavigate({ conversationId, planId: id })}
       onApprovePlan={(p) => approve.mutate(p)}
       onRejectPlan={(p) => { if (window.confirm('Descartar este plano?')) reject.mutate(p); }}
@@ -135,7 +135,7 @@ export function AdvisorPage({ conversationId, planId, onNavigate }: { conversati
       {newConversation.isPending ? (
         <div className="flex items-center justify-center h-full text-muted-foreground/50 text-[13px]"><Loader2 className="w-4 h-4 animate-spin mr-2" /> Começando…</div>
       ) : (
-        <EmptyState onStart={(message) => newConversation.mutate({ message })} />
+        <EmptyState onStart={(message) => newConversation.mutate({ message })} onUpload={(files, message) => upload.mutate({ files, message })} busy={upload.isPending} />
       )}
     </div>
   );
@@ -143,7 +143,7 @@ export function AdvisorPage({ conversationId, planId, onNavigate }: { conversati
   return (
     <div className="w-full space-y-3 pb-6">
       <OfflineBanner health={health} />
-      <UploadDrop onFiles={(files) => upload.mutate(files)} disabled={upload.isPending} className="rounded-2xl border border-white/[0.06] bg-white/[0.015] overflow-hidden" >
+      <UploadDrop onFiles={(files) => upload.mutate({ files })} disabled={upload.isPending} className="rounded-2xl border border-white/[0.06] bg-white/[0.015] overflow-hidden" >
         <div className="flex h-[calc(100dvh-150px)] sm:h-[calc(100vh-170px)] min-h-[420px] sm:min-h-[520px]">
           {!mobile && (
             <aside className="w-[280px] shrink-0 border-r border-white/[0.06] flex flex-col">
