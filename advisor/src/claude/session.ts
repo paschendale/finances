@@ -6,7 +6,7 @@ import type { Db } from '../db/client.js';
 import type { Bus } from '../events.js';
 import type { McpTokenRegistry } from '../mcp/tokens.js';
 import type { Attachment, Conversation, Message, Statement } from '../db/types.js';
-import { addMessage, getConversation, updateConversation, updateMessage } from '../db/repo/conversations.js';
+import { addMessage, getConversation, listMessages, updateConversation, updateMessage } from '../db/repo/conversations.js';
 import { recordClaudeCall } from '../db/repo/misc.js';
 import { listStatements } from '../db/repo/statements.js';
 import { ConversationLocks, SessionPool } from './pool.js';
@@ -196,9 +196,13 @@ export class SessionManager {
           { mode: 0o600 },
         );
 
+        // A resumed Claude session keeps the tool set it started with, so when the prompt or tools
+        // changed we start a new session and hand it the recent transcript instead of resuming.
         const promptHash = await this.currentPromptHash();
         const capabilitiesChanged = Boolean(fresh.claude_session_id) && fresh.prompt_hash !== promptHash;
-        const message = this.composeMessage(fresh, content, opts, cwd, capabilitiesChanged);
+        const transcript = capabilitiesChanged ? await this.recentTranscript(conversationId, userMessage.id) : null;
+        if (capabilitiesChanged) log.info({ conversationId, from: fresh.prompt_hash, to: promptHash }, 'capabilities changed; starting a fresh session with transcript');
+        const message = this.composeMessage(fresh, content, opts, cwd, transcript);
         let streamed = '';
         const onEvent = (ev: RunnerEvent) => {
           switch (ev.type) {
@@ -228,7 +232,7 @@ export class SessionManager {
           systemPromptFile: path.join(this.deps.promptsDir, 'advisor.system.md'),
           model: fresh.model ?? config.SESSION_MODEL,
           effort: config.SESSION_EFFORT,
-          resumeSessionId: fresh.claude_session_id,
+          resumeSessionId: capabilitiesChanged ? null : fresh.claude_session_id,
           timeoutMs: config.SESSION_TIMEOUT_MS,
           onEvent,
           signal: ac.signal,
@@ -295,14 +299,25 @@ export class SessionManager {
     return hash;
   }
 
-  private composeMessage(conv: Conversation, content: string, opts: TurnOptions, cwd: string, capabilitiesChanged = false): string {
+  /** The last turns of the conversation, for a fresh session that replaces a resumed one. */
+  private async recentTranscript(conversationId: string, excludeMessageId: string, maxMessages = 12, maxChars = 1500): Promise<string> {
+    const all = (await listMessages(this.deps.db, conversationId)).filter((m) => m.id !== excludeMessageId && (m.role === 'user' || m.role === 'assistant') && m.status !== 'failed');
+    const recent = all.slice(-maxMessages);
+    const lines = recent.map((m) => {
+      const text = m.content.replace(/\s+/g, ' ').trim();
+      return `${m.role === 'user' ? 'user' : 'you'}: ${text.length > maxChars ? `${text.slice(0, maxChars)}…` : text}`;
+    });
+    return lines.join('\n');
+  }
+
+  private composeMessage(conv: Conversation, content: string, opts: TurnOptions, cwd: string, transcript: string | null = null): string {
     const today = new Date().toLocaleDateString('sv-SE', { timeZone: this.deps.config.TZ }); // YYYY-MM-DD
     const header = [
       `[context] today=${today} tz=${this.deps.config.TZ} channel=${conv.channel} conversation_id=${conv.id} workspace=${cwd}`,
       opts.actor ? `[context] from=${opts.actor}` : null,
-      !conv.claude_session_id && conv.summary ? `[context] summary=${conv.summary}` : null,
-      capabilitiesChanged
-        ? '[context] Your instructions and tools changed since your previous turn in this conversation. Re-read the system prompt and the tool descriptions (plan_set_items kinds in particular) before saying something is not possible; what you believed earlier about your limits may no longer hold.'
+      (!conv.claude_session_id || transcript !== null) && conv.summary ? `[context] summary=${conv.summary}` : null,
+      transcript !== null
+        ? `[context] This conversation continues in a new session because your instructions and tools were updated; what you said earlier about your limits may no longer hold. Recent turns:\n${transcript}`
         : null,
       opts.context ? `[context] ${opts.context}` : null,
     ]

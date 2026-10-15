@@ -16,7 +16,7 @@ import type { AppContext } from '../context.js';
 import type { Conversation, PlanWithCounts } from '../db/types.js';
 import type { Notice, NotifyTarget, PlanNotification } from '../notify.js';
 import { createConversation, findConversationByExternalRef, getConversation, updateConversation } from '../db/repo/conversations.js';
-import { getPlan, listPlans } from '../db/repo/plans.js';
+import { getPlan, listPlanItems, listPlans } from '../db/repo/plans.js';
 import { claimEvent, getState, setState } from '../db/repo/misc.js';
 import { approveAndApply, ApplyError, rejectPlan } from '../plan/apply.js';
 import { ingestBuffer } from '../jobs/ingest-statement.js';
@@ -230,6 +230,7 @@ export class DiscordBot implements NotifyTarget {
         r.status === 'applied' ? `✅ Aplicado: ${r.applied} lançamento${r.applied === 1 ? '' : 's'}${r.skipped ? `, ${r.skipped} já estavam no ledger` : ''}.` : `⚠️ Parou no item ${r.items.find((i) => i.status === 'failed')?.seq ?? '?'}: ${r.applied} ok, ${r.failed} falhou.`,
         ...r.items.filter((i) => i.status === 'failed').map((i) => `Item ${i.seq} (${i.kind}): ${i.error}`),
         rec ? reconciliationLine(rec) : '',
+        ...r.reopened.map((x) => (x.status === 'open' ? `Conciliação até ${fmtDay(x.period_end)} continua aberta: diferença ${fmtBRL(Number(x.difference ?? 0))}.` : `Conciliação até ${fmtDay(x.period_end)} fechada de novo: saldo bate.`)),
       ].filter(Boolean);
       await this.send(thread, lines.join('\n'));
     } catch (err) {
@@ -298,16 +299,19 @@ export class DiscordBot implements NotifyTarget {
     else await this.setTracker(thread, { status: '✅ Respondido', lines: [headline(content)], hint: HINT_THREAD, link: this.webLink(conv.id) });
   }
 
-  private planLines(plan: PlanWithCounts): string[] {
+  private async planLines(plan: PlanWithCounts): Promise<string[]> {
     const balance = (plan.result as { balance?: { ok: boolean; difference: number; account_name?: string | null } } | null)?.balance;
+    const items = (await listPlanItems(this.ctx.db, plan.id)).filter((i) => i.status !== 'removed');
+    const n = (kinds: string[]) => items.filter((i) => kinds.includes(i.kind)).length;
+    const accounts = n(['account_create', 'account_update']);
+    const other = items.length - plan.create_count - plan.update_count - plan.adjust_count - plan.skip_count - accounts;
     const counts = [
       plan.create_count ? `${plan.create_count} novo${plan.create_count === 1 ? '' : 's'}` : '',
       plan.update_count ? `${plan.update_count} alteraç${plan.update_count === 1 ? 'ão' : 'ões'}` : '',
       plan.adjust_count ? `${plan.adjust_count} ajuste${plan.adjust_count === 1 ? '' : 's'}` : '',
+      accounts ? `${accounts} conta${accounts === 1 ? '' : 's'}` : '',
       plan.skip_count ? `${plan.skip_count} já no ledger` : '',
-      plan.item_count - plan.create_count - plan.update_count - plan.adjust_count - plan.skip_count > 0
-        ? `${plan.item_count - plan.create_count - plan.update_count - plan.adjust_count - plan.skip_count} outro${plan.item_count - plan.create_count - plan.update_count - plan.adjust_count - plan.skip_count === 1 ? '' : 's'}`
-        : '',
+      other > 0 ? `${other} outro${other === 1 ? '' : 's'}` : '',
     ].filter(Boolean);
     return [
       counts.join(' · '),
@@ -317,9 +321,10 @@ export class DiscordBot implements NotifyTarget {
 
   /** Compact plan summary in the thread (approval by ✅ on it), and the tracker set to "waiting". */
   private async postSummary(plan: PlanWithCounts, thread: ThreadChannel): Promise<void> {
-    const text = [`**Plano v${plan.version} pronto para aprovar**`, ...this.planLines(plan), headline(plan.summary ?? '', 200), HINT_APPROVE].filter(Boolean).join('\n');
+    const lines = await this.planLines(plan);
+    const text = [`**Plano v${plan.version} pronto para aprovar**`, ...lines, headline(plan.summary ?? '', 200), HINT_APPROVE].filter(Boolean).join('\n');
     const msg = await this.send(thread, text);
-    await this.setTracker(thread, { status: '🟡 Plano aguardando aprovação', lines: this.planLines(plan), hint: HINT_APPROVE, link: this.webLink(plan.conversation_id, plan.id) });
+    await this.setTracker(thread, { status: '🟡 Plano aguardando aprovação', lines, hint: HINT_APPROVE, link: this.webLink(plan.conversation_id, plan.id) });
     const ids: string[] = [];
     if (msg) {
       await msg.react('✅').catch(() => undefined);
@@ -349,9 +354,14 @@ export class DiscordBot implements NotifyTarget {
     const thread = await this.threadOf(n.conversationId);
     if (!thread) return;
     const rec = (n.result.reconciliation ?? null) as { status?: string; difference?: number; period_end?: string } | null;
+    const reopened = (n.result.reopened ?? []) as Array<{ status: string; difference: number | null; period_end: string }>;
     const applied = Number(n.result.applied ?? 0);
     const ok = n.status === 'applied';
-    const lines = [ok ? `${applied} lançamento${applied === 1 ? '' : 's'} gravado${applied === 1 ? '' : 's'}` : `${applied} ok, ${String(n.result.failed ?? 0)} falhou`, rec ? reconciliationLine(rec) : ''].filter(Boolean);
+    const lines = [
+      ok ? `${applied} lançamento${applied === 1 ? '' : 's'} gravado${applied === 1 ? '' : 's'}` : `${applied} ok, ${String(n.result.failed ?? 0)} falhou`,
+      rec ? reconciliationLine(rec) : '',
+      ...reopened.map((x) => (x.status === 'open' ? `Conciliação até ${fmtDay(x.period_end)} aberta: diferença ${fmtBRL(Number(x.difference ?? 0))}` : `Conciliação até ${fmtDay(x.period_end)} fechada de novo`)),
+    ].filter(Boolean);
     await this.setTracker(thread, { status: ok ? '✅ Aplicado' : '⚠️ Aplicado em parte', lines, hint: ok ? null : HINT_THREAD, link: this.webLink(n.conversationId, n.planId) });
     // The thread already got the result line from applyPlan when approval came from Discord; approvals
     // from the web only get the tracker update.
