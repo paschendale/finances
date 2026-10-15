@@ -1,5 +1,14 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-10-15 — Advisor: BRB statement PDF
+
+First non-Nubank/Itaú statement: the PDF the BRB app exports (iOS share sheet, often just "Extrato.pdf"). Its text never names the bank, has no year on the rows, prints month headers out of place and no balance at all.
+
+- `ingest/pdf.ts` `parseBrbPdfText`: picked by the `Dia / Histórico / Valor` table with signed `R$ +`/`R$ −` values (`looksLikeBrbPdf`). Rows run newest first; the year comes from the emission stamp and steps back whenever the month goes up. A row is the history line (`– DOC: n` dropped, so a payee always reads the same), the date and value, and the counterparty line; yield credits fit on one line. `description_hint` comes from the counterparty name, else from the history. `account_ref` = agência-conta. Opening and closing are null with a warning; the period ends on the emission date and starts on the first movement.
+- `detect.ts`: `brb` from the filename, `@brb.com.br` or "Banco de Brasília".
+- `resolveStatementAccount`: the full institution name is tried before the two-letter prefix, which for "brb" ("br") also hit unrelated accounts; BRB statements now land on `victor-brb-conta`.
+- Tests: anonymised copy of the real layout plus a December/January rollover. The real export (17/07–13/10/2026) reads all 11 rows.
+
 ## 2026-10-15 — Advisor: one plan per batch, the system vouches what already matches
 
 Interview with the maintainer after the first real card check (six Nubank card statements, ~900 lines, nearly all entered by hand): one plan per statement listing every line was unusable and one turn per period timed out. Decisions: one plan for all periods of an account that arrive together; lines already registered are checked by the system with no item; cent differences are corrected automatically and shown as a count; duplicates are listed for approval; each period is checked against its OFX closing and the advisor then asks for the balance the bank app shows today; on a mismatch it investigates and asks before adjusting; new purchases are categorised and approved in the plan, with a question only when nothing fits.

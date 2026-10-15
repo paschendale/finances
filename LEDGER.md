@@ -66,3 +66,7 @@ The mockup shows a split action on a plan row; the implementation covers it thro
 ## Advisor: shared Claude login between host and container
 
 The dev instance bind-mounts the host user's `~/.claude` so the container and the host share one OAuth login. If both refresh the token concurrently one side may be logged out; watch `GET /health` → `claude.loggedIn` and the daily health ping. A dedicated named volume with its own `claude login` avoids this if it bites.
+
+## Advisor: BRB PDF has no balance and no stated period
+
+The BRB app export prints neither balances nor the period it covers. The parser leaves opening/closing empty (the advisor asks for the balance shown in the app, then `statement_set_meta`) and starts the period on the first movement, so days before it with no movement are not covered by the reconciliation. The pix rows often show only `4671` instead of a name; the counterparty then comes from the ledger or the person. If BRB also offers OFX or CSV, prefer it.

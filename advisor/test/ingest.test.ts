@@ -6,7 +6,7 @@ import pg from 'pg';
 import { decodeOfxBuffer, parseOfx, parseOfxDate, parseOfxAmount } from '../src/ingest/ofx.js';
 import { parseNubankCsv, parseNubankAccountFilename, parsePtCompactDate } from '../src/ingest/nubank-csv.js';
 import { parseCsv } from '../src/ingest/csv.js';
-import { parseItauPdfText, parseNubankPdfText, parsePdfText } from '../src/ingest/pdf.js';
+import { parseBrbPdfText, parseItauPdfText, parseNubankPdfText, parsePdfText } from '../src/ingest/pdf.js';
 import { detectFormat, detectInstitution, parseStatementFile } from '../src/ingest/detect.js';
 import { descriptionHint, detectInstallment, lineHash, normalizeMerchantJs, titleCase, toCsv } from '../src/ingest/normalize.js';
 import { assignAutoMatches, extractCounterparty, isCardPayment, matchLines, pairTransfers } from '../src/ingest/match.js';
@@ -401,5 +401,107 @@ describe('itau pdf text', () => {
     expect(s.warnings.some((w) => w.includes('do not add up'))).toBe(true);
     expect(parsePdfText(text).institution).toBe('itau');
     expect(detectInstitution({ filename: 'itau_extrato_072026.pdf' })).toEqual({ institution: 'itau', kind: 'account' });
+  });
+});
+
+describe('brb pdf text', () => {
+  // Layout of the BRB app export (pdftotext -layout): no year on the rows, newest first, month headers
+  // printed out of place, most rows split over history / date+value / counterparty lines, no balances.
+  const text = [
+    '                                                            Extrato',
+    '                                                FULANO DE TAL',
+    '',
+    '                                            Agência: 040 — Conta Corrente: 040.000.000-1',
+    '',
+    '                                                         15/10/2026 15:19',
+    'OUTUBRO/2026',
+    'SETEMBRO/2026',
+    '',
+    ' Dia          Histórico                                                                            Valor',
+    '',
+    ' 13/10        CRED JUROS LIQUIDO CDB AUTOMAT – DOC: 000000                                     R$ +0,27',
+    'AGOSTO/2026',
+    '',
+    ' Dia          Histórico                                                                            Valor',
+    '',
+    '              CREDITO DE TED PAG C.CORRENTE – DOC: 408695',
+    ' 10/09                                                                                        R$ +57,54',
+    '              PLANO DE SAUDE EXEMPLO — 89000054',
+    'JULHO/2026',
+    '',
+    ' Dia          Histórico                                                                            Valor',
+    '',
+    '              DEBITO PIX – DOC: 000000',
+    ' 05/08                                                                                     R$ \u221210.333,77',
+    '              Fulano de Tal — 4671',
+    '',
+    '              CREDITO TED PAG CONTA SALARIO – DOC: 779878',
+    ' 03/08                                                                                     R$ +10.333,77',
+    '              00000000',
+    '',
+    '',
+    '',
+    ' Dia          Histórico                                                                            Valor',
+    '',
+    '              DEBITO PIX – DOC: 000000',
+    ' 21/07                                                                                       R$ \u2212250,00',
+    '              Beltrana Exemplo — 4671',
+    '',
+    '              DEBITO PIX – DOC: 000000',
+    ' 21/07                                                                                       R$ \u2212250,00',
+    '              Beltrana Exemplo — 4671',
+    '',
+    '              DEBITO PIX – DOC: 000000',
+    ' 17/07                                                                                       R$ \u2212187,25',
+    '              COMPANHIA DE LUZ — 4671',
+  ].join('\n');
+
+  it('reads rows, infers the year from the emission date and leaves the balances to be filled', () => {
+    const s = parseBrbPdfText(text);
+    expect(s.institution).toBe('brb');
+    expect(s.kind).toBe('account');
+    expect(s.account_ref).toBe('040-040.000.000-1');
+    expect(s.period_start).toBe('2026-07-17');
+    expect(s.period_end).toBe('2026-10-15');
+    expect(s.opening_balance).toBeNull();
+    expect(s.closing_balance).toBeNull();
+    expect(s.warnings.some((w) => w.includes('no balance'))).toBe(true);
+    expect(s.lines.map((l) => [l.date, l.amount])).toEqual([
+      ['2026-07-17', -187.25],
+      ['2026-07-21', -250],
+      ['2026-07-21', -250],
+      ['2026-08-03', 10333.77],
+      ['2026-08-05', -10333.77],
+      ['2026-09-10', 57.54],
+      ['2026-10-13', 0.27],
+    ]);
+    const luz = s.lines[0]!;
+    expect(luz.raw).toBe('DEBITO PIX COMPANHIA DE LUZ — 4671');
+    expect(luz.description_hint).toBe('Companhia de Luz');
+    expect(luz.kind).toBe('debit');
+    expect(s.lines.find((l) => l.date === '2026-10-13')!.raw).toBe('CRED JUROS LIQUIDO CDB AUTOMAT');
+    expect(s.lines.find((l) => l.date === '2026-08-03')!.raw).toBe('CREDITO TED PAG CONTA SALARIO 00000000');
+    expect(s.lines.find((l) => l.date === '2026-09-10')!.description_hint).toBe('Plano de Saude Exemplo');
+    // two identical rows on the same day keep distinct identities
+    expect(new Set(s.lines.map((l) => l.hash)).size).toBe(s.lines.length);
+    expect(parsePdfText(text).institution).toBe('brb');
+    expect(detectInstitution({ filename: 'extrato-brb.pdf' })).toEqual({ institution: 'brb', kind: 'account' });
+  });
+
+  it('steps back a year when the months wrap around', () => {
+    const s = parseBrbPdfText(
+      [
+        '                    Agência: 040 — Conta Corrente: 040.000.000-1',
+        '                    05/01/2027 09:00',
+        ' Dia          Histórico                                            Valor',
+        ' 03/01        CRED JUROS LIQUIDO CDB AUTOMAT – DOC: 000000         R$ +1,00',
+        '',
+        '              DEBITO PIX – DOC: 000000',
+        ' 28/12                                                              R$ \u22125,00',
+        '              Loja Exemplo — 4671',
+      ].join('\n'),
+    );
+    expect(s.lines.map((l) => l.date)).toEqual(['2026-12-28', '2027-01-03']);
+    expect(s.period_end).toBe('2027-01-05');
   });
 });

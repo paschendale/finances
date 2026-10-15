@@ -181,8 +181,98 @@ export function parseItauPdfText(text: string): ParsedStatement {
   };
 }
 
-/** Picks the PDF reader from the text: Itaú's day-balance layout, else the Nubank reader. */
+const BRB_ROW = /^(\d{2})\/(\d{2})\b\s*(.*?)\s*R\$\s*([+\-−])?\s*([\d.]+,\d{2})\s*$/;
+const BRB_NOISE = /^(Dia\s+Hist[óo]rico\s+Valor|[A-ZÇ]+\/\d{4}|Extrato|\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}|Ag[êe]ncia:.*)$/i;
+
+/** True when the text has the BRB app export's table: `Dia / Histórico / Valor` with signed `R$ ±` values. */
+export function looksLikeBrbPdf(text: string): boolean {
+  return /Dia\s+Hist[óo]rico\s+Valor/i.test(text) && /Conta Corrente:/i.test(text) && /R\$\s*[+−]\s*[\d.]+,\d{2}/.test(text);
+}
+
+/**
+ * BRB current-account PDF exported from the app. Rows run newest first and carry no year (`dd/mm`);
+ * the year comes from the emission stamp (`dd/mm/yyyy hh:mm`) and steps back whenever the month goes
+ * up. Most rows span three lines (history with `– DOC: n`, then date and value, then the counterparty);
+ * yield credits fit on one. The DOC number is dropped from `raw` so a payee always reads the same.
+ * The export prints no balance, so opening and closing stay null for the person to supply.
+ */
+export function parseBrbPdfText(text: string): ParsedStatement {
+  const warnings: string[] = [];
+  const emitted = text.match(/(\d{2})\/(\d{2})\/(\d{4})\s+\d{2}:\d{2}/);
+  const acct = text.match(/Ag[êe]ncia:\s*(\d+)\s*\S*\s*Conta Corrente:\s*([\d.\-]+)/i);
+  const cleanHistory = (s: string) => s.replace(/\s*[–—-]\s*DOC:\s*\d*\s*$/i, '').replace(/\s+/g, ' ').trim();
+
+  type Row = { day: string; month: number; amount: number; before: string[]; inline: string; after: string[] };
+  const rows: Row[] = [];
+  let pending: string[] = [];
+  let open: Row | null = null;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) {
+      open = null;
+      pending = [];
+      continue;
+    }
+    const m = BRB_ROW.exec(line);
+    if (m) {
+      const sign = m[4] === '-' || m[4] === '−' ? -1 : 1;
+      const value = Number(m[5]!.replace(/\./g, '').replace(',', '.'));
+      open = { day: m[1]!, month: Number(m[2]), amount: round2(sign * value), before: pending, inline: m[3]!, after: [] };
+      rows.push(open);
+      pending = [];
+      continue;
+    }
+    if (BRB_NOISE.test(line)) {
+      open = null;
+      pending = [];
+      continue;
+    }
+    if (open) open.after.push(line);
+    else pending.push(line);
+  }
+
+  let year = emitted ? Number(emitted[3]) : null;
+  let prevMonth = emitted ? Number(emitted[2]) : null;
+  if (year === null) warnings.push('emission date not found; rows have no year');
+  const lines: StatementLine[] = [];
+  const seen = new Map<string, number>();
+  for (const r of rows) {
+    if (year === null) break;
+    if (prevMonth !== null && r.month > prevMonth) year -= 1;
+    prevMonth = r.month;
+    const date = `${year}-${String(r.month).padStart(2, '0')}-${r.day}`;
+    const history = cleanHistory([...r.before, r.inline].filter(Boolean).join(' '));
+    const counterparty = r.after.join(' ').replace(/\s+/g, ' ').trim();
+    const desc = [history, counterparty].filter(Boolean).join(' ');
+    if (!desc) continue;
+    const name = counterparty.split(/\s+—\s+/)[0]!.trim();
+    const hint = /[A-Za-z]/.test(name) ? descriptionHint(counterparty) : descriptionHint(history);
+    let hash = lineHash({ date, amount: r.amount, raw: desc });
+    const dup = seen.get(hash) ?? 0;
+    seen.set(hash, dup + 1);
+    if (dup > 0) hash = lineHash({ date, amount: r.amount, raw: `${desc}#dup${dup}` });
+    lines.push({ hash, date, amount: r.amount, currency: 'BRL', raw: desc, description_hint: hint, kind: r.amount < 0 ? 'debit' : 'credit' });
+  }
+  lines.sort((a, b) => a.date.localeCompare(b.date));
+  if (lines.length === 0) warnings.push('no movements recognised in PDF text');
+  warnings.push('BRB PDF prints no balance; the closing balance must come from the bank app');
+  return {
+    institution: 'brb',
+    kind: 'account',
+    account_ref: acct ? `${acct[1]}-${acct[2]}` : null,
+    currency: 'BRL',
+    period_start: lines[0]?.date ?? null,
+    period_end: emitted ? `${emitted[3]}-${emitted[2]}-${emitted[1]}` : (lines[lines.length - 1]?.date ?? null),
+    opening_balance: null,
+    closing_balance: null,
+    lines,
+    warnings,
+  };
+}
+
+/** Picks the PDF reader from the text: Itaú's day-balance layout, BRB's app export, else the Nubank reader. */
 export function parsePdfText(text: string): ParsedStatement {
   if (/SALDO DO DIA/.test(text) && /lan[çc]amentos/i.test(text)) return parseItauPdfText(text);
+  if (looksLikeBrbPdf(text)) return parseBrbPdfText(text);
   return parseNubankPdfText(text);
 }

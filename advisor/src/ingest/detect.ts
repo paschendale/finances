@@ -42,6 +42,7 @@ export function detectInstitution(input: { filename: string; sender?: string | n
     return { institution: 'nubank', kind: 'account' };
   }
   if (sender.includes('@wise.com') || /\bwise\b/.test(subject) || /\bwise\b/i.test(filename)) return { institution: 'wise', kind: 'account' };
+  if (/\bbrb\b/i.test(filename) || sender.includes('@brb.com.br') || /banco de bras[ií]lia/.test(text)) return { institution: 'brb', kind: 'account' };
   if (/ita[uú]/i.test(filename) || sender.includes('@itau') || /ita[uú]\.com\.br|banco ita[uú]/.test(text)) return { institution: 'itau', kind: 'account' };
   return { institution: null, kind: 'other' };
 }

@@ -209,7 +209,7 @@ advisor/
       detect.ts           institution + format detection from sender/filename/content
       ofx.ts              OFX parser (SGML and XML), FITID, LEDGERBAL
       nubank-csv.ts       account CSV (Data,Valor,Identificador,Descrição) and card CSV (date,title,amount)
-      pdf.ts              pdftotext -layout wrapper
+      pdf.ts              pdftotext -layout wrapper; readers for Nubank, Itaú and BRB PDFs
       normalize.ts        StatementLine model, hashing, period/balance extraction
       match.ts            dedup against ledger (fitid, fuzzy), transfer pairing
     plan/

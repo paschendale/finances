@@ -81,14 +81,19 @@ export async function resolveStatementAccount(ctx: AppContext, institution: stri
     const generic = notes.find((n) => n.ref_id && n.note.includes(`kind=${kind}`));
     if (generic) return generic.ref_id;
     // Heuristic: one visible asset/liability account whose name mentions the institution and matches the kind.
+    // The full name wins ("brb"); the two-letter prefix ("nu" for nubank) is only a fallback, since a
+    // short prefix like "br" also hits unrelated names.
     const type = kind === 'card' ? 'liability' : 'asset';
-    const rows = await many<{ id: string }>(
-      ctx.db,
-      `SELECT h.id FROM account_names_hierarchical h JOIN accounts a ON a.id = h.id
-       WHERE a.hidden = false AND a.type = $1 AND (lower(h.full_name) LIKE '%' || $2 || '%' OR lower(h.full_name) LIKE '%' || $3 || '%')`,
-      [type, institution.toLowerCase(), institution.toLowerCase().slice(0, 2)],
-    );
-    if (rows.length === 1) return rows[0]!.id;
+    for (const needle of [institution.toLowerCase(), institution.toLowerCase().slice(0, 2)]) {
+      const rows = await many<{ id: string }>(
+        ctx.db,
+        `SELECT h.id FROM account_names_hierarchical h JOIN accounts a ON a.id = h.id
+         WHERE a.hidden = false AND a.type = $1 AND lower(h.full_name) LIKE '%' || $2 || '%'`,
+        [type, needle],
+      );
+      if (rows.length === 1) return rows[0]!.id;
+      if (rows.length > 1) break;
+    }
   }
   return null;
 }
