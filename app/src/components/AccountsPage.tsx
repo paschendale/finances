@@ -5,10 +5,12 @@ import {
   createAlias, deleteAlias,
   type AccountNode,
 } from '@/lib/api';
+import { createConversation, fetchReconciliationStatus, type ReconciliationStatus } from '@/lib/advisor-api';
+import type { AdvisorTarget } from './advisor/AdvisorPage';
 import { AccountIcon } from './AccountIcon';
 import { INSTITUTION_ICONS, CATEGORY_ICONS } from '@/lib/account-icons';
 import { cn } from '@/lib/utils';
-import { X, Check, Plus, Trash2, Loader2, Eye, EyeOff, ArrowUp, ArrowDown, Clock } from 'lucide-react';
+import { X, Check, Plus, Trash2, Loader2, Eye, EyeOff, ArrowUp, ArrowDown, Clock, CheckCheck } from 'lucide-react';
 import { SearchableSelect } from './SearchableSelect';
 
 const TYPE_TABS = ['all', 'asset', 'liability', 'expense', 'income', 'equity'] as const;
@@ -303,8 +305,8 @@ function AccountModal({
               <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground/60">Subtype</p>
               <div className="flex rounded-xl border border-white/[0.08] bg-white/[0.02] p-0.5 w-fit">
                 {(type === 'asset'
-                  ? [null, 'checking', 'emergency', 'investments'] as const
-                  : [null, 'liabilities'] as const
+                  ? [null, 'checking', 'emergency', 'investments', 'property'] as const
+                  : [null, 'liabilities', 'loan'] as const
                 ).map((s) => (
                   <button
                     key={s ?? 'none'}
@@ -320,6 +322,13 @@ function AccountModal({
                   </button>
                 ))}
               </div>
+              <p className="text-[11px] text-muted-foreground/50">
+                {subtype === 'property' || subtype === 'loan'
+                  ? 'Fica registrado, mas não aparece como dinheiro no painel nem no patrimônio.'
+                  : subtype === null
+                    ? 'Sem grupo: não aparece nos cartões do painel.'
+                    : 'Aparece no painel como dinheiro.'}
+              </p>
             </div>
           )}
 
@@ -390,7 +399,36 @@ function AccountModal({
 
 // ── Account Card ──────────────────────────────────────────────────────────────
 
-function AccountCard({ account, onClick }: { account: AccountNode; onClick: () => void }) {
+function reconciledThroughLabel(d: string): string {
+  try { return new Date(`${d}T00:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }); } catch { return d; }
+}
+
+function ReconciliationLines({ account, status, onReconcile }: { account: AccountNode; status: ReconciliationStatus | undefined; onReconcile?: () => void }) {
+  const [now] = useState(() => Date.now());
+  if (account.type !== 'asset' && account.type !== 'liability') return null;
+  const through = status?.reconciled_through ?? null;
+  const ageDays = through ? Math.floor((now - new Date(`${through}T00:00:00`).getTime()) / 86_400_000) : null;
+  const fresh = ageDays !== null && ageDays <= 35;
+  const openGap = status?.last_status === 'open' && Math.abs(status.open_difference) >= 0.005;
+  const suspense = status?.suspense_balance ?? 0;
+  const fmt = (n: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
+  return (
+    <div className="mt-2 space-y-0.5 text-[10px]" onClick={(e) => e.stopPropagation()}>
+      <div className={cn('flex items-center gap-1', fresh ? 'text-emerald-400/80' : 'text-amber-400/80')}>
+        {fresh ? <CheckCheck className="w-3 h-3 shrink-0" /> : <Clock className="w-3 h-3 shrink-0" />}
+        <span className="truncate">{through ? `extrato conferido até ${reconciledThroughLabel(through)}` : 'extrato nunca conferido'}{openGap ? ` · falta explicar ${fmt(status!.open_difference)}` : ''}</span>
+      </div>
+      {Math.abs(suspense) >= 0.005 && (
+        <div className="text-muted-foreground/50 truncate">parado em ajustes {fmt(suspense)}</div>
+      )}
+      {onReconcile && (
+        <button type="button" onClick={onReconcile} className="text-primary/60 hover:text-primary/90 font-semibold transition-colors">Conferir com o assistente →</button>
+      )}
+    </div>
+  );
+}
+
+function AccountCard({ account, onClick, reconciliation, onReconcile }: { account: AccountNode; onClick: () => void; reconciliation?: ReconciliationStatus; onReconcile?: () => void }) {
   const { data: aliases = [] } = useQuery({
     queryKey: ['aliases', account.id],
     queryFn: () => fetchAliases(account.id),
@@ -427,10 +465,13 @@ function AccountCard({ account, onClick }: { account: AccountNode; onClick: () =
     : 'Never';
 
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(e) => { if (e.key === 'Enter') onClick(); }}
       className={cn(
-        "group flex flex-col justify-between gap-3 p-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] hover:border-white/[0.12] transition-all text-left active:scale-[0.98] min-h-[110px]",
+        "group flex flex-col justify-between gap-3 p-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] hover:border-white/[0.12] transition-all text-left active:scale-[0.98] min-h-[110px] cursor-pointer",
         account.hidden && "opacity-50"
       )}
     >
@@ -459,6 +500,8 @@ function AccountCard({ account, onClick }: { account: AccountNode; onClick: () =
             ))}
           </div>
         )}
+
+        <ReconciliationLines account={account} status={reconciliation} onReconcile={onReconcile} />
       </div>
 
       <div className="flex items-end justify-between mt-auto">
@@ -481,7 +524,7 @@ function AccountCard({ account, onClick }: { account: AccountNode; onClick: () =
           </div>
         )}
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -490,7 +533,7 @@ function AccountCard({ account, onClick }: { account: AccountNode; onClick: () =
 type SortField = 'name' | 'balance' | 'last_entry';
 type SortDir = 'asc' | 'desc';
 
-export function AccountsPage() {
+export function AccountsPage({ onOpenAdvisor }: { onOpenAdvisor?: (target: AdvisorTarget) => void } = {}) {
   const [activeTab, setActiveTab] = useState<AccountType>('asset');
   const [editingAccount, setEditingAccount] = useState<AccountNode | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -503,6 +546,32 @@ export function AccountsPage() {
     queryKey: ['accountsTree'],
     queryFn: fetchAccountsTree,
   });
+
+  // Advisor reconciliation status; degrades silently when the advisor is unreachable.
+  const { data: reconciliation = [] } = useQuery({
+    queryKey: ['advisorReconciliationStatus'],
+    queryFn: () => fetchReconciliationStatus().catch(() => [] as ReconciliationStatus[]),
+    staleTime: 60_000,
+    retry: false,
+  });
+  const reconciliationById = useMemo(() => new Map(reconciliation.map(r => [r.account_id, r])), [reconciliation]);
+
+  async function reconcileWithAdvisor(account: AccountNode) {
+    if (!onOpenAdvisor) return;
+    const st = reconciliationById.get(account.id);
+    let next = 'the first statement period';
+    if (st?.reconciled_through) {
+      const d = new Date(`${st.reconciled_through}T00:00:00`);
+      d.setDate(d.getDate() + 1);
+      next = d.toISOString().slice(0, 10);
+    }
+    const conv = await createConversation({
+      title: `Conciliar ${account.full_name}`,
+      message: `Conciliar ${account.full_name}`,
+      context: `Account ${account.full_name} (id ${account.id}). Reconciled through ${st?.reconciled_through ?? 'never'}; next period starts ${next}. Ask for the statement covering that period and run the reconciliation procedure.`,
+    });
+    onOpenAdvisor({ conversationId: conv.id });
+  }
 
   const filtered = useMemo(() =>
     allAccounts.filter(a =>
@@ -629,7 +698,13 @@ export function AccountsPage() {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
           {sorted.map((account) => (
-            <AccountCard key={account.id} account={account} onClick={() => setEditingAccount(account)} />
+            <AccountCard
+              key={account.id}
+              account={account}
+              onClick={() => setEditingAccount(account)}
+              reconciliation={reconciliationById.get(account.id)}
+              onReconcile={onOpenAdvisor && (account.type === 'asset' || account.type === 'liability') ? () => void reconcileWithAdvisor(account) : undefined}
+            />
           ))}
         </div>
       )}

@@ -463,3 +463,95 @@ Supports filtering: `?plan_id=eq.<uuid>`
 | `account_id` | `UUID` | Budget item account ID. |
 | `month` | `DATE` | First day of the month (e.g. `2026-01-01`). |
 | `spent` | `NUMERIC` | Sum of `amount_base` for that account and descendants in that month. |
+
+---
+
+## Provenance, classification and reconciliation (migrations 0047–0054)
+
+Added for the AI advisor (`docs/ADVISOR.md`). Everything below is plain PostgREST; the advisor daemon's
+own HTTP API is documented in `advisor/README.md`.
+
+### `create_transaction` / `update_transaction` — `p_metadata`
+
+Both RPCs accept an optional fourth/fifth argument `p_metadata JSONB`. On create it is stored as
+`transactions.metadata`; on update a JSON object is merged over the stored value (`NULL` keeps it).
+Three-/four-argument callers keep working. The advisor writes:
+
+```json
+{ "source": "advisor", "plan_id": "…", "plan_item_id": "…", "statement_id": "…", "institution": "nubank",
+  "fitid": "66f1…", "statement_line_hash": "sha256", "approved_by": "web",
+  "statement_line": { "raw": "TAMPOPO ALIMENTOS LTDA", "posted_at": "2026-10-01T12:30:00-03:00", "fitid": "…", "hash": "…" } }
+```
+
+`metadata->>'fitid'` and `metadata->>'source'` are indexed. When `statement_line.raw` is present the RPC
+teaches `merchant_aliases` (raw text → the description used).
+
+### `classify_candidates`
+
+Derived, multi-factor category suggestion (replaces stored description memories, §21 of ADVISOR.md).
+
+**Endpoint:** `POST /rpc/classify_candidates`
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `p_description` | `TEXT` | Proposed description or hint |
+| `p_amount` | `NUMERIC` | Optional absolute amount |
+| `p_account_id` | `UUID` | Optional asset/liability account |
+| `p_date` | `DATE` | Optional date (weekday / day-of-month evidence) |
+| `p_posted_at` | `TIMESTAMPTZ` | Optional posting time (hour evidence) |
+| `p_raw` | `TEXT` | Optional raw statement text (alias short-circuit, raw similarity) |
+| `p_limit` | `INT` | Default 5 |
+
+**Response rows:** `category_id, category_name, category_type, canonical_description, account_id,
+account_name, account_type, currency, score, confidence, n_matches, factors` (`factors` = per-factor
+averages, `n_matches`, `last_seen`, `alias`, `same_amount_count`, `same_account_count`,
+`modal_description`). Weights live in `global_settings.classifier_weights`.
+
+`match_description_memory(p_input)` keeps its previous shape and is now a wrapper over this function;
+`description_memories_with_names` is a derived view over `transaction_lines` with the same columns as
+before (`description_memories` is no longer written).
+
+### Performance (migration 0054)
+
+`transactions.norm_description` and `transactions.norm_raw` are stored generated columns
+(`normalize_text(description)`, `normalize_merchant(metadata #>> '{statement_line,raw}')`) with pg_trgm GIN
+indexes; `transaction_lines` reads them and `classify_candidates` pre-filters with `%` / `<%` at the
+eligibility threshold before scoring. Same results, about 20x faster on a 10k-transaction history.
+
+### `merchant_aliases` (table), `normalize_merchant(text)`, `transaction_lines` (view)
+
+`merchant_aliases(raw_normalized pk, canonical_description, account_id, source, hits)` maps
+`normalize_merchant(raw statement text)` to the household's short name. `transaction_lines` exposes one
+row per category entry with `norm_description`, `raw`, `norm_raw`, `posted_at`, `amount`,
+`asset_account_id` and is the classifier's only input.
+
+### Reconciliations
+
+Tables `reconciliations` and `reconciliation_items` (see `docs/ADVISOR.md` §5.5). RPCs:
+
+| RPC | Arguments | Notes |
+| :--- | :--- | :--- |
+| `open_reconciliation` | `p_account_id, p_period_start, p_period_end, p_statement_opening, p_statement_closing, p_currency?, p_statement_ref?, p_created_by?` | Computes `ledger_opening`/`ledger_closing`, checks continuity with the previous balanced period (`notes` gets `continuity_break: …`), inserts `open` |
+| `set_reconciliation_items` | `p_id, p_items jsonb` | Replaces items `[{kind, entry_id?, statement_line_hash?, amount?, note?}]`, recomputes `cleared_total`, `outstanding_total`, `difference = statement_closing − (ledger_opening + cleared_total)` |
+| `close_reconciliation` | `p_id, p_status, p_adjustment_transaction_id?, p_notes?` | `balanced` only when `|difference| < 0.005`; `adjusted` needs a transaction whose leg on the account equals the difference and whose other leg is on `ajustes`; sets `accounts.last_checked` |
+| `reopen_reconciliation` | `p_id, p_notes?` | Back to `open` (used when a cleared entry is edited with consent) |
+| `ledger_balance_as_of` | `p_account_id, p_date` | `SUM(amount_base)` up to a date |
+| `uncleared_entries` | `p_account_id, p_through_date?, p_from_date?` | Entries not vouched by any reconciliation |
+
+Views: `entry_clearings` (cleared entry → reconciliation), `account_reconciliation_status`
+(`reconciled_through`, `last_status`, `open_difference`, `suspense_balance` per asset/liability account).
+`account_balances` gained `reconciled_through` and `cleared_balance`; `transactions_with_entries` gained
+`clearing` (`{reconciliation_id, period_end, account_id, statement_ref}` or null).
+
+### `accounts.subtype` (migration 0052)
+
+`subtype` accepts `checking | emergency | investments | liabilities | category | property | loan`. The
+web dashboard shows `checking`, `emergency`, `investments` and `liabilities` as money (cards and net
+worth); `property` (an owned asset that is not money) and `loan` (a long-term liability) are ordinary
+ledger accounts that stay out of those cards; `null` is not grouped. Accounts are created and changed
+with plain table writes (`POST /accounts`, `PATCH /accounts?id=eq.<id>`), which the advisor also uses
+for its `account_create` / `account_update` plan items.
+
+### `ajustes`
+
+Root expense account seeded by 0049: the suspense account for reconciliation adjustments.

@@ -1,10 +1,10 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchTransactions, updateTransaction, deleteTransaction, fetchAccounts, fetchCategoryUsage, fetchAccountUsage, fetchDailyAccountBalances, fetchDailyBalances, fetchGlobalSettings, fetchExchangeRate, type Transaction, type Entry } from '@/lib/api';
+import { fetchTransactions, updateTransaction, deleteTransaction, fetchAccounts, fetchCategoryUsage, fetchAccountUsage, fetchDailyAccountBalances, fetchDailyBalances, fetchGlobalSettings, fetchExchangeRate, type Transaction, type Entry, type TransactionClearing } from '@/lib/api';
 import { useMemo, useEffect, useRef, useState } from 'react';
 import { cn, formatHierarchicalName } from '@/lib/utils';
 import { SearchableSelect } from './SearchableSelect';
 import { AccountIcon } from './AccountIcon';
-import { Wallet, Tag, Trash2, Plus, Check, Loader2, X, Download, UndoDot } from 'lucide-react';
+import { Wallet, Tag, Trash2, Plus, Check, Loader2, X, Download, UndoDot, CheckCheck } from 'lucide-react';
 import { type LedgerFilters } from './LedgerFilterBar';
 import { ExportWizard } from './ExportWizard';
 import { AdvanceInstallmentModal } from './AdvanceInstallmentModal';
@@ -20,6 +20,8 @@ interface TransactionItem {
   currency: string;
   entries: Entry[];
   primaryType: 'expense' | 'income' | 'transfer';
+  clearing: TransactionClearing | null;
+  statementRaw: string | null;
 }
 
 interface DateHeaderItem {
@@ -32,6 +34,20 @@ type LedgerItem = TransactionItem | DateHeaderItem;
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function statementRawOf(t: Transaction): string | null {
+  const line = (t.metadata as { statement_line?: { raw?: unknown } } | undefined)?.statement_line;
+  return line && typeof line.raw === 'string' ? line.raw : null;
+}
+
+function formatPeriodEnd(d: string): string {
+  try { return new Date(`${d}T00:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }); } catch { return d; }
+}
+
+function confirmClearedChange(item: TransactionItem, action: 'Editing' | 'Deleting'): boolean {
+  if (!item.clearing) return true;
+  return window.confirm(`Este lançamento já foi conferido com o extrato até ${formatPeriodEnd(item.clearing.period_end)}. ${action === 'Editing' ? 'Editar' : 'Excluir'} reabre essa conferência. Continuar?`);
 }
 
 function getInstallmentNumber(desc: string): number {
@@ -183,6 +199,7 @@ function TransactionRow({
 
   const startEditing = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (!confirmClearedChange(item, 'Editing')) return;
     // Sort entries so that positive (destination/category) comes first for better editing flow
     const sortedEntries = [...item.entries].sort((a, b) => b.amount_base - a.amount_base);
     setEditState({
@@ -310,6 +327,11 @@ function TransactionRow({
       >
         <div className="grid grid-cols-[1.5fr_1fr_1fr_120px] gap-4 w-full items-center">
           <span className="font-medium text-[14px] truncate text-foreground/90 flex items-center gap-2">
+            {item.clearing && (
+              <span title={`Confere com o extrato · conferido até ${formatPeriodEnd(item.clearing.period_end)}`} aria-label="Confere com o extrato" className="shrink-0 text-emerald-400/70">
+                <CheckCheck className="w-3.5 h-3.5" />
+              </span>
+            )}
             {item.description}
             {installmentPattern && (
               <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400 uppercase tracking-wider shrink-0">
@@ -567,7 +589,7 @@ function TransactionRow({
                  <div className="flex gap-2">
                     <button 
                         onClick={() => {
-                            if (window.confirm('Delete this transaction?')) {
+                            if (confirmClearedChange(item, 'Deleting') && window.confirm('Delete this transaction?')) {
                                 deleteMutation.mutate(item.id);
                             }
                         }}
@@ -639,6 +661,21 @@ function TransactionRow({
                 </div>
                 );
               })}
+              {item.clearing && (
+                <div className="mt-3 pt-2 border-t border-border/20 space-y-1">
+                  <div className="flex items-center gap-1.5 text-[11px] text-emerald-400/80">
+                    <CheckCheck className="w-3.5 h-3.5" />
+                    <span>Confere com o extrato · conferido até {formatPeriodEnd(item.clearing.period_end)}</span>
+                  </div>
+                  {item.statementRaw && (
+                    <div className="text-[11px] font-mono text-muted-foreground/60 pl-5 truncate" title={item.statementRaw}>raw: {item.statementRaw}</div>
+                  )}
+                  <div className="text-[10px] text-muted-foreground/40 pl-5">Editar um lançamento conferido reabre a conferência; o app pergunta antes de salvar.</div>
+                </div>
+              )}
+              {!item.clearing && item.statementRaw && (
+                <div className="mt-3 pt-2 border-t border-border/20 text-[11px] font-mono text-muted-foreground/60 truncate" title={item.statementRaw}>raw: {item.statementRaw}</div>
+              )}
               {allSeriesItems.length > 0 && (
                 <div className="mt-3 pt-2 border-t border-border/20">
                   {(() => {
@@ -698,7 +735,7 @@ function TransactionRow({
               <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-border/20">
                 <button
                     onClick={() => {
-                        if (window.confirm('Delete this transaction?')) {
+                        if (confirmClearedChange(item, 'Deleting') && window.confirm('Delete this transaction?')) {
                             deleteMutation.mutate(item.id);
                         }
                     }}
@@ -836,7 +873,7 @@ export function LedgerTable({ filters, onBackToBudget }: { filters: LedgerFilter
       const categories = expenseEntries.concat(incomeEntries).map(e => e.account_name);
       const accounts = assetEntries.map(e => e.account_name);
 
-      return [{ type: 'transaction' as const, id: t.id, date: t.date, description: t.description, accounts, categories, amount, currency, entries: t.entries, primaryType }];
+      return [{ type: 'transaction' as const, id: t.id, date: t.date, description: t.description, accounts, categories, amount, currency, entries: t.entries, primaryType, clearing: t.clearing ?? null, statementRaw: statementRawOf(t) }];
     }));
   }, [data]);
 
@@ -897,6 +934,8 @@ export function LedgerTable({ filters, onBackToBudget }: { filters: LedgerFilter
           currency,
           entries: t.entries,
           primaryType,
+          clearing: t.clearing ?? null,
+          statementRaw: statementRawOf(t),
         });
       });
     });

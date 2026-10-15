@@ -1,6 +1,10 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { type Account, fetchAccounts, fetchDashboardData, fetchDailyBalances, markAccountChecked, fetchCurrentBudgetPlan, fetchBudgetItems, fetchBudgetMonthlySpending, type BudgetItemWithAccount } from '@/lib/api';
+import { type Account, fetchAccounts, fetchDashboardData, fetchDailyBalances, markAccountChecked, fetchCurrentBudgetPlan, fetchBudgetItems, fetchBudgetMonthlySpending, type BudgetPlan } from '@/lib/api';
+import { createConversation } from '@/lib/advisor-api';
+import type { AdvisorTarget } from './advisor/AdvisorPage';
+import { BudgetHealthCard, type BudgetItemSummary } from './BudgetHealthCard';
+import { AdvisorCta } from './advisor/AdvisorCta';
 import { isBalanceCheckStale } from '@/lib/balanceCheckStale';
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, 
@@ -42,9 +46,10 @@ interface DashboardProps {
   filters: LedgerFilters;
   onFilterChange: (filters: LedgerFilters) => void;
   onNavigateToBudget?: () => void;
+  onOpenAdvisor?: (target: AdvisorTarget) => void;
 }
 
-export function Dashboard({ filters, onFilterChange, onNavigateToBudget }: DashboardProps) {
+export function Dashboard({ filters, onFilterChange, onNavigateToBudget, onOpenAdvisor }: DashboardProps) {
   const queryClient = useQueryClient();
   const [showCustom, setShowCustom] = useState(false);
 
@@ -301,8 +306,10 @@ export function Dashboard({ filters, onFilterChange, onNavigateToBudget }: Dashb
     const totalSpent = items.reduce((s, i) => s + i.spent, 0);
     const overallPct = totalTarget > 0 ? (totalSpent / totalTarget) * 100 : 0;
     const topItems = [...items].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+    const periodTarget = budgetItems.reduce((s, i) => s + Number(i.period_amount), 0);
+    const periodSpent = budgetSpending.reduce((s, x) => s + Number(x.spent), 0);
 
-    return { totalTarget, totalSpent, overallPct, topItems };
+    return { totalTarget, totalSpent, overallPct, topItems, plan: budgetPlan, periodTarget, periodSpent };
   }, [budgetPlan, budgetItems, budgetSpending, startDateStr, endDateStr]);
 
   const accountGroups = useMemo(() => {
@@ -348,7 +355,7 @@ export function Dashboard({ filters, onFilterChange, onNavigateToBudget }: Dashb
       {/* Date Filters */}
       <div className="flex flex-col gap-4 bg-white/[0.02] backdrop-blur-3xl p-4 rounded-3xl border border-white/10 sticky top-0 z-50 shadow-2xl">
         <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
             {DATE_PRESETS.map(preset => (
                 <button
                 key={preset.label}
@@ -418,9 +425,19 @@ export function Dashboard({ filters, onFilterChange, onNavigateToBudget }: Dashb
         </div>
       </div>
 
+      {/* Advisor call to action (only when there is something to do) */}
+      <AdvisorCta accounts={accounts} entries={entries} range={{ start: startDateStr, end: endDateStr }} onOpenAdvisor={onOpenAdvisor} />
+
       {/* Budget Highlights */}
       {budgetMetrics && (
-        <BudgetHighlightsPanel metrics={budgetMetrics} onNavigateToBudget={onNavigateToBudget} />
+        <BudgetHighlightsPanel
+          metrics={budgetMetrics}
+          onNavigateToBudget={onNavigateToBudget}
+          onReviewWithAdvisor={onOpenAdvisor ? async (context) => {
+            const conv = await createConversation({ title: `Orçamento · ${budgetMetrics.plan.name}`, message: 'Revise meu orçamento atual', context });
+            onOpenAdvisor({ conversationId: conv.id });
+          } : undefined}
+        />
       )}
 
       {/* Asset Breakdown History */}
@@ -822,16 +839,17 @@ function ChartCard({ title, children, className }: { title: string, children: Re
   );
 }
 
-type BudgetItemSummary = BudgetItemWithAccount & { target: number; spent: number; pct: number };
-
 interface BudgetMetrics {
   totalTarget: number;
   totalSpent: number;
   overallPct: number;
   topItems: BudgetItemSummary[];
+  plan: BudgetPlan;
+  periodTarget: number;
+  periodSpent: number;
 }
 
-function BudgetHighlightsPanel({ metrics, onNavigateToBudget }: { metrics: BudgetMetrics; onNavigateToBudget?: () => void }) {
+function BudgetHighlightsPanel({ metrics, onNavigateToBudget, onReviewWithAdvisor }: { metrics: BudgetMetrics; onNavigateToBudget?: () => void; onReviewWithAdvisor?: (context: string) => void }) {
   const fmt = (n: number) =>
     `R$ ${n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
@@ -920,68 +938,17 @@ function BudgetHighlightsPanel({ metrics, onNavigateToBudget }: { metrics: Budge
           ))}
         </div>
 
-        {/* Piggy bank */}
-        <div className="flex flex-col items-center justify-center gap-4">
-          <PiggyBankIndicator pct={metrics.overallPct} />
-          <div className="text-center">
-            <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Total Budget</p>
-            <p className="text-sm font-bold mt-1 whitespace-nowrap">
-              {fmt(metrics.totalSpent)}{' '}
-              <span className="text-muted-foreground font-normal">/ {fmt(metrics.totalTarget)}</span>
-            </p>
-          </div>
+        {/* Budget health (advisor-driven) */}
+        <div className="flex flex-col">
+          <BudgetHealthCard
+            data={{ plan: metrics.plan, items: metrics.topItems, totalTarget: metrics.totalTarget, totalSpent: metrics.totalSpent, periodTarget: metrics.periodTarget, periodSpent: metrics.periodSpent }}
+            onReviewWithAdvisor={(context) => onReviewWithAdvisor?.(context)}
+          />
+          <p className="text-[10px] text-center text-muted-foreground/60 mt-3 whitespace-nowrap">
+            {fmt(metrics.totalSpent)} <span className="opacity-60">/ {fmt(metrics.totalTarget)} in this range</span>
+          </p>
         </div>
       </div>
     </div>
-  );
-}
-
-const PIGGY_PATH = "M16.417 9.583A7.917 7.917 0 1 1 8.5 1.666a7.917 7.917 0 0 1 7.917 7.917zm-2.5-.382a.913.913 0 0 0-.91-.91h-.355a3.655 3.655 0 0 0-.833-1.393 3.412 3.412 0 0 1 .369-1.953.199.199 0 0 0-.152-.29.197.197 0 0 0-.124.026L9.914 5.844a3.648 3.648 0 0 0-.738-.075H7.642a3.657 3.657 0 0 0-3.587 2.947.71.71 0 0 0 0 1.419 3.656 3.656 0 0 0 1.001 1.876q.093.092.191.177v1.553a.365.365 0 0 0 .364.364h1.163a.365.365 0 0 0 .365-.364v-.694a3.64 3.64 0 0 0 .503.035h1.534a3.642 3.642 0 0 0 .503-.035v.694a.365.365 0 0 0 .365.364h1.163a.365.365 0 0 0 .364-.364v-1.553q.098-.085.19-.177a3.659 3.659 0 0 0 .891-1.451h.354a.913.913 0 0 0 .91-.91zM9.487 6.32a.364.364 0 1 1 0 .728H7.464a.364.364 0 1 1 0-.728h2.025zm-.003 3.702a.95.95 0 0 1 .235.625.929.929 0 0 1-.466.802 1.478 1.478 0 0 1-.448.19v.193a.364.364 0 0 1-.729 0v-.188a1.662 1.662 0 0 1-.285-.091 1.054 1.054 0 0 1-.406-.297.364.364 0 0 1 .55-.477.338.338 0 0 0 .126.098.928.928 0 0 0 .176.056 1.412 1.412 0 0 0 .19.024.845.845 0 0 0 .43-.119c.134-.086.134-.157.134-.191a.224.224 0 0 0-.056-.146.537.537 0 0 0-.14-.113.727.727 0 0 0-.176-.063.838.838 0 0 0-.174-.017 1.824 1.824 0 0 1-.304-.024 1.396 1.396 0 0 1-.392-.127 1.141 1.141 0 0 1-.374-.3.97.97 0 0 1-.222-.608.98.98 0 0 1 .487-.829 1.458 1.458 0 0 1 .436-.18v-.184a.364.364 0 1 1 .729 0v.193a1.714 1.714 0 0 1 .292.103 1.212 1.212 0 0 1 .354.244.364.364 0 0 1-.514.516.483.483 0 0 0-.14-.096.965.965 0 0 0-.18-.063l-.02-.004a.936.936 0 0 0-.147-.026.83.83 0 0 0-.421.113.261.261 0 0 0-.148.213.251.251 0 0 0 .06.148.417.417 0 0 0 .134.108.67.67 0 0 0 .186.06 1.099 1.099 0 0 0 .184.014 1.557 1.557 0 0 1 .328.035 1.456 1.456 0 0 1 .361.13 1.257 1.257 0 0 1 .35.278z";
-
-function PiggyBankIndicator({ pct }: { pct: number }) {
-  const fillFraction = Math.min(pct / 100, 1);
-  const fillColor = pct > 100 ? '#EF4444' : '#22C55E';
-
-  // viewBox is "-1 0 19 19"; circle center y=9.583, r=7.917
-  const pigTop = 1.666;
-  const pigBottom = 17.5;
-  const fillY = pigBottom - fillFraction * (pigBottom - pigTop);
-
-  return (
-    <svg viewBox="-1 0 19 19" className="w-36 h-auto">
-      <defs>
-        <clipPath id="piggyClip">
-          <path d={PIGGY_PATH} />
-        </clipPath>
-        <filter id="pigTextShadow" x="-50%" y="-50%" width="200%" height="200%">
-          <feDropShadow dx="0" dy="0" stdDeviation="0.4" floodColor="black" floodOpacity="0.9" />
-        </filter>
-      </defs>
-
-      {/* Dark base fill (unfilled portion) */}
-      <path d={PIGGY_PATH} fill="rgba(255,255,255,0.08)" />
-
-      {/* Colored fill rising from bottom */}
-      <rect
-        x="-1" y={fillY} width="20" height={Math.max(0, pigBottom - fillY)}
-        fill={fillColor} clipPath="url(#piggyClip)" opacity="0.9"
-      />
-
-      {/* Pig icon overlay — preserves shape details */}
-      <path d={PIGGY_PATH} fill="rgba(255,255,255,0.12)" stroke="rgba(255,255,255,0.35)" strokeWidth="0.25" />
-
-      {/* Percentage text */}
-      <text
-        x="8.5" y="9.8"
-        textAnchor="middle"
-        dominantBaseline="middle"
-        fontSize="3.2"
-        fontWeight="bold"
-        fill="white"
-        filter="url(#pigTextShadow)"
-      >
-        {Math.round(pct)}%
-      </text>
-    </svg>
   );
 }

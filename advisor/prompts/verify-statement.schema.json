@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "consistent": { "type": "boolean" },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "problems": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["consistent", "confidence", "problems"]
+}

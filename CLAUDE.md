@@ -13,6 +13,14 @@ npm run test       # Vitest
 npm run preview    # Preview production build
 ```
 
+### Advisor daemon (run from `advisor/`)
+```bash
+npm run dev        # tsx watch (needs DATABASE_URL, POSTGREST_URL, FINANCES_TOKEN, JWT_SECRET; ADVISOR_CHANNELS=web)
+npm run build      # tsc → dist/
+npm run typecheck  # tsc --noEmit
+npm test           # Vitest; set TEST_DATABASE_URL to also run the SQL suite against a migrated throwaway DB
+```
+
 ### Database (Python, run from repo root)
 ```bash
 python scripts/migrate.py              # Apply pending migrations
@@ -87,3 +95,4 @@ Read these in order when working on new features:
 4. `LEDGER_RULES.md` — accounting invariants, sign conventions, multi-currency rules
 5. `ARCHITECTURE.md` — system layers and design principles
 6. `API_CONTRACT.md` — RPC schemas and view definitions with curl examples
+7. `ADVISOR.md` — implementation spec for the AI finances advisor (`advisor/` daemon, migrations 0047–0051, web Advisor view). Start at its §0 when building it.

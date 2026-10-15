@@ -1,9 +1,11 @@
 import { useState, useRef } from 'react';
 import { addMonths, subMonths, startOfMonth, format } from 'date-fns';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { fetchCurrentBudgetPlan } from '@/lib/api';
+import { createConversation } from '@/lib/advisor-api';
+import type { AdvisorTarget } from './advisor/AdvisorPage';
 import { BudgetExecutionView } from './BudgetExecutionView';
 import { BudgetPlanningView } from './BudgetPlanningView';
 import { BudgetPlanWizard } from './BudgetPlanWizard';
@@ -14,9 +16,10 @@ type PeriodView = 'monthly' | 'period';
 
 interface BudgetPageProps {
   onNavigateToLedger: (accountId: string, startDate: string, endDate: string, accountFullName?: string) => void;
+  onOpenAdvisor?: (target: AdvisorTarget) => void;
 }
 
-export function BudgetPage({ onNavigateToLedger }: BudgetPageProps) {
+export function BudgetPage({ onNavigateToLedger, onOpenAdvisor }: BudgetPageProps) {
   const [subMode, setSubMode] = useState<SubMode>('execution');
   const [currentMonth, setCurrentMonth] = useState<Date>(() => startOfMonth(new Date()));
   const [periodView, setPeriodView] = useState<PeriodView>('monthly');
@@ -40,6 +43,15 @@ export function BudgetPage({ onNavigateToLedger }: BudgetPageProps) {
   function openWizard() {
     setShowPlansModal(false);
     setShowWizard(true);
+  }
+
+  async function planWithAdvisor() {
+    if (!onOpenAdvisor) return;
+    const context = currentPlan
+      ? `Current budget plan "${currentPlan.name}" runs ${currentPlan.period_start} to ${currentPlan.period_end}${currentPlan.is_current ? ' (current)' : ''}. Propose budget_upsert items for it, or for a new plan if the user asks.`
+      : 'There is no budget plan yet. Ask the user to create one in the Budget page (name and period), then propose budget_upsert items from the spending history.';
+    const conv = await createConversation({ title: 'Planejar orçamento', message: 'Quero planejar o orçamento', context });
+    onOpenAdvisor({ conversationId: conv.id });
   }
 
   return (
@@ -103,6 +115,15 @@ export function BudgetPage({ onNavigateToLedger }: BudgetPageProps) {
             ))}
           </nav>
 
+          {onOpenAdvisor && (
+            <button
+              onClick={() => void planWithAdvisor()}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-white/[0.08] bg-white/[0.02] text-[13px] font-medium tracking-[-0.01em] text-muted-foreground hover:text-foreground/80 transition-colors backdrop-blur-md"
+            >
+              <Sparkles className="w-3.5 h-3.5 opacity-80" /> Planejar com o assistente
+            </button>
+          )}
+
           {/* Plans button */}
           <button
             onClick={() => setShowPlansModal(true)}
@@ -120,6 +141,7 @@ export function BudgetPage({ onNavigateToLedger }: BudgetPageProps) {
           periodView={periodView}
           onNavigateToLedger={onNavigateToLedger}
           onCreatePlan={openWizard}
+          onPlanWithAdvisor={onOpenAdvisor ? () => void planWithAdvisor() : undefined}
         />
       ) : (
         <BudgetPlanningView
