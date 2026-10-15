@@ -4,6 +4,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
+import { isBalanced, recloseDecision, recomputeReconciliations, restoreClearings, snapshotClearings } from '../src/plan/clearings.js';
 
 const url = process.env.TEST_DATABASE_URL;
 
@@ -144,6 +145,67 @@ describe.skipIf(!url)('migrations 0050 + 0051', () => {
     expect(twe.rows[0].clearing.reconciliation_id).toBe(r.id);
     const unc = await client.query('SELECT count(*)::int AS n FROM uncleared_entries($1, CURRENT_DATE, (CURRENT_DATE - 30)::date)', [ids.nu]);
     expect(unc.rows[0].n).toBe(0);
+    ids.rec = r.id;
+  });
+
+  it('clearings survive update_transaction when carried over, and the period closes again when it still balances', async () => {
+    // pick a cleared transaction in the reconciled period and recategorise it (same amount)
+    const row = (
+      await client.query(
+        `SELECT t.id FROM transactions t JOIN entries e ON e.transaction_id = t.id JOIN reconciliation_items ri ON ri.entry_id = e.id
+         WHERE ri.reconciliation_id = $1 AND ri.kind = 'cleared' AND e.account_id = $2 LIMIT 1`,
+        [ids.rec, ids.nu],
+      )
+    ).rows[0];
+    const before = (await client.query('SELECT count(*)::int AS n FROM reconciliation_items WHERE reconciliation_id = $1', [ids.rec])).rows[0].n as number;
+    await client.query('SELECT reopen_reconciliation($1, $2)', [ids.rec, 'test reopen']);
+    const snapshot = await snapshotClearings(client, row.id);
+    expect(snapshot.length).toBe(1);
+    await client.query('SELECT update_transaction($1, CURRENT_DATE - 3, $2, $3::jsonb, $4::jsonb)', [
+      row.id,
+      'Recategorised',
+      JSON.stringify([
+        { account_id: ids.transp, amount: 45.9, currency: 'BRL', amount_base: 45.9 },
+        { account_id: ids.nu, amount: -45.9, currency: 'BRL', amount_base: -45.9 },
+      ]),
+      JSON.stringify({ source: 'advisor' }),
+    ]);
+    const gone = (await client.query('SELECT count(*)::int AS n FROM reconciliation_items WHERE reconciliation_id = $1', [ids.rec])).rows[0].n as number;
+    expect(gone).toBe(before - 1); // the cascade removed the clearing
+    const touched = await restoreClearings(client, row.id, snapshot);
+    expect(touched).toEqual([ids.rec]);
+    const after = (await client.query('SELECT count(*)::int AS n FROM reconciliation_items WHERE reconciliation_id = $1', [ids.rec])).rows[0].n as number;
+    expect(after).toBe(before);
+    const [state] = await recomputeReconciliations(client, [ids.rec]);
+    expect(state!.status).toBe('open');
+    // the period had been closed with a R$ 10 adjustment: the difference is still 10, so it closes as adjusted again
+    expect(Number(state!.difference)).toBeCloseTo(-10, 2);
+    expect(isBalanced(state!)).toBe(false);
+    expect(recloseDecision(state!, 'adjusted')).toBe('adjusted');
+    expect(recloseDecision(state!, 'balanced')).toBeNull();
+    const closed = (await client.query("SELECT * FROM close_reconciliation($1, 'adjusted', $2, 'closed again')", [ids.rec, state!.adjustment_transaction_id])).rows[0];
+    expect(closed.status).toBe('adjusted');
+
+    // changing the amount leaves a visible difference instead
+    await client.query('SELECT reopen_reconciliation($1, $2)', [ids.rec, 'test reopen 2']);
+    const snap2 = await snapshotClearings(client, row.id);
+    await client.query('SELECT update_transaction($1, CURRENT_DATE - 3, $2, $3::jsonb, $4::jsonb)', [
+      row.id,
+      'Recategorised again',
+      JSON.stringify([
+        { account_id: ids.transp, amount: 50, currency: 'BRL', amount_base: 50 },
+        { account_id: ids.nu, amount: -50, currency: 'BRL', amount_base: -50 },
+      ]),
+      JSON.stringify({ source: 'advisor' }),
+    ]);
+    await restoreClearings(client, row.id, snap2);
+    const [state2] = await recomputeReconciliations(client, [ids.rec]);
+    expect(Number(state2!.difference)).toBeCloseTo(-10 + 4.1, 2);
+    expect(recloseDecision(state2!, 'adjusted')).toBe('adjusted'); // close_reconciliation then rejects it: the leg no longer equals the difference
+    await client.query('SAVEPOINT s2');
+    await expect(client.query("SELECT close_reconciliation($1, 'adjusted', $2, 'x')", [ids.rec, state2!.adjustment_transaction_id])).rejects.toThrow(/does not equal the difference/);
+    await client.query('ROLLBACK TO SAVEPOINT s2');
+    expect(recloseDecision({ ...state2!, difference: 0 }, null)).toBe('balanced');
   });
 });
 

@@ -40,7 +40,8 @@ export function PlanReview({ planId, onBack, mobile }: { planId: string; onBack:
       invalidate();
       void qc.invalidateQueries({ queryKey: ['transactions'] });
       void qc.invalidateQueries({ queryKey: ['accounts'] });
-      setNotice(r.status === 'applied' ? `Applied ${r.applied} items${r.reconciliation ? ` · reconciliation ${r.reconciliation.reconciliation.status}` : ''}.` : `Applied ${r.applied}, ${r.failed} failed: ${r.items.filter((i) => i.status === 'failed').map((i) => `#${i.seq} ${i.error}`).join('; ')}`);
+      const reopened = (r.reopened ?? []).map((x) => (x.status === 'open' ? `period to ${x.period_end} left open (difference ${formatBRL(Number(x.difference ?? 0))})` : `period to ${x.period_end} closed again`)).join('; ');
+      setNotice(r.status === 'applied' ? `Applied ${r.applied} items${r.reconciliation ? ` · reconciliation ${r.reconciliation.reconciliation.status}` : ''}${reopened ? ` · ${reopened}` : ''}.` : `Applied ${r.applied}, ${r.failed} failed: ${r.items.filter((i) => i.status === 'failed').map((i) => `#${i.seq} ${i.error}`).join('; ')}`);
     },
     onError: (e: Error) => { setNotice(e instanceof AdvisorApiError && e.status === 409 ? 'The plan changed since you opened it. Review it again.' : e.message); invalidate(); },
   });

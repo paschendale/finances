@@ -6,6 +6,7 @@ import { getStatement, updateStatement } from '../db/repo/statements.js';
 import { ensureStatementAccount, loadAccounts, reconcileAfterApply, type ReconcileOutcome } from './reconcile.js';
 import { validatePlanItems, type AccountCreatePayload, type AccountUpdatePayload, type PlanItemInputShape } from './schema.js';
 import { PostgrestError } from '../postgrest/client.js';
+import { recloseDecision, recomputeReconciliations, restoreClearings, snapshotClearings, type ReconciliationState } from './clearings.js';
 import { scoped } from '../log.js';
 
 const log = scoped('plan.apply');
@@ -28,6 +29,8 @@ export interface ApplyResult {
   skipped: number;
   items: Array<{ id: string; seq: number; kind: string; status: string; transaction_id: string | null; error: string | null }>;
   reconciliation: ReconcileOutcome | null;
+  /** Reconciliations this plan reopened (cleared entries edited/deleted), with their state after apply */
+  reopened: ReconciliationState[];
 }
 
 interface Clearing {
@@ -95,9 +98,11 @@ export async function approveAndApply(ctx: AppContext, planId: string, opts: { a
 
   let statement = plan.statement_id ? await getStatement(ctx.db, plan.statement_id) : null;
   if (statement) statement = await ensureStatementAccount(ctx.db, statement, items);
-  const result: ApplyResult = { plan_id: planId, status: 'applied', applied: 0, failed: 0, skipped: 0, items: [], reconciliation: null };
+  const result: ApplyResult = { plan_id: planId, status: 'applied', applied: 0, failed: 0, skipped: 0, items: [], reconciliation: null, reopened: [] };
   /** `new:<ref>` → id of the account created by an earlier item of this run */
   const created = new Map<string, string>();
+  /** reconciliations touched by update/delete items of this run → their status before the run */
+  const reopened = new Map<string, string>();
 
   for (const rawItem of items) {
     const item = resolveNewAccounts(rawItem, created);
@@ -110,7 +115,7 @@ export async function approveAndApply(ctx: AppContext, planId: string, opts: { a
         result.items.push({ id: item.id, seq: item.seq, kind: item.kind, status: 'applied', transaction_id: null, error: null });
         continue;
       }
-      const txId = await applyItem(ctx, plan, item, statement, opts);
+      const txId = await applyItem(ctx, plan, item, statement, { ...opts, reopened });
       await updatePlanItem(ctx.db, planId, item.id, { status: 'applied', applied_transaction_id: txId, error: null });
       if (item.kind === 'skip') result.skipped++;
       else result.applied++;
@@ -122,6 +127,15 @@ export async function approveAndApply(ctx: AppContext, planId: string, opts: { a
       result.items.push({ id: item.id, seq: item.seq, kind: item.kind, status: 'failed', transaction_id: null, error: msg });
       log.warn({ planId, seq: item.seq, kind: item.kind, err: msg }, 'plan item failed; stopping');
       break; // never continue past a failure: later items may depend on this one
+    }
+  }
+
+  // Periods reopened by this plan: refresh their numbers and close the ones that still balance.
+  if (reopened.size > 0) {
+    try {
+      result.reopened = await recloseReopened(ctx, planId, reopened);
+    } catch (err) {
+      log.error({ planId, err }, 'reclosing reopened reconciliations failed');
     }
   }
 
@@ -170,6 +184,7 @@ function summarise(r: ApplyResult): Record<string, unknown> {
     failed: r.failed,
     skipped: r.skipped,
     failed_items: r.items.filter((i) => i.status === 'failed'),
+    reopened: r.reopened,
     reconciliation: r.reconciliation
       ? {
           id: r.reconciliation.reconciliation.id,
@@ -221,10 +236,17 @@ async function updateAccount(ctx: AppContext, p: AccountUpdatePayload): Promise<
   await ctx.pg.patch('accounts', new URLSearchParams({ id: `eq.${p.account_id}` }), patch);
 }
 
-async function guardCleared(ctx: AppContext, item: PlanItem, actor: string, keepReopenFlags: boolean | undefined): Promise<void> {
+/**
+ * An update/delete on an entry cleared by a closed reconciliation needs the item's
+ * `reopens_reconciliation` flag; the reconciliation is reopened (and remembered in `reopened`, so it
+ * can be closed again after apply when it still balances). Open reconciliations are remembered too.
+ */
+async function guardCleared(ctx: AppContext, item: PlanItem, actor: string, keepReopenFlags: boolean | undefined, reopened: Map<string, string>): Promise<void> {
   if (!item.transaction_id) return;
   const clearings = await clearingsForTransaction(ctx, item.transaction_id);
+  if (clearings.length === 0) return;
   const closed = clearings.filter((c) => c.status === 'balanced' || c.status === 'adjusted');
+  for (const c of clearings) if (!reopened.has(c.reconciliation_id)) reopened.set(c.reconciliation_id, c.status);
   if (closed.length === 0) return;
   const flagged = Boolean((item.payload as Record<string, unknown>).reopens_reconciliation);
   if (!flagged || keepReopenFlags === false) {
@@ -235,7 +257,33 @@ async function guardCleared(ctx: AppContext, item: PlanItem, actor: string, keep
   }
 }
 
-async function applyItem(ctx: AppContext, plan: PlanWithCounts, item: PlanItem, statement: Statement | null, opts: { actor: string; keepReopenFlags?: boolean }): Promise<string | null> {
+/** Recomputes the reopened periods from the ledger and closes again the ones that still work out. */
+async function recloseReopened(ctx: AppContext, planId: string, reopened: Map<string, string>): Promise<ReconciliationState[]> {
+  const states = await recomputeReconciliations(ctx.db, [...reopened.keys()]);
+  const out: ReconciliationState[] = [];
+  for (const r of states) {
+    const decision = recloseDecision(r, reopened.get(r.id) ?? null);
+    if (!decision) {
+      out.push(r);
+      continue;
+    }
+    try {
+      const closed = await ctx.pg.rpc<ReconciliationState>('close_reconciliation', {
+        p_id: r.id,
+        p_status: decision,
+        p_adjustment_transaction_id: decision === 'adjusted' ? r.adjustment_transaction_id : null,
+        p_notes: `closed again after plan ${planId}`,
+      });
+      out.push({ ...r, status: closed.status ?? decision });
+    } catch (err) {
+      log.warn({ planId, reconciliationId: r.id, err: (err as Error).message }, 'could not close the reopened period again; it stays open');
+      out.push(r);
+    }
+  }
+  return out;
+}
+
+async function applyItem(ctx: AppContext, plan: PlanWithCounts, item: PlanItem, statement: Statement | null, opts: { actor: string; keepReopenFlags?: boolean; reopened: Map<string, string> }): Promise<string | null> {
   const payload = item.payload as Record<string, unknown>;
   switch (item.kind) {
     case 'skip':
@@ -251,7 +299,9 @@ async function applyItem(ctx: AppContext, plan: PlanWithCounts, item: PlanItem, 
       return res.id;
     }
     case 'update': {
-      await guardCleared(ctx, item, opts.actor, opts.keepReopenFlags);
+      await guardCleared(ctx, item, opts.actor, opts.keepReopenFlags, opts.reopened);
+      // update_transaction recreates the entries, which drops their clearings: carry them over.
+      const snapshot = await snapshotClearings(ctx.db, item.transaction_id!);
       const res = await ctx.pg.rpc<{ id: string }>('update_transaction', {
         p_id: item.transaction_id,
         p_date: item.date,
@@ -259,10 +309,11 @@ async function applyItem(ctx: AppContext, plan: PlanWithCounts, item: PlanItem, 
         p_entries: item.entries,
         p_metadata: provenance(plan, item, statement, opts.actor),
       });
+      for (const id of await restoreClearings(ctx.db, res.id, snapshot)) if (!opts.reopened.has(id)) opts.reopened.set(id, 'open');
       return res.id;
     }
     case 'delete': {
-      await guardCleared(ctx, item, opts.actor, opts.keepReopenFlags);
+      await guardCleared(ctx, item, opts.actor, opts.keepReopenFlags, opts.reopened);
       const okDel = await ctx.pg.rpc<boolean>('delete_transaction', { p_id: item.transaction_id });
       if (okDel === false) throw new Error('transaction not found');
       return item.transaction_id;

@@ -161,6 +161,8 @@ export interface ApplyResult {
   skipped: number;
   items: { id: string; seq: number; kind: string; status: string; transaction_id: string | null; error: string | null }[];
   reconciliation: { reconciliation: { id: string; status: string; difference: number | null; period_end: string; notes: string | null } } | null;
+  /** Reconciliations the plan reopened (cleared entries edited), with their state after apply */
+  reopened?: { id: string; period_end: string; status: string; difference: number | null }[];
 }
 
 export interface AdvisorHealth {
