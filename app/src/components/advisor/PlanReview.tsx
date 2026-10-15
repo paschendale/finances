@@ -110,7 +110,8 @@ export function PlanReview({ planId, onBack, mobile }: { planId: string; onBack:
           </div>
         )}
         {visible.map((item, idx) => (
-          <div key={item.id}>
+          /* the open row sits above its neighbours so its dropdowns are not drawn under the next row */
+          <div key={item.id} className={cn('relative', expanded === item.id && 'z-30')}>
           {multiPeriod && (idx === 0 || (visible[idx - 1]!.date ?? '').slice(0, 7) !== (item.date ?? '').slice(0, 7)) && (
             <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 bg-white/[0.02] border-b border-white/[0.05]">{monthLabel(item.date)}</div>
           )}
