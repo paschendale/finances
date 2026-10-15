@@ -83,6 +83,60 @@ export async function entriesInPeriod(q: Queryable, accountId: string, start: st
   );
 }
 
+/** Opening used in the equation: previous period's statement closing, else the statement's own opening, else the ledger as of the day before. */
+export async function openingFor(q: Queryable, statement: Pick<Statement, 'account_id' | 'period_start' | 'opening_balance'>, previousClosing?: number | null): Promise<number> {
+  if (previousClosing !== undefined && previousClosing !== null) return Number(previousClosing);
+  const adjacent = await maybeOne<{ statement_closing: number }>(
+    q,
+    `SELECT statement_closing FROM reconciliations
+     WHERE account_id = $1 AND status <> 'abandoned' AND period_end BETWEEN $2::date - 1 AND $2::date
+     ORDER BY period_end DESC, created_at DESC LIMIT 1`,
+    [statement.account_id, statement.period_start],
+  );
+  if (adjacent) return Number(adjacent.statement_closing);
+  if (statement.opening_balance !== null && statement.opening_balance !== undefined) return Number(statement.opening_balance);
+  return ledgerBalanceAsOf(q, statement.account_id!, dayBefore(statement.period_start!));
+}
+
+/** Entries on the account that belong to the given transactions (any date) or fall in the period. */
+export async function entriesVouchedOrInPeriod(q: Queryable, accountId: string, start: string, end: string, txIds: string[]): Promise<PeriodEntry[]> {
+  return many<PeriodEntry>(
+    q,
+    `SELECT e.id AS entry_id, e.transaction_id, e.amount_base, t.date, t.description
+     FROM entries e JOIN transactions t ON t.id = e.transaction_id
+     WHERE e.account_id = $1 AND (t.date BETWEEN $2 AND $3 OR t.id = ANY($4::uuid[]))
+     ORDER BY t.date, t.created_at`,
+    [accountId, start, end, txIds],
+  );
+}
+
+export interface PeriodContext {
+  /** Closing of the previous period in the same plan (the bank's opening for this one) */
+  previousClosing?: number | null;
+  /** Transactions vouched by the other statements of the plan: never outstanding here */
+  vouchedElsewhere?: Set<string>;
+}
+
+/** Whether an item belongs to this statement: by source_ref, else by date within the period. */
+function itemBelongs(it: PlanItem, statement: Statement): boolean {
+  if (it.source_ref?.statement_id) return it.source_ref.statement_id === statement.id;
+  if (!it.date || !statement.period_start || !statement.period_end) return true;
+  return it.date >= statement.period_start && it.date <= statement.period_end;
+}
+
+/**
+ * Period contexts for the statements of one plan, oldest first: each period opens at the previous
+ * one's closing, and entries vouched by any other period of the plan are never outstanding in it.
+ */
+export function periodContexts(sorted: Statement[]): PeriodContext[] {
+  const vouchedBy = sorted.map((s) => new Set((s.lines ?? []).map((l) => l.ledger_transaction_id).filter((x): x is string => Boolean(x))));
+  return sorted.map((_, i) => {
+    const elsewhere = new Set<string>();
+    vouchedBy.forEach((set, j) => { if (j !== i) for (const id of set) elsewhere.add(id); });
+    return { previousClosing: i > 0 ? sorted[i - 1]!.closing_balance : undefined, vouchedElsewhere: elsewhere };
+  });
+}
+
 export interface PlanBalanceReport extends BalanceCheck {
   account_name: string | null;
   period_start: string;
@@ -94,42 +148,49 @@ export interface PlanBalanceReport extends BalanceCheck {
 }
 
 /**
- * Pre-apply balance check for a plan bound to a statement:
- *   difference = statement_closing − (ledger_opening + Σ cleared + Σ plan deltas on the account)
- * Cleared = existing entries on the account vouched by a statement line (ledger_transaction_id).
- * Outstanding = entries in the period that neither a line nor the plan touches; listed, not subtracted.
+ * Pre-apply balance check for a plan bound to a statement, the way a bank reconciliation works:
+ *   difference = statement_closing − (opening + Σ cleared + Σ plan deltas for this statement)
+ * Opening = the previous period's statement closing (continuity), else the file's own opening, else
+ * the ledger as of the day before. Cleared = entries on the account vouched by this statement's
+ * lines or skip items, whatever their date (a purchase entered on 30/05 is vouched by the June bill).
+ * Outstanding = entries in the period that no statement of the plan vouches for and the plan does not
+ * touch; listed, not subtracted.
  */
-export async function computePlanBalance(db: Db, plan: Plan, items: PlanItem[], statement: Statement): Promise<PlanBalanceReport | null> {
+export async function computePlanBalance(db: Db, plan: Plan, allItems: PlanItem[], statement: Statement, ctx: PeriodContext = {}): Promise<PlanBalanceReport | null> {
   if (!statement.account_id || statement.closing_balance === null || !statement.period_start || !statement.period_end) return null;
   const accountId = statement.account_id;
   const acc = await maybeOne<{ full_name: string }>(db, 'SELECT full_name FROM account_names_hierarchical WHERE id = $1', [accountId]);
-  const opening = await ledgerBalanceAsOf(db, accountId, dayBefore(statement.period_start));
-  const period = await entriesInPeriod(db, accountId, statement.period_start, statement.period_end);
+  const opening = await openingFor(db, statement, ctx.previousClosing);
+  const items = allItems.filter((it) => it.status !== 'removed' && itemBelongs(it, statement));
 
   const vouched = new Set<string>();
   for (const line of statement.lines ?? []) {
     if (line.ledger_transaction_id) vouched.add(line.ledger_transaction_id);
   }
   for (const it of items) {
-    if (it.status === 'removed') continue;
     if (it.kind === 'skip' && it.transaction_id) vouched.add(it.transaction_id);
     if (it.kind === 'update' && it.transaction_id) vouched.add(it.transaction_id);
   }
   const touched = new Set<string>();
-  for (const it of items) if (it.transaction_id && it.status !== 'removed') touched.add(it.transaction_id);
+  for (const it of allItems) if (it.transaction_id && it.status !== 'removed') touched.add(it.transaction_id);
+  const elsewhere = ctx.vouchedElsewhere ?? new Set<string>();
 
+  const rows = await entriesVouchedOrInPeriod(db, accountId, statement.period_start, statement.period_end, [...vouched]);
   let cleared = 0;
   let planDelta = 0;
   const outstanding: PlanBalanceReport['outstanding'] = [];
-  for (const e of period) {
-    if (vouched.has(e.transaction_id) && !isUpdatedOrDeleted(items, e.transaction_id)) cleared = round2(cleared + e.amount_base);
-    else if (!touched.has(e.transaction_id)) outstanding.push({ transaction_id: e.transaction_id, date: e.date, description: e.description, amount_base: e.amount_base });
+  const periodTotal = rows.filter((e) => e.date >= statement.period_start! && e.date <= statement.period_end!).reduce((s, e) => s + e.amount_base, 0);
+  for (const e of rows) {
+    if (vouched.has(e.transaction_id)) {
+      if (!isUpdatedOrDeleted(items, e.transaction_id)) cleared = round2(cleared + e.amount_base);
+    } else if (!touched.has(e.transaction_id) && !elsewhere.has(e.transaction_id)) {
+      outstanding.push({ transaction_id: e.transaction_id, date: e.date, description: e.description, amount_base: e.amount_base });
+    }
   }
-  // Plan deltas: creates/adjusts add their account leg; updates replace the old legs; deletes remove them.
+  // Plan deltas for this statement: creates/adjusts add their account leg; updates replace the old legs; deletes remove them.
   const deltas = planDeltasByAccount(items.filter((i) => i.kind !== 'update'));
   planDelta = round2(planDelta + (deltas.get(accountId) ?? 0));
   for (const it of items) {
-    if (it.status === 'removed') continue;
     if (it.kind === 'update' && it.transaction_id) {
       const newLeg = it.entries.filter((e) => e.account_id === accountId).reduce((s, e) => s + e.amount_base, 0);
       planDelta = round2(planDelta + newLeg); // old legs were excluded from cleared above
@@ -144,7 +205,7 @@ export async function computePlanBalance(db: Db, plan: Plan, items: PlanItem[], 
     outstanding_count: outstanding.length,
     outstanding_total: round2(outstanding.reduce((s, o) => s + o.amount_base, 0)),
     outstanding,
-    ledger_period_total: round2(period.reduce((s, e) => s + e.amount_base, 0)),
+    ledger_period_total: round2(periodTotal),
   };
 }
 
@@ -168,12 +229,14 @@ export async function reconcileAfterApply(
   db: Db,
   pg: PostgrestClient,
   plan: Plan,
-  items: PlanItem[],
+  allItems: PlanItem[],
   statement: Statement,
   actor: string | null,
+  ctx: PeriodContext = {},
 ): Promise<ReconcileOutcome | null> {
   if (!statement.account_id || statement.closing_balance === null || !statement.period_start || !statement.period_end) return null;
   const accountId = statement.account_id;
+  const items = allItems.filter((it) => it.status !== 'removed' && itemBelongs(it, statement));
 
   const vouchedTx = new Set<string>();
   const lineByTx = new Map<string, string>();
@@ -193,18 +256,23 @@ export async function reconcileAfterApply(
       if (it.source_ref?.line_hash && !lineByTx.has(it.transaction_id)) lineByTx.set(it.transaction_id, it.source_ref.line_hash);
     }
   }
-  const period = await entriesInPeriod(db, accountId, statement.period_start, statement.period_end);
+  const elsewhere = ctx.vouchedElsewhere ?? new Set<string>();
+  const alreadyCleared = new Set(
+    (await many<{ entry_id: string }>(db, `SELECT ri.entry_id FROM reconciliation_items ri JOIN reconciliations r ON r.id = ri.reconciliation_id WHERE ri.kind = 'cleared' AND r.account_id = $1 AND r.status <> 'abandoned' AND ri.entry_id IS NOT NULL`, [accountId])).map((r) => r.entry_id),
+  );
+  const rows = await entriesVouchedOrInPeriod(db, accountId, statement.period_start, statement.period_end, [...vouchedTx]);
   const recItems: Array<Record<string, unknown>> = [];
   const clearedEntries = new Set<string>();
-  for (const e of period) {
+  for (const e of rows) {
     if (vouchedTx.has(e.transaction_id)) {
+      if (alreadyCleared.has(e.entry_id)) continue; // cleared by an earlier period already
       clearedEntries.add(e.entry_id);
       recItems.push({ kind: 'cleared', entry_id: e.entry_id, statement_line_hash: lineByTx.get(e.transaction_id) ?? null, amount: e.amount_base });
-    } else {
+    } else if (!elsewhere.has(e.transaction_id) && !alreadyCleared.has(e.entry_id)) {
       recItems.push({ kind: 'outstanding', entry_id: e.entry_id, amount: e.amount_base, note: e.description });
     }
   }
-  const coveredHashes = new Set(items.filter((i) => i.status !== 'removed' && i.source_ref?.line_hash).map((i) => i.source_ref!.line_hash!));
+  const coveredHashes = new Set(items.filter((i) => i.source_ref?.line_hash).map((i) => i.source_ref!.line_hash!));
   let missing = 0;
   for (const line of statement.lines ?? []) {
     if (!line.ledger_transaction_id && !coveredHashes.has(line.hash)) {
@@ -217,7 +285,7 @@ export async function reconcileAfterApply(
     p_account_id: accountId,
     p_period_start: statement.period_start,
     p_period_end: statement.period_end,
-    p_statement_opening: statement.opening_balance,
+    p_statement_opening: ctx.previousClosing ?? statement.opening_balance,
     p_statement_closing: statement.closing_balance,
     p_currency: statement.currency,
     p_statement_ref: statement.id,

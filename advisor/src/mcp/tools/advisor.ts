@@ -14,7 +14,7 @@ import { ledgerBalanceAsOf } from '../../plan/reconcile.js';
 import { planDeltasByAccount, round2 } from '../../plan/schema.js';
 import { getConversation, updateConversation } from '../../db/repo/conversations.js';
 import { planItemInputSchema, validatePlanItems } from '../../plan/schema.js';
-import { computePlanBalance, ensureStatementAccount, loadAccounts, reconciliationDetail, reconciliationHistory } from '../../plan/reconcile.js';
+import { computePlanBalance, ensureStatementAccount, loadAccounts, periodContexts, reconciliationDetail, reconciliationHistory } from '../../plan/reconcile.js';
 
 /**
  * Bump when tool names, inputs or descriptions change in a way the assistant should notice. Together
@@ -458,8 +458,9 @@ export function registerAdvisorTools(server: McpServer, ctx: AppContext, session
           if (st) sts.push(await ensureStatementAccount(db, st, items));
         }
         sts.sort((a, b) => (a.period_start ?? '9999').localeCompare(b.period_start ?? '9999'));
-        for (const st of sts) {
-          const b = await computePlanBalance(db, plan, items, st);
+        const ctxs = periodContexts(sts);
+        for (const [i, st] of sts.entries()) {
+          const b = await computePlanBalance(db, plan, items, st, ctxs[i]);
           if (b) balances.push(b);
         }
         const balance = balances[balances.length - 1] ?? null;

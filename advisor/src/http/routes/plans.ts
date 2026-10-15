@@ -6,7 +6,7 @@ import { getPlan, getPlanItem, listPlanItems, listPlans, planStatementIds, updat
 import { getStatement, updateStatement } from '../../db/repo/statements.js';
 import { getConversation } from '../../db/repo/conversations.js';
 import { approveAndApply, ApplyError, reconcileAppliedPlan, rejectPlan } from '../../plan/apply.js';
-import { computePlanBalance, ensureStatementAccount, loadAccounts } from '../../plan/reconcile.js';
+import { computePlanBalance, ensureStatementAccount, loadAccounts, periodContexts } from '../../plan/reconcile.js';
 import { planEntrySchema, validatePlanItems, type PlanItemInputShape } from '../../plan/schema.js';
 
 type Env = { Variables: { actor: Actor } };
@@ -51,8 +51,9 @@ export function planRoutes(ctx: AppContext): Hono<Env> {
     }
     statements.sort((a, b) => (a.period_start ?? '9999').localeCompare(b.period_start ?? '9999'));
     const balances = [];
-    for (const st of statements) {
-      const b = await computePlanBalance(ctx.db, plan, items, st);
+    const ctxs = periodContexts(statements);
+    for (const [i, st] of statements.entries()) {
+      const b = await computePlanBalance(ctx.db, plan, items, st, ctxs[i]);
       if (b) balances.push(b);
     }
     const statement = statements[0] ?? null;

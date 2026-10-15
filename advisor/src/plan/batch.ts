@@ -110,10 +110,12 @@ export async function prepareBatch(ctx: AppContext, input: { conversationId: str
   const kept = autoItems.filter((_, i) => !bad.has(i));
   if (kept.length) await appendPlanItems(ctx.db, plan.id, kept);
 
+  // An entry vouched by any period of the batch is not outstanding in another (card dates straddle bills).
+  const vouchedAll = new Set(matched.flatMap((s) => (s.lines ?? []).map((l) => l.ledger_transaction_id).filter((x): x is string => Boolean(x))));
   const digest: DigestStatement[] = [];
   for (const st of matched) {
     const lines = st.lines ?? [];
-    const vouchedTx = new Set(lines.map((l) => l.ledger_transaction_id).filter((x): x is string => Boolean(x)));
+    const vouchedTx = vouchedAll;
     const period = st.period_start && st.period_end ? await entriesInPeriod(ctx.db, accountId, st.period_start, st.period_end) : [];
     digest.push({
       id: st.id,

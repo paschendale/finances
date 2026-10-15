@@ -3,7 +3,7 @@ import { many, maybeOne } from '../db/client.js';
 import type { PlanItem, PlanWithCounts, Statement, StatementLine } from '../db/types.js';
 import { getPlan, listPlanItems, planStatementIds, updatePlan, updatePlanItem } from '../db/repo/plans.js';
 import { getStatement, updateStatement } from '../db/repo/statements.js';
-import { ensureStatementAccount, loadAccounts, reconcileAfterApply, type ReconcileOutcome } from './reconcile.js';
+import { ensureStatementAccount, loadAccounts, periodContexts, reconcileAfterApply, type ReconcileOutcome } from './reconcile.js';
 import { validatePlanItems, type AccountCreatePayload, type AccountUpdatePayload, type PlanItemInputShape } from './schema.js';
 import { PostgrestError } from '../postgrest/client.js';
 import { recloseDecision, recomputeReconciliations, restoreClearings, snapshotClearings, type ReconciliationState } from './clearings.js';
@@ -95,13 +95,18 @@ export async function reconcileAppliedPlan(ctx: AppContext, planId: string, acto
   const items = await listPlanItems(ctx.db, planId);
   let outcome: ReconcileOutcome | null = null;
   let pending = 0;
+  const sts: Statement[] = [];
   for (const sid of ids) {
-    const statement = await getStatement(ctx.db, sid);
-    if (!statement) continue;
+    const st = await getStatement(ctx.db, sid);
+    if (st) sts.push(st);
+  }
+  sts.sort((a, b) => (a.period_start ?? '9999').localeCompare(b.period_start ?? '9999'));
+  const ctxs = periodContexts(sts);
+  for (const [i, statement] of sts.entries()) {
     const existing = await maybeOne<{ id: string }>(ctx.db, `SELECT id FROM reconciliations WHERE statement_ref = $1 AND status <> 'abandoned' LIMIT 1`, [statement.id]);
     if (existing) continue;
     pending++;
-    const r = await reconcileAfterApply(ctx.db, ctx.pg, plan, items, statement, actor);
+    const r = await reconcileAfterApply(ctx.db, ctx.pg, plan, items, statement, actor, ctxs[i]);
     if (r) outcome = r;
   }
   if (pending === 0) throw new ApplyError('Este extrato já tem uma conferência registrada.', 409);
@@ -195,9 +200,10 @@ export async function approveAndApply(ctx: AppContext, planId: string, opts: { a
   if (result.failed === 0) {
     // One reconciliation per period, oldest first, so each period's ledger opening sees the one before.
     const ordered = [...statements].sort((a, b) => (a.period_start ?? '9999').localeCompare(b.period_start ?? '9999'));
-    for (const st of ordered) {
+    const ctxs = periodContexts(ordered);
+    for (const [i, st] of ordered.entries()) {
       try {
-        const r = await reconcileAfterApply(ctx.db, ctx.pg, plan, appliedItems, st, opts.actor);
+        const r = await reconcileAfterApply(ctx.db, ctx.pg, plan, appliedItems, st, opts.actor, ctxs[i]);
         if (r) result.reconciliations.push(r);
       } catch (err) {
         log.error({ planId, statementId: st.id, err }, 'reconciliation after apply failed');
