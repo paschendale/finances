@@ -1,5 +1,9 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-10-15 — App: one page width for every view
+
+After the Ledger kept a 1024px column while the other views went full width, switching views changed the width and the Ledger looked cramped (and would look stretched at full width). Every view now shares one centred column: `PAGE_WIDTH` (`max-w-7xl`, 1280px) on the header, the pending-plans banner and `main`, with side padding on the page wrapper (16px phones, 24px tablets, 32px desktop). `PendingPlansBanner` takes a `className` instead of `boxed`.
+
 ## 2026-10-15 — Balance checks follow how each account is used
 
 The maintainer was asked to check accounts that were empty and idle for months, and the new `apartamento` (property, no statement) showed as "nunca conferida" everywhere. Three rules disagreed: the dashboard check-in list (7 days, `balanceCheckStale.ts`), the advisor chips (30 days, plus "any entry after the last check") and the daily advisor nudge (`STALE_DAYS` = 30). Decisions from a short interview: idle empty accounts only after they move; idle accounts holding money every 6 months; property never; the nudge posts when an account newly becomes due, plus weekly.

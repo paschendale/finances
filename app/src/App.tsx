@@ -26,6 +26,9 @@ const NAV_ITEMS: { view: View; label: string; icon: typeof LayoutDashboard }[] =
   { view: 'advisor', label: 'Advisor', icon: Sparkles },
 ];
 
+/** One column for every view: centred, capped at 1280px, with the side padding on the page wrapper. */
+const PAGE_WIDTH = 'max-w-7xl';
+
 function AppContent() {
   const [isAuthenticated, setIsAuthenticated] = useState(() => !!localStorage.getItem(AUTH_TOKEN_KEY));
 
@@ -114,9 +117,9 @@ function AppContent() {
   }
 
   return (
-    <div className="dark min-h-screen bg-[#050505] text-foreground flex flex-col items-center px-4">
-      {/* Only the Ledger keeps the narrow column; the other views use the whole width. */}
-      <header className={cn("w-full flex flex-row justify-between items-center border-b border-white/[0.06] pb-3 py-3 shrink-0", view === 'ledger' ? 'max-w-5xl mb-6' : view === 'advisor' ? 'mb-3' : 'mb-6')}>
+    <div className="dark min-h-screen bg-[#050505] text-foreground flex flex-col items-center px-4 sm:px-6 lg:px-8">
+      {/* Every view shares one centred column (PAGE_WIDTH), so switching views never changes the width. */}
+      <header className={cn("w-full flex flex-row justify-between items-center border-b border-white/[0.06] pb-3 py-3 shrink-0", PAGE_WIDTH, view === 'advisor' ? 'mb-3' : 'mb-6')}>
         <h1 className="logo-glassy text-xl font-semibold tracking-tight antialiased flex items-center gap-2.5">
           <Wallet className="h-6 w-6 opacity-90 shrink-0" />
           <span className="tracking-[-0.03em]">Finances</span>
@@ -150,9 +153,9 @@ function AppContent() {
         </div>
       </header>
 
-      {view !== 'advisor' && <PendingPlansBanner boxed={view === 'ledger'} onOpen={(planId, conversationId) => openAdvisor({ planId, conversationId })} />}
+      {view !== 'advisor' && <PendingPlansBanner className={PAGE_WIDTH} onOpen={(planId, conversationId) => openAdvisor({ planId, conversationId })} />}
 
-      <main className={cn("w-full flex-1 pb-20 sm:pb-0", view === 'ledger' && 'max-w-5xl')}>
+      <main className={cn("w-full flex-1 pb-20 sm:pb-0", PAGE_WIDTH)}>
         {view === "advisor" ? (
           <AdvisorPage
             conversationId={advisorTarget.conversationId ?? null}

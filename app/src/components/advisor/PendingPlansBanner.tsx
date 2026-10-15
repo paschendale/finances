@@ -3,14 +3,14 @@ import { cn } from '@/lib/utils';
 import { usePendingPlans } from './usePendingPlans';
 
 /** Slim banner under the nav when plans await approval. */
-export function PendingPlansBanner({ onOpen, boxed = false }: { onOpen: (planId: string, conversationId: string) => void; /** Same narrow column as the Ledger */ boxed?: boolean }) {
+export function PendingPlansBanner({ onOpen, className }: { onOpen: (planId: string, conversationId: string) => void; /** Width of the page column */ className?: string }) {
   const { data: plans = [] } = usePendingPlans();
   if (plans.length === 0) return null;
   const first = plans[0];
   return (
     <button
       onClick={() => onOpen(first.id, first.conversation_id)}
-      className={cn('w-full mb-5 flex items-center', boxed && 'max-w-5xl', ' gap-3 px-4 py-2 rounded-xl border border-amber-500/20 bg-amber-500/[0.07] hover:bg-amber-500/[0.12] transition-all active:scale-[0.995] text-left')}
+      className={cn('w-full mb-5 flex items-center', className, ' gap-3 px-4 py-2 rounded-xl border border-amber-500/20 bg-amber-500/[0.07] hover:bg-amber-500/[0.12] transition-all active:scale-[0.995] text-left')}
     >
       <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
       <ClipboardCheck className="w-3.5 h-3.5 text-amber-300 shrink-0" />
