@@ -11,6 +11,8 @@ export interface Conversation {
   created_by: string | null;
   summary: string | null;
   status: ConversationStatus;
+  /** Hash of the prompt + tool set the Claude session last saw (see migration 0053) */
+  prompt_hash: string | null;
   created_at: string;
   last_activity_at: string;
 }

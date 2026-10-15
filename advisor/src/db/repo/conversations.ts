@@ -51,7 +51,7 @@ export async function listConversations(q: Queryable, opts: { includeArchived?: 
 export async function updateConversation(
   q: Queryable,
   id: string,
-  patch: Partial<Pick<Conversation, 'title' | 'claude_session_id' | 'model' | 'summary' | 'status' | 'external_ref'>>,
+  patch: Partial<Pick<Conversation, 'title' | 'claude_session_id' | 'model' | 'summary' | 'status' | 'external_ref' | 'prompt_hash'>>,
 ): Promise<Conversation> {
   const sets: string[] = [];
   const vals: unknown[] = [];

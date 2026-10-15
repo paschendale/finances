@@ -11,6 +11,13 @@ import { getConversation, updateConversation } from '../../db/repo/conversations
 import { planItemInputSchema, validatePlanItems } from '../../plan/schema.js';
 import { computePlanBalance, ensureStatementAccount, loadAccounts, reconciliationDetail, reconciliationHistory } from '../../plan/reconcile.js';
 
+/**
+ * Bump when tool names, inputs or descriptions change in a way the assistant should notice. Together
+ * with the system prompt it forms the conversation's `prompt_hash`; a mismatch on resume tells the
+ * assistant its capabilities changed.
+ */
+export const CAPABILITIES_VERSION = '2026-10-15.1';
+
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD');
 
 /** Advisor-side tools: statements, notes, aliases, reconciliations and plan drafting. No ledger writes. */

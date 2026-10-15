@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { Config } from '../config.js';
@@ -10,6 +11,7 @@ import { recordClaudeCall } from '../db/repo/misc.js';
 import { listStatements } from '../db/repo/statements.js';
 import { ConversationLocks, SessionPool } from './pool.js';
 import { runSession, type RunnerEvent } from './runner.js';
+import { CAPABILITIES_VERSION } from '../mcp/tools/advisor.js';
 import { scoped } from '../log.js';
 
 const log = scoped('claude.session');
@@ -194,7 +196,9 @@ export class SessionManager {
           { mode: 0o600 },
         );
 
-        const message = this.composeMessage(fresh, content, opts, cwd);
+        const promptHash = await this.currentPromptHash();
+        const capabilitiesChanged = Boolean(fresh.claude_session_id) && fresh.prompt_hash !== promptHash;
+        const message = this.composeMessage(fresh, content, opts, cwd, capabilitiesChanged);
         let streamed = '';
         const onEvent = (ev: RunnerEvent) => {
           switch (ev.type) {
@@ -233,7 +237,9 @@ export class SessionManager {
         await fs.rm(mcpConfigPath, { force: true });
 
         if (result.sessionId && result.sessionId !== fresh.claude_session_id) {
-          await updateConversation(db, conversationId, { claude_session_id: result.sessionId, model: fresh.model ?? config.SESSION_MODEL });
+          await updateConversation(db, conversationId, { claude_session_id: result.sessionId, model: fresh.model ?? config.SESSION_MODEL, prompt_hash: promptHash });
+        } else if (fresh.prompt_hash !== promptHash) {
+          await updateConversation(db, conversationId, { prompt_hash: promptHash });
         }
         await recordClaudeCall(db, {
           conversation_id: conversationId,
@@ -277,12 +283,27 @@ export class SessionManager {
     });
   }
 
-  private composeMessage(conv: Conversation, content: string, opts: TurnOptions, cwd: string): string {
+  /** sha256 of the system prompt plus the tool-set version; stored per conversation (migration 0053). */
+  private promptHashCache: { mtimeMs: number; hash: string } | null = null;
+  async currentPromptHash(): Promise<string> {
+    const file = path.join(this.deps.promptsDir, 'advisor.system.md');
+    const stat = await fs.stat(file);
+    if (this.promptHashCache && this.promptHashCache.mtimeMs === stat.mtimeMs) return this.promptHashCache.hash;
+    const text = await fs.readFile(file, 'utf8');
+    const hash = createHash('sha256').update(text).update('\n').update(CAPABILITIES_VERSION).digest('hex').slice(0, 16);
+    this.promptHashCache = { mtimeMs: stat.mtimeMs, hash };
+    return hash;
+  }
+
+  private composeMessage(conv: Conversation, content: string, opts: TurnOptions, cwd: string, capabilitiesChanged = false): string {
     const today = new Date().toLocaleDateString('sv-SE', { timeZone: this.deps.config.TZ }); // YYYY-MM-DD
     const header = [
       `[context] today=${today} tz=${this.deps.config.TZ} channel=${conv.channel} conversation_id=${conv.id} workspace=${cwd}`,
       opts.actor ? `[context] from=${opts.actor}` : null,
       !conv.claude_session_id && conv.summary ? `[context] summary=${conv.summary}` : null,
+      capabilitiesChanged
+        ? '[context] Your instructions and tools changed since your previous turn in this conversation. Re-read the system prompt and the tool descriptions (plan_set_items kinds in particular) before saying something is not possible; what you believed earlier about your limits may no longer hold.'
+        : null,
       opts.context ? `[context] ${opts.context}` : null,
     ]
       .filter(Boolean)
