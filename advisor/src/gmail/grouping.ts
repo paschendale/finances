@@ -37,7 +37,11 @@ export function accountConversationTitle(
   return `${base} · ${fmt(starts[0] ?? null)} a ${fmt(ends[ends.length - 1] ?? null)}`;
 }
 
-/** Recomputes the conversation title from its live statements; returns the new title when it changed. */
+/**
+ * Recomputes the conversation title from its live statements; returns the new title when it changed.
+ * A title the session or a person chose (anything that is not the automatic "<Institution> <kind> · …")
+ * is left alone.
+ */
 export async function refreshAccountConversationTitle(q: Queryable, conversationId: string): Promise<string | null> {
   const stmts = await many<Pick<Statement, 'institution' | 'kind' | 'period_start' | 'period_end'>>(
     q,
@@ -46,7 +50,11 @@ export async function refreshAccountConversationTitle(q: Queryable, conversation
     [conversationId],
   );
   if (stmts.length === 0) return null;
+  const base = `${institutionLabel(stmts[0]!.institution)} ${kindLabel(stmts[0]!.kind)}`;
   const title = accountConversationTitle(stmts[0]!, stmts);
-  const r = await q.query('UPDATE advisor_conversations SET title = $2 WHERE id = $1 AND title IS DISTINCT FROM $2', [conversationId, title]);
+  const r = await q.query(
+    `UPDATE advisor_conversations SET title = $2 WHERE id = $1 AND title IS DISTINCT FROM $2 AND (title = $3 OR title LIKE $3 || ' ·%')`,
+    [conversationId, title, base],
+  );
   return (r.rowCount ?? 0) > 0 ? title : null;
 }

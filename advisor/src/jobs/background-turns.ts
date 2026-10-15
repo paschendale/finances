@@ -52,11 +52,14 @@ export type WaitingStatement = Statement & { conversation_created_by: string | n
 export const SETTLE_SECONDS = 180;
 
 /**
- * Gmail statements parsed but not planned yet, in conversations nobody has written to. With
- * `settleSeconds` a conversation whose newest statement is younger than that is left out, so a
- * burst of mails for one account is planned in a single turn.
+ * Gmail statements parsed but not planned yet. In the account's own conversation (`channel =
+ * 'system'`, only the daemon writes there) a statement waits until it has a plan, with at most
+ * `maxAttempts` turns opened after it arrived (a turn that ran out of time or asked a question does
+ * not strand the period; a person can always press "Planejar agora"). In a person's conversation a
+ * statement waits only while nobody wrote after it arrived. With `settleSeconds` a conversation whose
+ * newest statement is younger than that is left out, so a burst of mails is planned together.
  */
-export async function findWaitingStatements(ctx: AppContext, conversationId?: string, settleSeconds = 0): Promise<WaitingStatement[]> {
+export async function findWaitingStatements(ctx: AppContext, conversationId?: string, opts: { settleSeconds?: number; maxAttempts?: number } = {}): Promise<WaitingStatement[]> {
   return many<WaitingStatement>(
     ctx.db,
     `SELECT s.*, c.created_by AS conversation_created_by FROM advisor_statements s
@@ -64,12 +67,18 @@ export async function findWaitingStatements(ctx: AppContext, conversationId?: st
      WHERE s.source = 'gmail' AND s.status IN ('parsed','failed') AND s.conversation_id IS NOT NULL
        AND ($1::uuid IS NULL OR s.conversation_id = $1::uuid)
        AND NOT EXISTS (SELECT 1 FROM advisor_plans p WHERE p.statement_id = s.id)
-       AND NOT EXISTS (SELECT 1 FROM advisor_messages m WHERE m.conversation_id = s.conversation_id AND m.role = 'user')
+       AND (
+         (c.channel = 'system' AND (SELECT count(*) FROM advisor_messages m WHERE m.conversation_id = s.conversation_id AND m.role = 'user' AND m.created_at > s.created_at) < $3)
+         OR (c.channel <> 'system' AND NOT EXISTS (SELECT 1 FROM advisor_messages m WHERE m.conversation_id = s.conversation_id AND m.role = 'user' AND m.created_at > s.created_at))
+       )
        AND NOT EXISTS (SELECT 1 FROM advisor_statements n WHERE n.conversation_id = s.conversation_id AND n.created_at > now() - make_interval(secs => $2::float8))
      ORDER BY s.period_start ASC NULLS LAST, s.created_at ASC LIMIT 50`,
-    [conversationId ?? null, settleSeconds],
+    [conversationId ?? null, opts.settleSeconds ?? 0, opts.maxAttempts ?? 1000],
   );
 }
+
+/** Automatic attempts per statement before a person has to ask (each attempt is a Claude turn). */
+export const MAX_AUTO_ATTEMPTS = 2;
 
 export interface PeriodGroup {
   key: string;
@@ -194,7 +203,7 @@ export function groupByConversation(waiting: WaitingStatement[]): Map<string, Wa
  */
 export async function backgroundTurnsJob(ctx: AppContext): Promise<void> {
   await ignoreDuplicateStatements(ctx);
-  const byConv = groupByConversation(await findWaitingStatements(ctx, undefined, SETTLE_SECONDS));
+  const byConv = groupByConversation(await findWaitingStatements(ctx, undefined, { settleSeconds: SETTLE_SECONDS, maxAttempts: MAX_AUTO_ATTEMPTS }));
   if (byConv.size === 0) return;
   const [conversationId, statements] = [...byConv.entries()][0]!;
   const gate = await routineGate(ctx);

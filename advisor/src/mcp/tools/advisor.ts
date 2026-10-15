@@ -75,9 +75,7 @@ export function registerAdvisorTools(server: McpServer, ctx: AppContext, session
           `SELECT s.id, s.filename, s.institution, s.kind, s.format, s.status, s.period_start, s.period_end, s.opening_balance, s.closing_balance,
                   s.account_id, s.source, s.created_at, s.conversation_id, c.title AS conversation_title,
                   COALESCE(jsonb_array_length(s.lines), 0)::int AS line_count,
-                  (s.status IN ('parsed','failed')
-                    AND NOT EXISTS (SELECT 1 FROM advisor_plans p WHERE p.statement_id = s.id)
-                    AND NOT EXISTS (SELECT 1 FROM advisor_messages m WHERE m.conversation_id = s.conversation_id AND m.role = 'user')) AS waiting
+                  (s.status IN ('parsed','failed') AND NOT EXISTS (SELECT 1 FROM advisor_plans p WHERE p.statement_id = s.id)) AS waiting
            FROM advisor_statements s LEFT JOIN advisor_conversations c ON c.id = s.conversation_id
            WHERE ($1::text IS NULL OR s.institution = $1) AND ($2::text IS NULL OR s.kind = $2)
            ORDER BY s.created_at DESC LIMIT $3`,
@@ -117,8 +115,8 @@ export function registerAdvisorTools(server: McpServer, ctx: AppContext, session
           if (!st) throw new Error(`statement ${id} not found`);
           if (st.conversation_id !== session.conversationId) {
             const planned = await maybeOne(db, 'SELECT 1 FROM advisor_plans WHERE statement_id = $1', [id]);
-            const spoken = st.conversation_id ? await maybeOne(db, `SELECT 1 FROM advisor_messages WHERE conversation_id = $1 AND role = 'user'`, [st.conversation_id]) : null;
-            if (planned || spoken) throw new Error(`statement ${id} is already being handled in conversation ${st.conversation_id}`);
+            if (planned) throw new Error(`statement ${id} already has a plan in conversation ${st.conversation_id}`);
+            if (st.conversation_id && ctx.sessions.isBusy(st.conversation_id)) throw new Error(`statement ${id} is being planned right now in conversation ${st.conversation_id}`);
             const source = st.conversation_id;
             await updateStatement(db, id, { conversation_id: session.conversationId });
             if (source) {

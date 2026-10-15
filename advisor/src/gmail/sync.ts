@@ -198,14 +198,13 @@ export class GmailSync {
     return done(`ingested ${results.join(', ')}`, conversationId);
   }
 
-  /** The waiting conversation of this statement's account (no turn has run in it yet), or a new one. */
+  /** The active conversation of this statement's account (every period of an account is read in one place), or a new one. */
   private async accountConversation(s: Statement, actor: string): Promise<string> {
     const key = accountConversationKey(s);
     const open = await maybeOne<{ id: string }>(
       this.ctx.db,
       `SELECT c.id FROM advisor_conversations c
        WHERE c.channel = 'system' AND c.external_ref = $1 AND c.status = 'active'
-         AND NOT EXISTS (SELECT 1 FROM advisor_messages m WHERE m.conversation_id = c.id)
        ORDER BY c.created_at DESC LIMIT 1`,
       [key],
     );

@@ -45,7 +45,8 @@ export async function listConversations(q: Queryable, opts: { includeArchived?: 
             EXISTS (
               SELECT 1 FROM advisor_statements s WHERE s.conversation_id = c.id AND s.source = 'gmail' AND s.status IN ('parsed','failed')
                 AND NOT EXISTS (SELECT 1 FROM advisor_plans p WHERE p.statement_id = s.id)
-            ) AND NOT EXISTS (SELECT 1 FROM advisor_messages m WHERE m.conversation_id = c.id AND m.role = 'user') AS waiting_turn
+                AND (c.channel = 'system' OR NOT EXISTS (SELECT 1 FROM advisor_messages m WHERE m.conversation_id = c.id AND m.role = 'user' AND m.created_at > s.created_at))
+            ) AS waiting_turn
      FROM advisor_conversations c
      WHERE ($1::bool OR c.status = 'active')
      ORDER BY c.last_activity_at DESC
