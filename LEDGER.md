@@ -74,3 +74,7 @@ The BRB app export prints neither balances nor the period it covers. The parser 
 ## Advisor: SMS purchase formats beyond the first sample
 
 Only one Itaú SMS was available (an approved purchase). Installments ("em 3x"), purchases abroad (USD), refunds ("estorno") and declined purchases have unknown texts. The parser returns null for them and Claude decides; an installment would be booked as one purchase of the full value, and a foreign purchase only if Claude reads a BRL value. Add patterns when real samples arrive. The Itaú card statement (fatura) format is not parsed yet either; the SMS entries will be vouched once it is.
+
+## Advisor: Amazon refunds, cancellations and other accounts
+
+Only order and payment-confirmation mails are read. Refunds ("Reembolso", `retorno@` return mails) and cancelled orders are not: a cancelled order is reported as "sem cobrança" after 30 days, and a refund still has to be booked from the statement. Orders placed from another Amazon account (Ju's) or Kindle purchases never reach this mailbox, so their charges stay as they are. An order paid half by gift-card balance is charged less than any item group and stays unmatched.

@@ -2,7 +2,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import type { AppContext } from '../context.js';
-import { GmailClient, attachments, header, senderAddress } from './client.js';
+import { GmailClient, attachments, header, senderAddress, textBody } from './client.js';
+import { isAmazonOrderMail, parseAmazonOrderText } from '../ingest/amazon-mail.js';
+import { backfillAmazonOrders, matchAmazonOrders, upsertOrder } from '../jobs/amazon-orders.js';
 import { claimEvent, getState, setEventOutcome, setState, recordClaudeCall } from '../db/repo/misc.js';
 import { createConversation } from '../db/repo/conversations.js';
 import { maybeOne } from '../db/client.js';
@@ -139,6 +141,14 @@ export class GmailSync {
     const m = await this.client.getMessage(id);
     const from = senderAddress(header(m, 'From'));
     const subject = header(m, 'Subject') ?? '';
+    const amazon = isAmazonOrderMail(from, subject);
+    if (amazon) {
+      const order = parseAmazonOrderText(textBody(m) ?? '', amazon);
+      if (!order) return done(`amazon ${amazon} mail not readable`);
+      await upsertOrder(this.ctx, order, mailDate(m), id);
+      void matchAmazonOrders(this.ctx).catch((err) => log.warn({ err }, 'amazon matching failed'));
+      return done(`amazon ${amazon} ${order.order_ref}: ${order.items.length} items, total ${order.total ?? '?'}`);
+    }
     const atts = attachments(m).filter((a) => STATEMENT_EXT.test(a.filename));
     if (atts.length === 0) return done('no statement attachments');
 
@@ -198,6 +208,26 @@ export class GmailSync {
     return done(`ingested ${results.join(', ')}`, conversationId);
   }
 
+  /** Reads the Amazon order mails of the last `days` days (first run); later ones arrive through tick(). */
+  async backfillAmazon(days: number): Promise<{ orders: number }> {
+    return backfillAmazonOrders(
+      this.ctx,
+      days,
+      async (q) => {
+        const out = [];
+        for (const id of await this.client.listMessageIds(q, 500)) {
+          const m = await this.client.getMessage(id);
+          out.push({ id, sender: senderAddress(header(m, 'From')), subject: header(m, 'Subject') ?? '', date: mailDate(m), text: textBody(m) });
+        }
+        return out;
+      },
+      (m) => {
+        const kind = isAmazonOrderMail(m.sender, m.subject);
+        return kind ? parseAmazonOrderText(m.text ?? '', kind) : null;
+      },
+    );
+  }
+
   /** The active conversation of this statement's account (every period of an account is read in one place), or a new one. */
   private async accountConversation(s: Statement, actor: string): Promise<string> {
     const key = accountConversationKey(s);
@@ -234,4 +264,12 @@ export class GmailSync {
       throw err;
     }
   }
+}
+
+/** When the mail arrived (Gmail's internal date), else its Date header, else now. */
+function mailDate(m: import('./client.js').GmailMessage): Date {
+  if (m.internalDate) return new Date(Number(m.internalDate));
+  const h = header(m, 'Date');
+  const d = h ? new Date(h) : new Date();
+  return Number.isNaN(d.getTime()) ? new Date() : d;
 }

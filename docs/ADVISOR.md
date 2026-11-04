@@ -807,6 +807,32 @@ When the card statement arrives, `batch_prepare` vouches these entries like any 
 amount, one candidate within 3 days); nothing special is needed there. Unreadable texts, unknown cards
 and missing amounts post a "⚠️" notice and record nothing.
 
+# 13b. Amazon orders from mail
+
+The Gmail watcher also reads Amazon.com.br order mails (`auto-confirm@` "Pedido: …" and
+`payments-update@` "Confirmação de pagamento: …"; plain-text part): order number, items (unit price,
+quantity) and total (`advisor/src/ingest/amazon-mail.ts`). They are stored in `merchant_orders`
+(migration 0059, one row per order). On the first run the daemon reads the last
+`AMAZON_LOOKBACK_DAYS` (90) days of those mails; after that new mails arrive through the watcher.
+
+`matchAmazonOrders` (`advisor/src/jobs/amazon-orders.ts`, every cheap tick, after each order mail and
+after an SMS from an Amazon merchant) pairs open orders with charges that mention Amazon (description,
+statement raw text or SMS merchant) on one asset/liability account, from a day before the order to 20
+days after it: the whole total first, else a group of the unpaid items (Amazon charges per seller or
+shipment; item values may be scaled by total/sum for discounts and shipping). Decided with the
+household on 2026-11-04:
+
+- A matched charge that is uncategorised (`sem-categoria`) or came from an SMS is renamed
+  `Amazon - <item>` and split by item across categories (one Sonnet single-shot,
+  `prompts/classify-amazon.*`, with the household's last 40 "Amazon - …" entries as examples); one
+  with a generic name but a category only gets the name; one the household named is only linked.
+- The change is applied automatically through a plan the system approves (actor `amazon`, system
+  conversation "Compras na Amazon"), so cleared entries reopen and close again as with any plan.
+- Discord gets one notice per run with what was named; orders with items still unpaid after 30 days
+  are reported once.
+
+Refund and cancellation mails are not read yet (LEDGER.md).
+
 ---
 
 # 14. Deployment

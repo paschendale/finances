@@ -1,5 +1,12 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-11-04 — Advisor: Amazon purchases named from order mails
+
+Amazon has no API for a person's orders and the community MCPs log in as the user, so the advisor reads the order mails already in the watched mailbox. A dry run over 30 orders of the last 100 days matched 25 to their charges (10 of them generic "Amazon / sem-categoria" since 20/10); 5 recent orders had no charge yet. Decisions (interview): fix generic charges automatically, leave named ones, split mixed orders by item, look back 3 months.
+
+- Migration 0059 `merchant_orders`; parser `advisor/src/ingest/amazon-mail.ts` (unit prices, totals that differ from the item sum, per-shipment charges via `itemsForCharge`, `splitByItems`); job `advisor/src/jobs/amazon-orders.ts` (matching, automatic plan, Discord notice, one-off backfill); Gmail hook in `gmail/sync.ts`; prompt `prompts/classify-amazon.*`; `AMAZON_LOOKBACK_DAYS`.
+- Spec docs/ADVISOR.md §13b. Tests `advisor/test/amazon.test.ts`.
+
 ## 2026-11-04 — Advisor: card purchases from bank SMS
 
 The maintainer's new Itaú card sends an SMS on every approved purchase. Decisions from a short interview: record them automatically (no plan, the one exception to plan-then-apply), Claude picks name and category, one Discord message per purchase, card account `victor-itau-cartao`. No SMS gateway: Twilio-style numbers do not reliably receive Brazilian bank short codes, so the iPhone forwards each SMS with a Shortcuts automation.

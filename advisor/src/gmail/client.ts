@@ -160,3 +160,17 @@ export function senderAddress(from: string | null): string | null {
   const m = from.match(/<([^>]+)>/);
   return (m ? m[1]! : from).trim().toLowerCase();
 }
+
+/** The message's text/plain body (first one found), decoded; null when it only has HTML. */
+export function textBody(m: GmailMessage): string | null {
+  const walk = (p?: GmailPart): string | null => {
+    if (!p) return null;
+    if (p.mimeType === 'text/plain' && p.body?.data && !p.filename) return Buffer.from(p.body.data, 'base64url').toString('utf8');
+    for (const c of p.parts ?? []) {
+      const t = walk(c);
+      if (t !== null) return t;
+    }
+    return null;
+  };
+  return walk(m.payload as GmailPart | undefined);
+}

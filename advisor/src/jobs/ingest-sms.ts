@@ -178,6 +178,11 @@ export async function ingestSms(ctx: AppContext, input: SmsInput): Promise<SmsOu
         `This thread is about a card purchase recorded automatically from a bank SMS: transaction ${res.id} on ${date}, "${description}", ${amount.toFixed(2)} BRL on account ${accountId}, category ${category.full_name} (${categoryId}). ` +
         `SMS text: "${text}". If the person says the name, category, value or date is wrong, draft a plan with one update item for transaction ${res.id}; if they say it is not theirs or a duplicate, draft a delete item. Write to them in plain Portuguese.`,
     });
+    if (/amazon|amzn/i.test(merchant)) {
+      // An Amazon order mail may already explain this charge: name and split it right away.
+      const { matchAmazonOrders } = await import('./amazon-orders.js');
+      void matchAmazonOrders(ctx).catch((err) => log.warn({ err }, 'amazon matching after sms failed'));
+    }
     return done({ status: 'recorded', transaction_id: res.id, description, category: category.full_name, amount, date });
   } catch (err) {
     log.error({ err, eventId }, 'sms ingest failed');

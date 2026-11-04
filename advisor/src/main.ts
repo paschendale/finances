@@ -62,6 +62,19 @@ async function main(): Promise<void> {
     const gmail = new GmailSync(ctx);
     ctx.gmail = gmail;
     scheduler.every(config.GMAIL_TICK_MS, { name: 'gmail-sync', run: () => gmail.tick().then(() => undefined) }, true);
+    // Amazon order mails: look back once on the first run, then match new orders and charges every cheap tick.
+    scheduler.every(
+      config.CHEAP_TICK_MS,
+      {
+        name: 'amazon-orders',
+        run: async (c) => {
+          const { amazonBackfillDone, matchAmazonOrders } = await import('./jobs/amazon-orders.js');
+          if (!(await amazonBackfillDone(c))) await gmail.backfillAmazon(config.AMAZON_LOOKBACK_DAYS);
+          await matchAmazonOrders(c);
+        },
+      },
+      true,
+    );
   }
   scheduler.every(config.CHEAP_TICK_MS, { name: 'stale-accounts', run: staleAccountsJob }, true);
   scheduler.every(config.CHEAP_TICK_MS, { name: 'pending-plans', run: pendingPlansJob }, false);
