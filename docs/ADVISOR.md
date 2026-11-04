@@ -775,7 +775,8 @@ Content-Type: application/json
 ```
 
 `text/plain` with the SMS as the body also works. The endpoint answers `202` at once and records in
-the background; it is off (404) while `SMS_TOKEN` is unset. It does not use the web JWT, which expires.
+the background; it is off (404) while `SMS_TOKEN` is unset (the daemon also reads it from
+`<DATA_DIR>/sms-token` at boot). It does not use the web JWT, which expires.
 
 Decided with the household on 2026-11-04: **these purchases are recorded directly, without a plan**,
 the one exception to plan-then-apply, because a purchase alert is a single, unambiguous card movement

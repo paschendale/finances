@@ -90,3 +90,19 @@ describe('POST /sms', () => {
     expect(r.status).toBe(400);
   });
 });
+
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { readSmsTokenFile } from '../src/config.js';
+
+describe('readSmsTokenFile', () => {
+  it('reads a long enough token and ignores short or missing ones', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sms-'));
+    expect(readSmsTokenFile(dir)).toBeUndefined();
+    fs.writeFileSync(path.join(dir, 'sms-token'), 'short\n');
+    expect(readSmsTokenFile(dir)).toBeUndefined();
+    fs.writeFileSync(path.join(dir, 'sms-token'), `${'a'.repeat(30)}\n`);
+    expect(readSmsTokenFile(dir)).toBe('a'.repeat(30));
+  });
+});

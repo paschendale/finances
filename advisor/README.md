@@ -67,7 +67,7 @@ npm run dev               # tsx watch, ADVISOR_CHANNELS=web by default
 | `ADVISOR_BUDGET_REVIEW` | `false` | Monthly budget review post (off by default) |
 | `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, `DISCORD_CHANNEL_ID`, `DISCORD_OBEYED_USER_IDS` | — | Required when `discord` is enabled |
 | `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`, `GMAIL_LOOKBACK_DAYS` | —, —, —, `14` | Required when `gmail` is enabled |
-| `SMS_TOKEN` | — | Secret (24+ chars) a phone automation sends to `POST /sms` with bank purchase alerts; the endpoint is off when unset (docs/ADVISOR.md §13a) |
+| `SMS_TOKEN` | — | Secret (24+ chars) a phone automation sends to `POST /sms` with bank purchase alerts; the endpoint is off when unset; a file `<DATA_DIR>/sms-token` works too (docs/ADVISOR.md §13a) |
 | `LOG_LEVEL`, `LOG_PRETTY` | `info`, auto | pino level; pretty output on a TTY |
 
 ## Claude login and re-auth

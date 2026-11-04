@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { z } from 'zod';
 
 const csv = (s: string | undefined) =>
@@ -94,10 +96,21 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   assertDatabaseMatchesEnv(base.ADVISOR_ENV, base.DATABASE_URL, base.PROD_DATABASE_NAME);
   return {
     ...base,
+    SMS_TOKEN: base.SMS_TOKEN ?? readSmsTokenFile(base.DATA_DIR),
     channels,
     webOrigins: csv(base.PUBLIC_WEB_ORIGINS),
     discordObeyedUserIds: csv(base.DISCORD_OBEYED_USER_IDS),
   };
+}
+
+/** The phone secret may also live in `<DATA_DIR>/sms-token` (one line, 24+ chars), so it can be set without touching the deployment's variables. */
+export function readSmsTokenFile(dataDir: string): string | undefined {
+  try {
+    const t = fs.readFileSync(path.join(dataDir, 'sms-token'), 'utf8').trim();
+    return t.length >= 24 ? t : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
