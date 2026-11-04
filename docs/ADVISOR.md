@@ -794,8 +794,8 @@ and asking for approval on every coffee defeats the purpose. Flow (`advisor/src/
    same time → nothing is created; Discord says "já estava registrado".
 5. Category: one Sonnet single-shot (`prompts/classify-sms.*`) with the SMS, the parsed fields, the
    top 3 `classify_candidates` and the expense categories; it returns name, category and whether it is
-   a charge at all (for formats the parser does not know). Routine work, so it respects the usage gate;
-   when the gate is closed or the call fails, the best candidate (confidence ≥ 0.6) or `sem-categoria`
+   a charge at all (for formats the parser does not know). Routine work, so it respects the usage gate
+   when usage is known to be high (an unavailable usage endpoint does not block it); when skipped or the call fails, the best candidate (confidence ≥ 0.6) or `sem-categoria`
    is used. Amount and date always come from the parser when it read the message.
 6. `create_transaction` with card −X / category +X, `metadata.source = 'sms'`,
    `metadata.sms = {raw, merchant, time, card_last4, card_name}`, `classified_by`.

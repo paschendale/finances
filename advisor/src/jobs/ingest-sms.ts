@@ -221,8 +221,10 @@ async function notifyAttention(ctx: AppContext, eventId: string, text: string, w
 
 /** One Sonnet call per purchase (routine, so it respects the usage gate); null when unavailable. */
 async function classify(ctx: AppContext, input: { sms: string; parsed: SmsCharge | null; candidates: Candidate[]; categories: Category[] }): Promise<Classification | null> {
-  const gate = await routineGate(ctx).catch(() => ({ open: false, reason: 'gate check failed' }));
-  if (!gate.open) {
+  // One small call per purchase: skip Claude only when usage is known to be high, not when the
+  // usage endpoint is merely unavailable (it rate-limits right after a restart).
+  const gate = await routineGate(ctx).catch(() => ({ open: false, reason: 'gate check failed', usage: null }));
+  if (!gate.open && gate.usage) {
     log.info({ reason: gate.reason }, 'usage gate closed; classifying without Claude');
     return null;
   }
