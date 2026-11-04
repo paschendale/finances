@@ -27,22 +27,37 @@ function sameToken(a: string, b: string): boolean {
 export function smsRoutes(ctx: AppContext): Hono {
   const app = new Hono();
   app.post('/sms', async (c) => {
+    // Every attempt is logged (never the token or the text), so a phone automation that "did nothing" can be traced.
+    const meta = { contentType: c.req.header('content-type') ?? null, length: Number(c.req.header('content-length') ?? 0), ua: (c.req.header('user-agent') ?? '').slice(0, 80) };
+    const reply = (status: 202 | 400 | 401 | 404, body: Record<string, unknown>, reason: string) => {
+      log.info({ status, reason, ...meta }, 'sms request');
+      return c.json(body, status);
+    };
     const expected = ctx.config.SMS_TOKEN;
-    if (!expected) return c.json({ error: 'sms intake is not enabled' }, 404);
+    if (!expected) return reply(404, { error: 'O recebimento de SMS não está ligado no servidor.' }, 'disabled');
     const header = c.req.header('authorization') ?? '';
-    const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
-    if (!token || !sameToken(token, expected)) return c.json({ error: 'invalid token' }, 401);
+    if (!header) return reply(401, { error: 'Faltou o cabeçalho Authorization: Bearer <chave>.' }, 'no authorization header');
+    const token = header.replace(/^Bearer\s+/i, '').trim();
+    if (!token || !sameToken(token, expected)) return reply(401, { error: 'Chave errada. Confira o cabeçalho Authorization: Bearer <chave>.' }, header.startsWith('Bearer') ? 'wrong token' : 'authorization without Bearer');
 
-    const type = c.req.header('content-type') ?? '';
-    const raw = type.includes('application/json') ? await c.req.json().catch(() => null) : { text: await c.req.text() };
+    const type = meta.contentType ?? '';
+    const rawText = await c.req.text();
+    let raw: unknown = { text: rawText };
+    if (type.includes('json') || rawText.trim().startsWith('{')) {
+      try {
+        raw = JSON.parse(rawText);
+      } catch {
+        raw = { text: rawText };
+      }
+    }
     const parsed = bodySchema.safeParse(raw);
-    if (!parsed.success) return c.json({ error: 'expected {"text": "<the SMS>"}' }, 400);
+    if (!parsed.success) return reply(400, { error: 'Faltou o campo "text" com a mensagem do SMS.' }, `bad body: ${parsed.error.issues.map((i) => i.path.join('.') + ' ' + i.message).join('; ').slice(0, 200)}`);
     const body = parsed.data;
     void ingestSms(ctx, body).catch(async (err) => {
       log.error({ err }, 'sms ingest failed');
       await ctx.notifier.alert(`⚠️ Não consegui registrar uma compra que chegou por SMS. Mensagem: ${body.text.slice(0, 200)}`).catch(() => undefined);
     });
-    return c.json({ ok: true }, 202);
+    return reply(202, { ok: true, mensagem: 'Recebido. A compra aparece no Discord em instantes.' }, `accepted (${body.text.length} chars)`);
   });
   return app;
 }
