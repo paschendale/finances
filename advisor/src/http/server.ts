@@ -10,6 +10,7 @@ import { uploadRoutes } from './routes/uploads.js';
 import { healthRoutes } from './routes/health.js';
 import { accountRoutes } from './routes/accounts.js';
 import { gmailRoutes } from './routes/gmail.js';
+import { smsRoutes } from './routes/sms.js';
 import { scoped } from '../log.js';
 
 const log = scoped('http');
@@ -42,6 +43,7 @@ export function createHttpApp(ctx: AppContext): Hono<Env> {
     return c.json({ error: (err as Error).message ?? 'internal error' }, 500);
   });
   app.route('/', healthRoutes(ctx));
+  app.route('/', smsRoutes(ctx));
   const api = new Hono<Env>();
   api.use('*', makeAuth(ctx.config.JWT_SECRET));
   api.route('/', chatRoutes(ctx));

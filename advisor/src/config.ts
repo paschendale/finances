@@ -57,6 +57,8 @@ const schema = z.object({
   GMAIL_CLIENT_SECRET: z.string().optional(),
   GMAIL_REFRESH_TOKEN: z.string().optional(),
   GMAIL_LOOKBACK_DAYS: intEnv(14),
+  /** Secret the phone sends to POST /sms (bank purchase alerts); the endpoint is off when unset. */
+  SMS_TOKEN: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(24).optional()),
   LOG_LEVEL: z.string().default('info'),
 });
 

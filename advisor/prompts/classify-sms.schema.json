@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "is_charge": { "type": "boolean" },
+    "amount": { "type": ["number", "null"] },
+    "date": { "type": ["string", "null"] },
+    "merchant": { "type": ["string", "null"] },
+    "description": { "type": "string" },
+    "category_id": { "type": ["string", "null"] },
+    "confident": { "type": "boolean" },
+    "reason": { "type": "string" }
+  },
+  "required": ["is_charge", "amount", "date", "merchant", "description", "category_id", "confident", "reason"]
+}

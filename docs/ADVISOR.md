@@ -762,6 +762,52 @@ ids, household of two) and add:
 
 ---
 
+# 13a. Card purchase alerts by SMS
+
+Some cards (Itaú) send an SMS for every approved purchase. A phone automation (iOS Shortcuts
+"Message" trigger filtered by the bank's sender, action "Get Contents of URL") forwards each one:
+
+```
+POST /sms
+Authorization: Bearer <SMS_TOKEN>
+Content-Type: application/json
+{"text": "<the SMS>", "sender": "<optional>", "received_at": "<optional ISO time>"}
+```
+
+`text/plain` with the SMS as the body also works. The endpoint answers `202` at once and records in
+the background; it is off (404) while `SMS_TOKEN` is unset. It does not use the web JWT, which expires.
+
+Decided with the household on 2026-11-04: **these purchases are recorded directly, without a plan**,
+the one exception to plan-then-apply, because a purchase alert is a single, unambiguous card movement
+and asking for approval on every coffee defeats the purpose. Flow (`advisor/src/jobs/ingest-sms.ts`):
+
+1. Idempotency: `advisor_events` (source `sms`, id = hash of the text + day). The same text forwarded
+   twice is recorded once.
+2. `parseCardSms` (`advisor/src/ingest/itau-sms.ts`) reads the approved-purchase format
+   (`Compra aprovada no seu <card> final <4 digits> - <merchant> valor R$ <amount> em <dd/mm>, as <hh>h<mm>`);
+   the year is inferred (never more than a day ahead).
+3. Card account: `resolveStatementAccount(itau, card, last4)`, so a note `statement_source=itau:<last4>`
+   wins, else the single visible liability whose name mentions the institution. The note is written on
+   the first purchase.
+4. Already in the ledger? Same value on that card within ±1 day, typed by hand or from an SMS with the
+   same time → nothing is created; Discord says "já estava registrado".
+5. Category: one Sonnet single-shot (`prompts/classify-sms.*`) with the SMS, the parsed fields, the
+   top 3 `classify_candidates` and the expense categories; it returns name, category and whether it is
+   a charge at all (for formats the parser does not know). Routine work, so it respects the usage gate;
+   when the gate is closed or the call fails, the best candidate (confidence ≥ 0.6) or `sem-categoria`
+   is used. Amount and date always come from the parser when it read the message.
+6. `create_transaction` with card −X / category +X, `metadata.source = 'sms'`,
+   `metadata.sms = {raw, merchant, time, card_last4, card_name}`, `classified_by`.
+7. Discord notice per purchase ("Netflix · R$ 20,90 / 💳 Registrado em assinaturas"); its thread's
+   conversation carries the transaction id, so a reply ("era mercado") becomes a normal update or
+   delete plan.
+
+When the card statement arrives, `batch_prepare` vouches these entries like any hand entry (same
+amount, one candidate within 3 days); nothing special is needed there. Unreadable texts, unknown cards
+and missing amounts post a "⚠️" notice and record nothing.
+
+---
+
 # 14. Deployment
 
 ## 14.1 Image
@@ -838,7 +884,7 @@ All required unless defaulted: `DATABASE_URL`, `POSTGREST_URL`, `FINANCES_TOKEN`
 `ADVISOR_CHANNELS` (default `web,discord,gmail`), `ADVISOR_ENV`, `PORT` (3100), `MCP_PORT` (3101),
 `DATA_DIR` (`/data`), `CLAUDE_BIN` (`claude`), `SESSION_MODEL` (`opus`), `ROUTINE_MODEL` (`sonnet`),
 `SESSION_EFFORT` (`high`), `SESSION_TIMEOUT_MS` (900000), `MAX_CONCURRENT_SESSIONS` (2), gate thresholds
-(§6.1), `UPLOAD_MAX_MB` (15), `TZ`. Discord and Gmail variables are required only when
+(§6.1), `UPLOAD_MAX_MB` (15), `TZ`, `SMS_TOKEN` (optional, §13a). Discord and Gmail variables are required only when
 their channel is listed in `ADVISOR_CHANNELS`; `config.ts` enforces that conditionally.
 
 ---

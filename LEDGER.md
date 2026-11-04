@@ -70,3 +70,7 @@ The dev instance bind-mounts the host user's `~/.claude` so the container and th
 ## Advisor: BRB PDF has no balance and no stated period
 
 The BRB app export prints neither balances nor the period it covers. The parser leaves opening/closing empty (the advisor asks for the balance shown in the app, then `statement_set_meta`) and starts the period on the first movement, so days before it with no movement are not covered by the reconciliation. The pix rows often show only `4671` instead of a name; the counterparty then comes from the ledger or the person. If BRB also offers OFX or CSV, prefer it.
+
+## Advisor: SMS purchase formats beyond the first sample
+
+Only one Itaú SMS was available (an approved purchase). Installments ("em 3x"), purchases abroad (USD), refunds ("estorno") and declined purchases have unknown texts. The parser returns null for them and Claude decides; an installment would be booked as one purchase of the full value, and a foreign purchase only if Claude reads a BRL value. Add patterns when real samples arrive. The Itaú card statement (fatura) format is not parsed yet either; the SMS entries will be vouched once it is.

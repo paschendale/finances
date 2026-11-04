@@ -22,7 +22,7 @@ export async function setState(q: Queryable, key: string, value: unknown): Promi
 /** Returns true when the event is new (and now recorded), false when it was seen before. */
 export async function claimEvent(
   q: Queryable,
-  input: { source: 'discord' | 'gmail' | 'web' | 'scheduler'; external_id: string; kind: string; payload?: unknown },
+  input: { source: 'discord' | 'gmail' | 'web' | 'scheduler' | 'sms'; external_id: string; kind: string; payload?: unknown },
 ): Promise<boolean> {
   const res = await q.query(
     `INSERT INTO advisor_events (source, external_id, kind, payload) VALUES ($1, $2, $3, $4::jsonb)

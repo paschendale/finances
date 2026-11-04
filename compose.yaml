@@ -36,6 +36,7 @@
 #  COMPOSE_VITE_APP_ADVISOR_URL   Baked into the UI build (browser → advisor), default http://localhost:3100
 #  DISCORD_BOT_TOKEN, DISCORD_GUILD_ID, DISCORD_CHANNEL_ID, DISCORD_OBEYED_USER_IDS   when discord is enabled
 #  GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN                          when gmail is enabled
+#  SMS_TOKEN                      Secret a phone sends to POST /sms with card purchase alerts (optional, 24+ chars)
 #  TZ                             Time zone for the advisor (dates in prompts and nudges)
 #
 #  First run of the advisor: `docker compose exec -it advisor claude login`, then check
@@ -125,6 +126,7 @@ services:
       GMAIL_CLIENT_ID: ${GMAIL_CLIENT_ID:-}
       GMAIL_CLIENT_SECRET: ${GMAIL_CLIENT_SECRET:-}
       GMAIL_REFRESH_TOKEN: ${GMAIL_REFRESH_TOKEN:-}
+      SMS_TOKEN: ${SMS_TOKEN:-}
     ports:
       - "${ADVISOR_PORT:-3100}:3100"
     volumes:

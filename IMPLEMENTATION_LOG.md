@@ -1,5 +1,14 @@
 # IMPLEMENTATION_LOG.md
 
+## 2026-11-04 — Advisor: card purchases from bank SMS
+
+The maintainer's new Itaú card sends an SMS on every approved purchase. Decisions from a short interview: record them automatically (no plan, the one exception to plan-then-apply), Claude picks name and category, one Discord message per purchase, card account `victor-itau-cartao`. No SMS gateway: Twilio-style numbers do not reliably receive Brazilian bank short codes, so the iPhone forwards each SMS with a Shortcuts automation.
+
+- `POST /sms` (`advisor/src/http/routes/sms.ts`), own bearer secret `SMS_TOKEN` (off when unset), answers 202 and records in the background.
+- `advisor/src/ingest/itau-sms.ts`: parser for the Itaú approved-purchase text, year inference.
+- `advisor/src/jobs/ingest-sms.ts`: idempotency through `advisor_events` (migration 0058 adds source `sms`), card account via `resolveStatementAccount` + `statement_source=itau:<last4>` note, duplicate check against hand entries, Sonnet single-shot `prompts/classify-sms.*` (gated; falls back to `classify_candidates`), `create_transaction` with `metadata.source = 'sms'`, Discord notice whose thread lets a reply correct it through a plan.
+- Spec: docs/ADVISOR.md §13a. Tests: `advisor/test/sms.test.ts`.
+
 ## 2026-10-15 — Advisor: recategorising cleared entries no longer blocked
 
 In the production conversation "Reclassificar vestuário", 15 Nubank card purchases (Jul–Oct 2026) could not be moved out of `vestuario`: the applier refused every update/delete on an entry cleared by a closed reconciliation unless the item carried `reopens_reconciliation` *and* the approval sent `keep_reopen_flags`. Three plans failed on the first such item. The maintainer called the rule unnecessary. `guardCleared` (`advisor/src/plan/apply.ts`) now always reopens the closed periods it touches; after apply `recloseReopened` closes them again when they still balance (a category change never moves the card balance). `keep_reopen_flags` is accepted and ignored; the flag stays only as a review hint. Prompt, README and ADVISOR.md updated.
